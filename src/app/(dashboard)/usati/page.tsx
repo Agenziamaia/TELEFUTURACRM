@@ -194,6 +194,11 @@ const KPI_CARDS = [
 // SOLO questi punti vendita gestiscono gli usati (Luca 03/08): gli altri
 // spariscono dalle tendine della sezione (destinazione invio, correzione
 // sede, filtro bonifici). I gemelli W3/Multi condividono il magazzino.
+/* ⚠️ DOVE STA IL LABORATORIO. Sul documento di trasporto ci vuole un luogo di
+   consegna: il laboratorio in anagrafica non è un negozio, quindi il documento
+   uscirebbe senza indirizzo. Finché non è deciso dove sta, il nome è questo e
+   si cambia in una riga — ma è una cosa da decidere, non da indovinare. */
+const LABORATORIO = "Laboratorio";
 const NEGOZI_USATI = ["Acilia Multi", "Baleniere", "Collatina Multi", "Donna", "Garbatella", "Magliana Multi", "Promontori"];
 const DATE_FIELDS = [
   { key: "created_at", label: "Data Registrazione" },
@@ -725,6 +730,32 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
     finally { setConsegnaBusy(false); }
   };
 
+  /* ═══ IL DOCUMENTO DI TRASPORTO (Luca 02/09) ══════════════════════════
+     «Un telefono che transita dal negozio all'altro deve essere accompagnato
+     da un documento di trasporto, così come quando trasferiamo merce da un
+     magazzino all'altro.»
+     Si chiede al server DOPO che il passaggio di stato è andato a buon fine:
+     un documento per un viaggio che non è successo è peggio di nessun
+     documento. Se il documento non riesce, il telefono si è mosso lo stesso e
+     lo si dice — non si annulla il passaggio per un pezzo di carta, ma non lo
+     si nasconde nemmeno. */
+  const [ddtAvviso, setDdtAvviso] = useState("");
+  const chiediDdt = async (da: string | null, a: string | null) => {
+    if (!da || !a) return;
+    try {
+      const r = await fetch("/api/usati/ddt", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usatoId: dev.id, da, a }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setDdtAvviso(`⚠️ Il telefono si è mosso, ma il documento di trasporto non è stato emesso: ${j?.error || "errore"}. Segnalalo all'amministrazione.`); return; }
+      if (j?.saltato) return;                       // stesso locale: nessun trasporto
+      if (j?.ddt?.numero) setDdtAvviso(`📄 Documento di trasporto n° ${j.ddt.numero}/${j.ddt.anno} emesso — lo trovi in Magazzino → Trasferimenti.`);
+    } catch (e) {
+      setDdtAvviso(`⚠️ Il telefono si è mosso, ma il documento di trasporto non è stato emesso: ${(e as Error)?.message || "errore"}.`);
+    }
+  };
+
   const smonta = () => {
     if (!window.confirm(`Smontare ${dev.model} (${dev.imei}) e usarlo per pezzi di ricambio?\nIl telefono esce dal flusso di vendita ma resta tracciato tra gli Smontati.`)) return;
     persist({ ...dev, status: "smontato", note_tecnico: noteTecnico,
@@ -757,6 +788,12 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
     // archivia prezzo effettivo e cliente: qui il passaggio manuale non esiste.
     if (next === "venduto") return;
     persist(u);
+    /* ⚠️ IL DOCUMENTO SEGUE IL TELEFONO, non lo stato. Due passaggi lo
+       muovono davvero: quando lascia il negozio per il laboratorio, e quando
+       il laboratorio lo manda a un punto vendita. Gli altri (ricevuto, in
+       lavorazione, pronto) succedono senza che il telefono cambi posto. */
+    if (next === "in_transito") void chiediDdt(dev.store, LABORATORIO);
+    if (next === "invio_in_negozio" && targetStore) void chiediDdt(LABORATORIO, targetStore);
   };
   // PASSO INDIETRO (Luca 31/07): dall'amministrativo in su si corregge un
   // avanzamento sbagliato riportando lo stato a 1..N passi prima — con
@@ -782,8 +819,12 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
   // accettarlo — solo all'accettazione passa in carico a lui. Ripetibile.
   const sendToStore = () => {
     if (!targetStore) return;
+    const da = dev.store;
     persist({ ...dev, status: "invio_in_negozio", store: targetStore, target_store: targetStore, note_tecnico: noteTecnico,
       status_history: { ...dev.status_history, invio_in_negozio: { date: new Date(), operatore } } });
+    /* anche il trasferimento fra due punti vendita: è il caso in cui il
+       telefono percorre più strada di tutti */
+    void chiediDdt(da, targetStore);
   };
   const setKO = () => persist({ ...dev, status: "ko", note_tecnico: noteTecnico,
     status_history: { ...dev.status_history, ko: { date: new Date(), operatore } } });
@@ -1028,6 +1069,13 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
                 regala — sarebbe stato l'unico precluso. E non è una
                 correzione: è una porta che fa uscire un telefono dal
                 magazzino. */}
+            {/* l'esito del documento di trasporto: si vede dove si è premuto */}
+            {ddtAvviso && (
+              <div className={cn("rvNota mt-3", ddtAvviso.startsWith("⚠️") ? "rvNota-ko" : "rvNota-info")}>
+                <div className="rvNota-s">{ddtAvviso}</div>
+                <button onClick={() => setDdtAvviso("")} className="rvPill rvPill-sm mt-2">ho capito</button>
+              </div>
+            )}
             {isAmministrazione && !["venduto", "smontato", "ko"].includes(dev.status) && (
               <div className="mt-4 border-t border-dashed border-rose-500/20 pt-4">
                 <button onClick={() => { setConsegnaKo(""); setConsegna("avviso"); }}
