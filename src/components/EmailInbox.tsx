@@ -369,6 +369,11 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
             if (alive) { setMsgs(((data ?? []) as Msg[]).reverse()); setMsgsTotali(count ?? (data?.length || 0)); }
         };
         load(); const t = setInterval(load, 4000);
+        /* ⚠️ GLI ALLEGATI RESTANO NELLA LORO CONVERSAZIONE. Senza questa riga,
+           chi allegava un documento a una risposta, non inviava e passava a un
+           altro cliente, glielo spediva: la striscia sta sotto la casella di
+           testo e sembra parte del thread aperto. */
+        setAllegRisposta([]);
         supabase.from("email_conversations").update({ unread: 0 }).eq("id", selConv.id).then(() => { });
         // EML-05: la lettura vale anche in webmail (\Seen su IMAP) — fuoco e
         // dimentica: se fallisce, il poll riallinea al giro dopo
@@ -476,8 +481,8 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     };
 
     // ── composizione ───────────────────────────────────────────────────────────
-    const openNewCompose = () => { setCTo(""); setCSubject(""); setCBody(""); setCDraftId(null); setComposeOpen(true); };
-    const openDraft = (d: Draft) => { setCTo(d.to_addr || ""); setCSubject(d.subject || ""); setCBody(d.body || ""); setCDraftId(d.id); setComposeOpen(true); };
+    const openNewCompose = () => { setCTo(""); setCSubject(""); setCBody(""); setCDraftId(null); setAllegCompose([]); setComposeOpen(true); };
+    const openDraft = (d: Draft) => { setCTo(d.to_addr || ""); setCSubject(d.subject || ""); setCBody(d.body || ""); setCDraftId(d.id); setAllegCompose([]); setComposeOpen(true); };
     const saveDraft = async (silent = false) => {
         if (!selAcc) return;
         if (!cTo.trim() && !cSubject.trim() && !cBody.trim()) return;
@@ -487,12 +492,19 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         if (!silent) loadDrafts();
     };
     const closeCompose = async () => { await saveDraft(true); setComposeOpen(false); loadDrafts(); };
-    const discardCompose = async () => { if (cDraftId) await supabase.from("email_drafts").delete().eq("id", cDraftId); setComposeOpen(false); setCTo(""); setCSubject(""); setCBody(""); setCDraftId(null); loadDrafts(); };
+    const discardCompose = async () => { if (cDraftId) await supabase.from("email_drafts").delete().eq("id", cDraftId); setComposeOpen(false); setCTo(""); setCSubject(""); setCBody(""); setCDraftId(null); setAllegCompose([]); loadDrafts(); };
     const sendCompose = async () => {
         try { setTimeout(() => window.dispatchEvent(new Event("tf-omni-refresh")), 1500); } catch { /* lista omni non montata */ }
         if (!cTo.trim() || !cBody.trim() || !selAcc || sending) return;
         setSending(true);
-        const res = await api("/api/email/send", { accountId: selAcc, to: cTo.trim(), subject: cSubject.trim(), text: cBody.trim(), userId: user?.id, allegati: allegCompose.map(({ path, nome, mime, size }) => ({ path, nome, mime, size })) });
+        let res: { error?: string } | null = null;
+        try {
+            res = await api("/api/email/send", { accountId: selAcc, to: cTo.trim(), subject: cSubject.trim(), text: cBody.trim(), userId: user?.id, allegati: allegCompose.map(({ path, nome, mime, size }) => ({ path, nome, mime, size })) });
+        } catch {
+            setSending(false);
+            alert("Invio non riuscito: la risposta del server non è arrivata. Se l'allegato è grande, riprova con un file più leggero.");
+            return;
+        }
         setSending(false);
         if (res?.error) { alert("Invio non riuscito: " + res.error); return; }
         if (cDraftId) await supabase.from("email_drafts").delete().eq("id", cDraftId);
@@ -513,13 +525,19 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
        composizione nuova la conversazione non esiste ancora quando si sceglie
        il file. Al momento dell'invio è il server a spostarli al posto giusto. */
     type Alleg = { path: string; nome: string; mime?: string; size?: number; su?: boolean };
+    /* ⚠️ GLI ALLEGATI APPARTENGONO A QUELLA FINESTRA, e a nessun'altra
+       (revisore 02/09). Non azzerandoli, il negozio che allega la carta
+       d'identità del cliente A, non invia, e passa alla conversazione del
+       cliente B, gliela spedisce — la striscia sta sotto la casella di testo
+       e sembra parte del thread aperto. Nessuna malizia, succede da solo al
+       primo giorno d'uso. */
     const [allegRisposta, setAllegRisposta] = useState<Alleg[]>([]);
     const [allegCompose, setAllegCompose] = useState<Alleg[]>([]);
     const [caricandoAlleg, setCaricandoAlleg] = useState(false);
     const MAX_ALLEG = 20 * 1024 * 1024;
 
     const caricaAllegati = async (files: FileList | null, dove: "risposta" | "compose") => {
-        if (!files || !files.length || !user?.id) return;
+        if (!files || !files.length || !user?.id || caricandoAlleg) return;
         const attuali = dove === "risposta" ? allegRisposta : allegCompose;
         const gia = attuali.reduce((n, a) => n + (a.size || 0), 0);
         const nuovi = [...files].reduce((n, f) => n + f.size, 0);
@@ -547,7 +565,16 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     };
 
     const togliAllegato = async (a: Alleg, dove: "risposta" | "compose") => {
-        try { await supabase.storage.from("email-attachments").remove([a.path]); } catch { }
+        /* ⚠️ SI CANCELLA DAL CUSTODE, non con `storage.remove()`. Dal browser
+           quella chiamata non cancella niente e non protesta: senza il
+           permesso di LEGGERE il deposito la DELETE non vede la riga e
+           risponde «fatto» con zero righe toccate. È scritto in `fileUrl.ts`
+           — «sedici punti del CRM ci sono cascati in silenzio» — e ci ero
+           cascato anch'io. Il segno: `qr-uploads`, che ha la stessa policy,
+           ha 536 file mai cancellati. */
+        const { eliminaFile } = await import("@/lib/fileUrl");
+        const r = await eliminaFile("email-attachments", a.path);
+        if (!r.ok) console.error("[email] allegato non cancellato:", a.path, r.errore);
         if (dove === "risposta") setAllegRisposta((p) => p.filter((x) => x.path !== a.path));
         else setAllegCompose((p) => p.filter((x) => x.path !== a.path));
     };
@@ -574,9 +601,16 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     const rispondi = async () => {
         if (!selConv || !text.trim() || sending) return;
         setSending(true);
-        const res = await api("/api/email/send", { conversationId: selConv.id, text: text.trim(), userId: user?.id, allegati: allegRisposta.map(({ path, nome, mime, size }) => ({ path, nome, mime, size })) });
-        if (res?.error) alert("Invio non riuscito: " + res.error); else { setText(""); setAllegRisposta([]); }
-        setSending(false);
+        /* ⚠️ `finally`, e non una riga dopo l'await. Se il proxy risponde con
+           una pagina HTML — un invio pesante che va in timeout — `r.json()`
+           lancia, l'eccezione esce dalla funzione e `sending` resta acceso:
+           il pulsante Invia diventa grigio per sempre, senza un messaggio. */
+        try {
+            const res = await api("/api/email/send", { conversationId: selConv.id, text: text.trim(), userId: user?.id, allegati: allegRisposta.map(({ path, nome, mime, size }) => ({ path, nome, mime, size })) });
+            if (res?.error) alert("Invio non riuscito: " + res.error); else { setText(""); setAllegRisposta([]); }
+        } catch {
+            alert("Invio non riuscito: la risposta del server non è arrivata. Se l'allegato è grande, riprova con un file più leggero.");
+        } finally { setSending(false); }
     };
 
     // ── derivati ──────────────────────────────────────────────────────────────

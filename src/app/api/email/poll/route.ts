@@ -103,6 +103,16 @@ async function pollAccountRaw(accId: string) {
             convId = created?.id;
         }
         if (!convId) continue;
+        /* ⚠️ SE CE L'ABBIAMO GIÀ, NON SI RISCARICA. `caricaAllegati` mette
+           l'istante nel nome, quindi ogni rilettura della casella — un reset
+           di UIDVALIDITY, una sovrapposizione col backfill — faceva una copia
+           NUOVA di ogni allegato nel deposito. Misurati oggi: 622 file orfani
+           per 571 MB, che è quasi certamente da qui che arrivano. */
+        if (m.messageId) {
+            const { data: gia } = await supabase.from("email_messages")
+                .select("id").eq("account_id", accId).eq("message_id", m.messageId).limit(1);
+            if (gia && gia.length) continue;
+        }
         const atts = await caricaAllegati(convId, m.attachments);
         // unique per-casella (mig. 20260804120000): il conflitto NON aggiorna la
         // riga esistente (ignoreDuplicates), cosi' un ri-fetch (es. reset
