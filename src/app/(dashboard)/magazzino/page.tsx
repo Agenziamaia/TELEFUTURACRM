@@ -2920,17 +2920,39 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
     const tipo = tipoDi(da, a, soc, aziendaArrivo, fuori);
 
     const q = filtro.trim().toLowerCase();
+    /* ⚠️ IL MAGAZZINO E' DEL LOCALE, NON DELL'INSEGNA (Luca 02/09, segnalato dal
+       negozio di Collatina: «non ho la visibilità del magazzino completo»).
+       Collatina Multi ha ZERO righe di giacenza: tutti i 379 pezzi del locale
+       stanno sotto «Collatina W3». Chi entrava col Multi come negozio del login
+       apriva Nuovo trasferimento e non vedeva NIENTE da spedire, e doveva
+       sapere di dover cambiare a mano la tendina — cioè indovinare.
+       Adesso i pezzi sono quelli della SEDE FISICA. Il documento resta di UNA
+       società sola (regola già in vigore qui sotto), e siccome in questi locali
+       ogni società sta in una insegna, la partenza resta univoca. */
     const disponibili = useMemo(() => unita.filter(u =>
-        u.stato === "disponibile" && u.negozio === da && (!soc || u.azienda === soc)
+        u.stato === "disponibile" && stessoMagazzino(u.negozio, da) && (!soc || u.azienda === soc)
         && (!q || `${u.descrizione} ${u.seriale} ${u.codice || ""}`.toLowerCase().includes(q))),
         [unita, da, soc, q]);
     const sfusi = useMemo(() => quantita.filter(g =>
-        g.negozio === da && (!soc || g.azienda === soc) && Number(g.quantita) > 0
+        stessoMagazzino(g.negozio, da) && (!soc || g.azienda === soc) && Number(g.quantita) > 0
         && (!q || `${g.descrizione} ${g.codice}`.toLowerCase().includes(q))),
         [quantita, da, soc, q]);
     const perCodice = useMemo(() => new Map(sfusi.map(g => [g.codice, g])), [sfusi]);
 
+
     const scelti = Object.entries(qta).filter(([, n]) => Number(n) > 0);
+    /* LA PARTENZA DEL DOCUMENTO LA DECIDE LA MERCE. Ora che i pezzi arrivano da
+       tutto il locale, «Collatina Multi» nella tendina non basta più a dire da
+       dove esce la roba: il DDT deve riportare l'insegna dove i pezzi stanno
+       davvero, se no il documento dichiara una partenza falsa e il movimento
+       scarica un magazzino che non ha quella merce. */
+    const insegneScelte = useMemo(() => {
+        const set = new Set<string>();
+        Array.from(pezzi).forEach(id => { const u = unita.find(x => x.id === id); if (u) set.add(u.negozio); });
+        Array.from(scelti).forEach(([cod]) => { const g = perCodice.get(cod); if (g) set.add(g.negozio); });
+        return Array.from(set);
+    }, [pezzi, scelti, unita, perCodice]);
+    const daEffettivo = insegneScelte.length === 1 ? insegneScelte[0] : da;
     const totPezzi = pezzi.size + scelti.reduce((s, [, n]) => s + Number(n), 0);
 
     /* TUTTO QUELLO CHE BLOCCA STA IN UNA FUNZIONE SOLA (regola §7): il bottone
@@ -2950,15 +2972,19 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
             if (!destCap.trim() || !destCitta.trim()) out.push("scrivi CAP e città del fornitore");
         }
         else if (!a) out.push("scegli il negozio che riceve");
-        else if (a === da) out.push("partenza e arrivo sono lo stesso negozio");
+        /* STESSA SEDE = STESSO MAGAZZINO: un trasferimento da «Collatina W3» a
+           «Collatina Multi» non è un trasferimento, è la stessa merce nello
+           stesso locale. Prima passava, perché il confronto era sui nomi. */
+        else if (stessoMagazzino(a, daEffettivo)) out.push("partenza e arrivo sono lo stesso punto vendita: la merce è già lì");
+        if (insegneScelte.length > 1) out.push(`stai spedendo merce che sta in due insegne diverse (${insegneScelte.join(" e ")}): un documento parte da una sola. Scegli la società, oppure fai due trasferimenti`);
         if (societa.length > 1 && !soc) out.push("scegli di quale società è la merce: un documento ne trasporta una sola");
         if (!totPezzi) out.push("non hai scelto niente da spedire");
         scelti.forEach(([cod, n]) => {
             const g = perCodice.get(cod);
-            if (g && Number(n) > Number(g.quantita)) out.push(`di «${g.descrizione}» ne stai spedendo ${n} ma a ${da} ce ne sono ${g.quantita}`);
+            if (g && Number(n) > Number(g.quantita)) out.push(`di «${g.descrizione}» ne stai spedendo ${n} ma a ${g.negozio} ce ne sono ${g.quantita}`);
         });
         return out;
-    }, [righeVive, da, a, fuori, dest, destPiva, destVia, destCiv, destCap, destCitta, soc, societa, totPezzi, scelti, perCodice]);
+    }, [righeVive, da, a, fuori, dest, destPiva, destVia, destCiv, destCap, destCitta, soc, societa, totPezzi, scelti, perCodice, daEffettivo, insegneScelte]);
 
     const crea = async () => {
         if (cosaManca.length || busy) return;
@@ -2966,7 +2992,7 @@ function NuovoTrasferimento({ unita, quantita, negozi, negDati, casse, nomiAzien
         try {
             const aNome = fuori ? dest.trim() : a;
             const { data: creato, error } = await supabase.from("mag_ddt").insert({
-                da_negozio: da, a_negozio: aNome,
+                da_negozio: daEffettivo, a_negozio: aNome,
                 // LA SOCIETÀ SEGUE LA MERCE: passata esplicita, se no il trigger
                 // la dedurrebbe dal NEGOZIO — e a Donna sarebbe quella sbagliata
                 azienda_da: soc || null,

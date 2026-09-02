@@ -358,11 +358,27 @@ export async function POST(req: Request) {
     // Applicabile solo con UN unico scontrino (un'unica azienda): con più aziende
     // la ripartizione dei tender per società è ambigua → si torna al pagamento singolo.
     const pagamentiIn: any[] = Array.isArray(b.pagamenti) ? b.pagamenti.slice(0, 3) : [];
-    const buildPayments = (defaultAmount?: number) => {
-        if (pagamentiIn.length && nGruppi === 1) {
-            return pagamentiIn
-                .filter((p) => Number(p?.importo) > 0)
-                .map((p) => {
+
+    /* ⭐ UN CARRELLO CON DUE SOCIETÀ SONO DUE SCONTRINI, E DUE INCASSI (Luca 02/09).
+       «Deve splittarmi la finestra in due sezioni con i nomi delle società
+       sopra, i prodotti di ognuna e l'importo da incassare, e mi chiede la
+       modalità di pagamento per entrambi.»
+       Fin qui il server i due scontrini li faceva già — raggruppa per società
+       dal 31/08 — ma i pagamenti no: con più di un gruppo li BUTTAVA e usciva
+       un CONTANTE secco su tutti e due, qualunque cosa avesse fatto il cliente.
+       Adesso il modale manda una lista di pagamenti PER SOCIETÀ, e ognuno va
+       sul suo scontrino. La forma resta autoritativa qui (`formaPagamento`):
+       il client manda solo il nome e l'importo. */
+    const pagamentiPerAzienda: Record<string, any[]> =
+        (b.pagamentiPerAzienda && typeof b.pagamentiPerAzienda === "object") ? b.pagamentiPerAzienda : {};
+
+    const buildPayments = (defaultAmount?: number, az?: string) => {
+        const suoi = az && Array.isArray(pagamentiPerAzienda[az]) ? pagamentiPerAzienda[az].slice(0, 3) : null;
+        const lista = (suoi && suoi.length) ? suoi : ((pagamentiIn.length && nGruppi === 1) ? pagamentiIn : null);
+        if (lista && lista.length) {
+            return lista
+                .filter((p: any) => Number(p?.importo) > 0)
+                .map((p: any) => {
                     const f = formaPagamento(String(p.forma));
                     return { description: (f?.short || "CONTANTE"), paymentType: f ? f.paymentType : 0, amount: Number(p.importo) };
                 });
@@ -391,6 +407,11 @@ export async function POST(req: Request) {
 
     for (const [az, items] of Object.entries(gruppi)) {
         const totale = +(items.reduce((t, i) => t + i.unitPrice * i.quantity, 0)).toFixed(2);
+        /* I PAGAMENTI DI QUESTA SOCIETÀ: quelli che il modale ha raccolto nella
+           sua sezione, o — se il carrello è di una società sola — quelli unici. */
+        const suoiPagamenti: any[] = (Array.isArray(pagamentiPerAzienda[az]) && pagamentiPerAzienda[az].length)
+            ? pagamentiPerAzienda[az]
+            : ((pagamentiIn.length && nGruppi === 1) ? pagamentiIn : []);
         // lo sconto coupon vale solo col singolo scontrino (nGruppi===1 → un solo giro).
         const scontoGruppo = nGruppi === 1 ? Math.min(couponSconto, totale) : 0;
         const netTotale = +(totale - scontoGruppo).toFixed(2);
@@ -410,8 +431,8 @@ export async function POST(req: Request) {
                     // Dettaglio pagamenti come nel fiscale (spec Francesco D): una riga per
                     // forma, con importo e "(non riscosso)" dove applicabile.
                     "Pagamenti:",
-                    ...((pagamentiIn.length && nGruppi === 1)
-                        ? pagamentiIn.filter((p: any) => Number(p?.importo) > 0).map((p: any) => {
+                    ...(suoiPagamenti.length
+                        ? suoiPagamenti.filter((p: any) => Number(p?.importo) > 0).map((p: any) => {
                             const f = formaPagamento(String(p.forma));
                             return `  ${(f?.short || "CONTANTE")}${f && f.riscosso === false ? " (non riscosso)" : ""}   EUR ${Number(p.importo).toFixed(2)}`;
                         })
@@ -422,7 +443,7 @@ export async function POST(req: Request) {
                 request_xml = buildRequestXml("non_fiscal", { lines });
                 kind = "non_fiscal";
             } else {
-                request_xml = buildRequestXml("fiscal_receipt", { items, payment: buildPayments(netTotale), sconto: scontoGruppo });
+                request_xml = buildRequestXml("fiscal_receipt", { items, payment: buildPayments(netTotale, az), sconto: scontoGruppo });
                 kind = "fiscal_receipt";
             }
         } catch (e: any) {

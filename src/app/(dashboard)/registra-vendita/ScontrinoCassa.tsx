@@ -314,7 +314,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // Multi-societario: ragioni sociali/RT del negozio; se >1, l'operatore sceglie
     // quale EMETTE (default = azienda del negozio; i prodotti con azienda fissa
     // vanno comunque al loro RT).
-    const [aziende, setAziende] = useState<{ code: string; label: string }[]>([]);
+    const [aziende, setAziende] = useState<{ code: string; label: string; negozio: string; propria: boolean }[]>([]);
     const [aziendaSel, setAziendaSel] = useState<string | null>(null);
     /* A QUALE CASSA INCASSO (Luca 31/08). «Sono al Wind3 e faccio uno scontrino
        di un prodotto che sta al Multi, ma faccio pagare il cliente da me: uso
@@ -375,6 +375,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         setImporti(Object.fromEntries(tel.map(t => [t.chiave, { anticipo: "", resto: "", forma: DOMANDE_TELEFONO[t.modo].forma || "" }])));
         setFase(tel.length ? "telefoni" : "scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
+        setAssegna({}); setRighePerAz({}); setCassaPerAz({}); cashFatti.current = {};
         setAziende([]); setAziendaSel(null);
         setCouponInput("");
         setCoupon(cIn ? { code: cIn.code, valore: Number(cIn.valore) || 0, sconto: sc } : null);
@@ -394,12 +395,13 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             const rows = (tuttiR || []).filter((r: any) => stessoMagazzino(r.negozio, neg));
             const list = rows.map((r: any) => ({
                 code: r.azienda,
+                negozio: String(r.negozio),
                 label: (r.ragione_sociale || r.azienda) + (r.negozio !== neg ? ` · ${r.negozio}` : ""),
                 isDef: !!r.is_default && r.negozio === neg,
                 // ha un registratore SUO qui, o è quello del negozio accanto?
                 propria: r.negozio === neg,
             }));
-            setAziende(list.map((x) => ({ code: x.code, label: x.label })));
+            setAziende(list.map((x) => ({ code: x.code, label: x.label, negozio: x.negozio, propria: x.propria })));
             // se si RIPRENDE un sospeso con azienda già scelta, rispettala; altrimenti default.
             /* ⚠️ LE SOLE RICARICHE LE EMETTE TELEFUTURA SRL (Luca 01/09):
                «nei negozi con due casse dentro lo stesso negozio, se non c'è
@@ -453,6 +455,136 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 importo: isFormaCash(r.forma) ? arrotonda5(Number(r.importo)) : +Number(r.importo).toFixed(2),
             }));
 
+    /* ═══ DUE SOCIETÀ NEL CARRELLO SONO DUE SCONTRINI ═══════════════════════
+       Luca, 02/09: «se ci sono più prodotti di diverse società, nella
+       schermata dove chiede la modalità di pagamento deve splittarmi lo
+       scontrino in due sezioni, coi nomi delle società sopra, i prodotti di
+       ognuna e l'importo da incassare, e chiedermi la modalità per entrambi.
+       Se pagano contanti mi deve chiedere anche in quale cash machine.
+       I servizi devo poterli spostare da un carrello all'altro.»
+
+       PERCHÉ ESISTE SOLO QUI DENTRO. Il carrello misto capita in quattro
+       locali su quindici — quelli che dentro hanno due punti vendita di due
+       società: Magliana, Collatina, Acilia, Donna Olimpia. Negli altri undici
+       questo blocco non si accende mai, e il pagamento resta quello di sempre.
+       Per questo è un modo IN PIÙ e non una riscrittura: il gesto che i negozi
+       fanno duecento volte al giorno non cambia di una virgola.
+
+       LA MERCE DECIDE, IL SERVIZIO NO. Ogni riga di merce porta la sua società
+       dal magazzino: quella non si tocca, se no si emette con la partita IVA
+       sbagliata. I servizi — ricariche, riparazioni, backup — una società non
+       ce l'hanno: partono su quella della merce principale e si spostano. */
+    const _chiaveRiga = (i: RigaScontrino, k: number) => `${i.productId || i.codice || i.description}|${k}`;
+    const [assegna, setAssegna] = useState<Record<string, string>>({});
+    const [righePerAz, setRighePerAz] = useState<Record<string, RigaPagamento[]>>({});
+    const [cassaPerAz, setCassaPerAz] = useState<Record<string, string>>({});
+    /* QUALI INCASSI SONO GIÀ ANDATI. Ref e non stato: fra il primo incasso e il
+       secondo non c'è un re-render, e uno stato letto qui sarebbe ancora quello
+       di prima — cioè il primo cassetto si riaprirebbe. */
+    const cashFatti = useRef<Record<string, boolean>>({});
+
+    /* LE SOCIETÀ CHE LA MERCE IMPONE. Solo quelle: se in carrello ci sono solo
+       servizi la domanda è un'altra (chi emette), ed è già risolta sopra. */
+    const aziendeMerce = useMemo(
+        () => Array.from(new Set(itemsTutte.map((i) => i.azienda).filter(Boolean))) as string[],
+        [itemsTutte]);
+    const multiSocieta = aziendeMerce.length > 1;
+
+    const sezioni = useMemo(() => {
+        if (!multiSocieta) return [] as { azienda: string; negozio: string; label: string; righe: { i: RigaScontrino; k: number }[]; totale: number }[];
+        const per: Record<string, { i: RigaScontrino; k: number }[]> = {};
+        aziendeMerce.forEach((a) => { per[a] = []; });
+        itemsTutte.forEach((i, k) => {
+            const az = i.azienda || assegna[_chiaveRiga(i, k)] || aziendeMerce[0];
+            (per[az] ||= []).push({ i, k });
+        });
+        return aziendeMerce.map((a) => {
+            const info = aziende.find((x) => x.code === a);
+            const righeQui = per[a] || [];
+            return {
+                azienda: a,
+                negozio: info?.negozio || data?.negozio || "",
+                label: info?.label || a,
+                righe: righeQui,
+                totale: totaleRighe(righeQui.map((x) => x.i)),
+            };
+        });
+    }, [multiSocieta, aziendeMerce, itemsTutte, assegna, aziende, data?.negozio]);
+
+    /* IL «NON RISCOSSO» SEGUE IL SUO TELEFONO. Un finanziato dentro un carrello
+       misto non è un caso di scuola: è permuta + telefono, la combinazione più
+       comune che c'è. Se la riga «Finanziamento 1.359,90» finisse nella sezione
+       sbagliata, uno scontrino direbbe di aver incassato soldi mai visti e
+       l'altro non quadrerebbe. */
+    const nonRiscossiPerAz = useMemo(() => {
+        const out: Record<string, { forma: string; importo: number }[]> = {};
+        telefoni.filter((t) => DOMANDE_TELEFONO[t.modo].scontrino).forEach((t) => {
+            const forma = importi[t.chiave]?.forma || DOMANDE_TELEFONO[t.modo].forma || "";
+            const importo = _n(importi[t.chiave]?.resto);
+            if (!forma || importo <= 0) return;
+            const suaRiga = itemsTutte.find((i) => i.codice && t.codice && i.codice === t.codice);
+            const az = suaRiga?.azienda || aziendeMerce[0];
+            if (!az) return;
+            (out[az] ||= []);
+            const g = out[az].find((x) => x.forma === forma);
+            if (g) g.importo = +(g.importo + importo).toFixed(2); else out[az].push({ forma, importo });
+        });
+        return out;
+    }, [telefoni, importi, itemsTutte, aziendeMerce]);
+
+    /* OGNI SEZIONE NASCE COL SUO IMPORTO GIÀ SCRITTO e col cassetto della sua
+       insegna: è la risposta giusta nove volte su dieci, e chi vuole cambiarla
+       la cambia. Si rifà quando cambiano gli importi, non a ogni respiro. */
+    const _firmaSez = sezioni.map((s2) => `${s2.azienda}:${s2.totale}`).join("|");
+    useEffect(() => {
+        if (!sezioni.length) return;
+        setRighePerAz((vecchie) => {
+            const out: Record<string, RigaPagamento[]> = {};
+            sezioni.forEach((s2) => {
+                const v = vecchie[s2.azienda];
+                const sommaV = (v || []).reduce((a, r) => a + (Number(r.importo) || 0), 0);
+                /* si conserva quello che l'operatore ha già scelto, ma se il
+                   totale è cambiato l'importo va riportato al vero: un residuo
+                   vecchio farebbe uscire uno scontrino che non quadra. */
+                if (v && v.length && Math.abs(sommaV - s2.totale) < 0.005) { out[s2.azienda] = v; return; }
+                /* si ricostruisce come nel flusso normale: prima le forme già
+                   decise dal telefono, poi quello che resta da incassare. */
+                const fisse = nonRiscossiPerAz[s2.azienda] || [];
+                const gia = fisse.reduce((x, r) => x + r.importo, 0);
+                const resta = +(s2.totale - gia).toFixed(2);
+                out[s2.azienda] = resta > 0.004
+                    ? [{ forma: v?.[0]?.forma || "", importo: resta }, ...fisse]
+                    : [...fisse];
+            });
+            return out;
+        });
+        setCassaPerAz((vecchie) => {
+            const out: Record<string, string> = {};
+            sezioni.forEach((s2) => { out[s2.azienda] = vecchie[s2.azienda] || s2.negozio; });
+            return out;
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [_firmaSez]);
+
+    /* IL BILANCIO SI FA SEZIONE PER SEZIONE: uno scontrino che non quadra non
+       esce, e non deve bloccare l'altro senza dire quale dei due è. */
+    const sezioniOk = sezioni.every((s2) => {
+        const rr = righePerAz[s2.azienda] || [];
+        const somma = +rr.reduce((a, r) => a + (Number(r.importo) || 0), 0).toFixed(2);
+        return s2.totale <= 0.005 || (Math.abs(somma - s2.totale) < 0.005 && rr.every((r) => Number(r.importo) > 0 && !!r.forma));
+    });
+    const contantiDi = (az: string) => arrotonda5(
+        +(righePerAz[az] || []).filter((r) => isFormaCash(r.forma)).reduce((a, r) => a + (Number(r.importo) || 0), 0).toFixed(2));
+
+    const contantiTotali = +sezioni.reduce((a, s2) => a + contantiDi(s2.azienda), 0).toFixed(2);
+
+    /* SPOSTA UN SERVIZIO DA UNA SEZIONE ALL'ALTRA. La merce non si sposta: la
+       sua società è un fatto, non una preferenza. */
+    const spostaServizio = (i: RigaScontrino, k: number, verso: string) => {
+        if (i.azienda) return;
+        setAssegna((a) => ({ ...a, [_chiaveRiga(i, k)]: verso }));
+    };
+
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
     const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
         setFase("incasso");
@@ -487,7 +619,8 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         }
     }, []);
 
-    const stampaScontrino = useCallback(async (pagamenti: RigaPagamento[], couponPayload?: { code: string; sconto: number }) => {
+    const stampaScontrino = useCallback(async (pagamenti: RigaPagamento[], couponPayload?: { code: string; sconto: number },
+        perAzienda?: Record<string, RigaPagamento[]>) => {
         setFase("stampa");
         setMsg("Emissione scontrino fiscale…");
         try {
@@ -502,6 +635,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                        quando merce non ce n'è: lì l'ha scelta l'operatore */
                     azienda: soloServizi ? aziendaSel : null,
                     pagamenti,
+                    /* I PAGAMENTI DI OGNI SOCIETÀ, quando il carrello ne ha due:
+                       il server fa già due scontrini, ma fino a stasera i
+                       pagamenti li buttava e usciva un CONTANTE secco su
+                       entrambi. */
+                    pagamentiPerAzienda: perAzienda || undefined,
                     contrattoId: data?.contrattoId ?? null,
                     /* IL CLIENTE VIAGGIA COL DOCUMENTO (Luca 01/09 sera): la
                        sezione Documenti deve poter aprire uno scontrino e dire
@@ -539,7 +677,23 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     if (!data) return null;
 
     const conferma = async () => {
-        if (!bilanciato) {
+        if (multiSocieta) {
+            /* SI DICE QUALE DELLE DUE non torna: «manca qualcosa» davanti a due
+               sezioni costringe a ricontrollarle entrambe. */
+            const zoppa = sezioni.find((s2) => {
+                const rr = righePerAz[s2.azienda] || [];
+                const somma = +rr.reduce((x, r) => x + (Number(r.importo) || 0), 0).toFixed(2);
+                return s2.totale > 0.005 && !(Math.abs(somma - s2.totale) < 0.005 && rr.every((r) => Number(r.importo) > 0 && !!r.forma));
+            });
+            if (zoppa) {
+                const rr = righePerAz[zoppa.azienda] || [];
+                const somma = +rr.reduce((x, r) => x + (Number(r.importo) || 0), 0).toFixed(2);
+                const manca = +(zoppa.totale - somma).toFixed(2);
+                setFase("errore");
+                setMsg(`${zoppa.label}: ${!rr.every((r) => !!r.forma) ? "scegli come paga il cliente" : manca > 0 ? `manca ${eur(manca)}` : `pagamento eccedente di ${eur(-manca)}`}.`);
+                return;
+            }
+        } else if (!bilanciato) {
             setFase("errore");
             setMsg(rimanente > 0 ? `Manca ${eur(rimanente)} da assegnare a una forma di pagamento.` : `Pagamento eccedente di ${eur(-rimanente)}.`);
             return;
@@ -567,8 +721,32 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
             return;
         }
+        /* ═══ DUE SEZIONI = DUE INCASSI, ognuno sul suo cassetto ═══════════
+           `cashFatti` tiene il conto di quali sono già andati: se il secondo
+           fallisce e l'operatore riprova, il primo NON si ripete — i soldi
+           erano già nel cassetto, e chiederli due volte è il difetto peggiore
+           che questa finestra possa avere. */
+        if (multiSocieta) {
+            for (const s2 of sezioni) {
+                const q = contantiDi(s2.azienda);
+                if (q <= 0 || cashFatti.current[s2.azienda]) continue;
+                if (chk?.testMode) { cashFatti.current[s2.azienda] = true; continue; }
+                const r = await incassaContanti(q, cassaPerAz[s2.azienda] || s2.negozio);
+                if (!r || !r.ok) {
+                    if (r?.cancelled) { setFase("scelta"); setMsg(""); return; }
+                    setFase("errore");
+                    setMsg(`${s2.label}: incasso non riuscito — ` + (r?.erroreMsg || "annullato"));
+                    return;
+                }
+                cashFatti.current[s2.azienda] = true;
+                setIncassato((v) => v + (r.incassato ?? q));
+                setResto((v) => v + (r.resto ?? 0));
+                setPaidCash((v) => v + q);
+                setCashDone(true);
+            }
+        }
         // Incasso contanti (una sola volta) se c'è una quota contanti e non è già fatta.
-        if (cashRounded > 0 && !cashDone) {
+        if (!multiSocieta && cashRounded > 0 && !cashDone) {
             if (chk?.testMode) {
                 /* PROVA / gestionale (spec Francesco 31/08): NON si chiama la cassa
                    automatica. Si segna l'importo come pagato in contanti — lo scontrino
@@ -589,7 +767,14 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 setPaidCash(cashRounded);
             }
         }
-        const p = await stampaScontrino(pagamenti, coupon ? { code: coupon.code, sconto: scontoCoupon } : undefined);
+        const p = await stampaScontrino(
+            pagamenti,
+            coupon ? { code: coupon.code, sconto: scontoCoupon } : undefined,
+            multiSocieta ? Object.fromEntries(sezioni.map((s2) => [s2.azienda,
+                (righePerAz[s2.azienda] || []).filter((r) => Number(r.importo) > 0).map((r) => ({
+                    forma: r.forma,
+                    importo: isFormaCash(r.forma) ? arrotonda5(Number(r.importo)) : +Number(r.importo).toFixed(2),
+                }))])) : undefined);
         setEsclusi(Array.isArray(p.esclusi) ? p.esclusi : []);
         if (!p.ok) {
             setFase("errore");
@@ -1039,7 +1224,138 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             per chi riprende un conto sospeso o se lo ricorda tardi */}
                         </div>
 
-                        {coperto ? (
+                        {/* ═══ DUE SOCIETÀ: DUE SCONTRINI, DUE INCASSI ═══════════════
+                            Compare solo nei quattro locali che dentro hanno due
+                            punti vendita. Ogni riquadro è uno scontrino: sopra
+                            la società che lo emette, dentro le sue voci, sotto
+                            come paga il cliente e in quale cassetto entrano i
+                            contanti. I servizi si trascinano da un riquadro
+                            all'altro — o si spostano col pulsante, che sui
+                            banconi con lo schermo tattile è l'unico gesto che
+                            funziona sempre. */}
+                        {multiSocieta && (
+                            <div className="space-y-3">
+                                <p className="text-[11px] text-slate-400">
+                                    Nel carrello c&apos;è merce di <b className="text-slate-200">{sezioni.length} società</b>: sono due scontrini,
+                                    ognuno con il suo incasso. La merce sta dove la mette il magazzino; i servizi li sposti tu.
+                                </p>
+                                {sezioni.map((s2) => {
+                                    const altre = sezioni.filter((x) => x.azienda !== s2.azienda);
+                                    const rr = righePerAz[s2.azienda] || [];
+                                    const somma = +rr.reduce((x, r) => x + (Number(r.importo) || 0), 0).toFixed(2);
+                                    const manca = +(s2.totale - somma).toFixed(2);
+                                    const quadra = s2.totale <= 0.005 || (Math.abs(manca) < 0.005 && rr.every((r) => Number(r.importo) > 0 && !!r.forma));
+                                    const contanti = contantiDi(s2.azienda);
+                                    return (
+                                        <div key={s2.azienda}
+                                            onDragOver={(e) => { e.preventDefault(); }}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                const k = Number(e.dataTransfer.getData("text/plain"));
+                                                const riga = itemsTutte[k];
+                                                if (riga && !riga.azienda) spostaServizio(riga, k, s2.azienda);
+                                            }}
+                                            className={"rounded-2xl border p-3 space-y-2.5 transition-colors "
+                                                + (quadra ? "border-emerald-400/40 bg-emerald-500/[0.06]" : "border-white/10 bg-white/[0.03]")}>
+
+                                            <div className="flex items-baseline justify-between gap-2">
+                                                <span className="text-sm font-extrabold text-white truncate">🏢 {s2.label}</span>
+                                                <span className="text-base font-extrabold text-emerald-300 shrink-0">{eur(s2.totale)}</span>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                {s2.righe.map(({ i, k }) => (
+                                                    <div key={k}
+                                                        draggable={!i.azienda}
+                                                        onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(k)); }}
+                                                        className={"flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs "
+                                                            + (i.azienda ? "bg-white/5 text-slate-300" : "bg-sky-500/10 text-sky-100 cursor-grab active:cursor-grabbing")}>
+                                                        <span className="shrink-0">{i.azienda ? "📦" : "🔧"}</span>
+                                                        <span className="flex-1 min-w-0 truncate">{i.description}</span>
+                                                        <span className="shrink-0 font-semibold">{eur(Number(i.unitPrice) * (Number(i.qty) > 0 ? Number(i.qty) : 1))}</span>
+                                                        {!i.azienda && altre.map((o) => (
+                                                            <button key={o.azienda} type="button" title={`Sposta su ${o.label}`}
+                                                                onClick={() => spostaServizio(i, k, o.azienda)}
+                                                                className="shrink-0 rounded-md px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold">→</button>
+                                                        ))}
+                                                    </div>
+                                                ))}
+                                                {!s2.righe.length && (
+                                                    <p className="text-[11px] text-slate-500 italic py-2 text-center">
+                                                        Niente in questo scontrino: trascina qui un servizio, o non verrà emesso.
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {s2.totale > 0.005 && (
+                                                <div className="space-y-2">
+                                                    <p className="text-[11px] text-slate-500">Come paga il cliente</p>
+                                                    {rr.map((r, ri) => (
+                                                        <div key={ri} className="flex gap-2 items-center">
+                                                            {(!r.forma || FORME_A_MANO.some((f) => f.code === r.forma)) ? (
+                                                                <div className="flex gap-1.5 flex-1 min-w-0">
+                                                                    {FORME_A_MANO.map((f) => (
+                                                                        <button key={f.code} type="button"
+                                                                            onClick={() => setRighePerAz((v) => ({ ...v, [s2.azienda]: (v[s2.azienda] || []).map((x, xi) => xi === ri ? { ...x, forma: f.code } : x) }))}
+                                                                            className={"flex-1 min-w-0 flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-bold transition-colors "
+                                                                                + (r.forma === f.code
+                                                                                    ? "bg-violet-500/25 border-violet-400/70 text-white"
+                                                                                    : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200")}>
+                                                                            <span className="text-base leading-none">{f.icona}</span>{f.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                /* la forma decisa dal carrello — finanziato, rateizzato —
+                                                                   non si cambia a mano: si mostra com'è */
+                                                                <span className="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs font-bold text-slate-300">
+                                                                    {FORME_PAGAMENTO.find((f) => f.code === r.forma)?.label || r.forma}
+                                                                </span>
+                                                            )}
+                                                            <span className="shrink-0 w-24 text-right text-sm font-bold text-slate-200">{eur(Number(r.importo))}</span>
+                                                        </div>
+                                                    ))}
+                                                    {!quadra && (
+                                                        <p className="text-[11px] text-amber-300">
+                                                            {!rr.every((r) => !!r.forma) ? "Scegli come paga il cliente."
+                                                                : manca > 0 ? `Manca ${eur(manca)}.` : `Eccedenza di ${eur(-manca)}.`}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* IL CASSETTO, per questa sezione. Ogni insegna ha il suo:
+                                                di partenza è quello della società che emette, che è la
+                                                risposta giusta quasi sempre. */}
+                                            {contanti > 0 && insegne.length > 1 && (
+                                                <div>
+                                                    <p className="text-[11px] text-slate-500 mb-1.5">I {eur(contanti)} in contanti entrano nella cassa di…</p>
+                                                    <div className="flex gap-2">
+                                                        {insegne.map((n) => (
+                                                            <button key={n} type="button"
+                                                                onClick={() => setCassaPerAz((v) => ({ ...v, [s2.azienda]: n }))}
+                                                                className={"flex-1 py-2 rounded-xl border text-[11px] font-bold transition "
+                                                                    + ((cassaPerAz[s2.azienda] || s2.negozio) === n
+                                                                        ? "bg-emerald-500/25 border-emerald-400/60 text-white"
+                                                                        : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+                                                                💶 {n}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {!!coupon && (
+                                    <p className="text-[11px] text-amber-300">
+                                        ⚠️ Il coupon non si applica quando gli scontrini sono due: toglilo, oppure fai le due vendite separate.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {multiSocieta ? null : coperto ? (
                             <p className="text-sm text-emerald-300 text-center py-1">
                                 {nienteDaPagare
                                     ? "Non c'è niente da incassare: il totale è zero. Lo scontrino esce lo stesso, senza forma di pagamento."
@@ -1122,7 +1438,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             scontrino esce comunque dal registratore della
                             società che possiede la merce: qui si sceglie solo
                             dove il cliente mette i soldi. */}
-                        {insegne.length > 1 && cashRounded > 0 && (
+                        {!multiSocieta && insegne.length > 1 && cashRounded > 0 && (
                             <div>
                                 <p className="text-[11px] text-slate-500 mb-1.5">Il cliente paga alla cassa di…</p>
                                 <div className="flex gap-2">
@@ -1139,7 +1455,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             </div>
                         )}
 
-                        {cashRounded > 0 && (
+                        {!multiSocieta && cashRounded > 0 && (
                             <p className="text-[11px] text-slate-500 text-center">
                                 La cassa automatica chiederà {eur(cashRounded)} in contanti ed erogherà il resto.
                                 {arrotondamento !== 0 && <> Arrotondamento {arrotondamento > 0 ? "+" : ""}{eur(arrotondamento)}.</>}
@@ -1153,8 +1469,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                         Tieni in sospeso
                                     </button>
                                 )}
-                                <button type="button" onClick={conferma} disabled={!bilanciato} className="flex-1 primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
-                                    {cashRounded > 0 ? "Incassa ed emetti" : "Emetti scontrino"}
+                                <button type="button" onClick={conferma} disabled={multiSocieta ? !sezioniOk : !bilanciato} className="flex-1 primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
+                                    {/* IL PULSANTE DICE QUANTI DOCUMENTI USCIRANNO: premere
+                                        «Emetti scontrino» e vederne uscire due, su due casse
+                                        diverse, è una sorpresa che al banco non serve. */}
+                                    {(multiSocieta ? contantiTotali : cashRounded) > 0 ? "Incassa ed emetti" : "Emetti"}
+                                    {multiSocieta ? ` i ${sezioni.length} scontrini` : cashRounded > 0 ? "" : " scontrino"}
                                 </button>
                             </div>
                             {/* VIA «CHIUDI SENZA SCONTRINO» (Luca 31/08: «non ha alcun

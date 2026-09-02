@@ -5742,6 +5742,28 @@ function CRM() {
      Si ferma QUI, che è l'imbuto unico da cui passa tutto quello che entra nel
      carrello: le scorciatoie, i servizi, i prodotti di magazzino. */
   const _nomeSoc=(a)=>a==="T1"?"Telefutura":a==="T2"?"Telefutura 2":String(a||"");
+
+  /* ⭐ IL CARRELLO MISTO ORA SI PUÒ FARE — MA SOLO DOVE HA SENSO (Luca 02/09).
+     «Se ci sono più prodotti di diverse società, la finestra del pagamento
+     deve splittarmi lo scontrino in due sezioni.» Dal 31/08 il blocco qui
+     sotto lo impediva, perché due società erano due scontrini e la finestra
+     non li sapeva gestire: adesso li gestisce.
+     RESTA BLOCCATO negli undici negozi con UNA cassa sola: lì una riga di
+     un'altra società non ha un registratore su cui uscire, e il server la
+     scarterebbe in silenzio dallo scontrino — merce venduta e non
+     certificata. Il blocco quindi non sparisce: si accende dove serve. */
+  const [localeDueCasse, setLocaleDueCasse] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    setLocaleDueCasse(false);
+    if (!selNeg) return;
+    supabase.from("pos_rt").select("negozio, azienda").then(({ data }) => {
+      if (!vivo) return;
+      const soc = new Set((data || []).filter(r => stessoMagazzino(r.negozio, selNeg)).map(r => r.azienda).filter(Boolean));
+      setLocaleDueCasse(soc.size > 1);
+    });
+    return () => { vivo = false; };
+  }, [selNeg]);
   /* ⚠️ LE RICARICHE SI SCRIVONO QUANDO LA VENDITA SI SCRIVE, non quando si
      preme «salva ricarica». Nel percorso con lo scontrino la vendita è
      DIFFERITA: si registra solo a scontrino emesso. Scrivere qui la ricarica
@@ -5810,8 +5832,10 @@ function CRM() {
     const az=_socDi(item);
     if(az){
       const gia=[...new Set(margItems.map(m=>_socDi(m)).filter(Boolean))].filter(a=>a!==az);
-      if(gia.length){
-        sT(`⛔ «${item.product||"Questo prodotto"}» è di ${_nomeSoc(az)}, ma nel carrello c'è già merce di ${_nomeSoc(gia[0])}. Sono due società diverse: servono due scontrini. Chiudi questa vendita e falla a parte.`);
+      /* DOVE LE CASSE SONO DUE, il carrello misto si fa: la finestra del
+         pagamento lo divide in due sezioni e ne escono due scontrini. */
+      if(gia.length && !localeDueCasse){
+        sT(`⛔ «${item.product||"Questo prodotto"}» è di ${_nomeSoc(az)}, ma nel carrello c'è già merce di ${_nomeSoc(gia[0])}. In questo negozio c'è una cassa sola: la seconda società non ha un registratore su cui uscire. Falla in una vendita a parte.`);
         return;
       }
     }
@@ -7207,7 +7231,7 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
   const cosaManca = () => {
     const out = [];
     { const soc = societaInCarrello(margItems);
-      if (soc.length > 1) out.push({ ico: "⛔", testo: `Nel carrello c'è merce di ${soc.map(_nomeSoc).join(" e ")}: sono due società e servono due scontrini. Togli una delle due e falla in una vendita a parte.`, dove: "carrello" }); }
+      if (soc.length > 1 && !localeDueCasse) out.push({ ico: "⛔", testo: `Nel carrello c'è merce di ${soc.map(_nomeSoc).join(" e ")}. In questo negozio la cassa è una sola, e la seconda società non ha un registratore su cui uscire. Togli una delle due e falla in una vendita a parte.`, dove: "carrello" }); }
     // ── il ramo SOLA MARGINALITÀ ha guardie tutte sue (dentro saveMargOnly):
     //    era rimasto fuori, quindi il suo bottone restava verde comunque
     if (margFlow && !brand) {
@@ -7299,9 +7323,9 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
        scarta il coupon dopo che il cliente ha già pagato lo scontato. */
     {
       const _soc = societaInCarrello(margList);
-      if (_soc.length > 1) {
+      if (_soc.length > 1 && !localeDueCasse) {
         setShowCart(true);
-        sT(`⛔ Nel carrello c'è merce di ${_soc.map(_nomeSoc).join(" e ")}: sono due società e servono due scontrini. Togli una delle due e falla in una vendita a parte.`);
+        sT(`⛔ Nel carrello c'è merce di ${_soc.map(_nomeSoc).join(" e ")}. In questo negozio la cassa è una sola, e la seconda società non ha un registratore su cui uscire. Togli una delle due e falla in una vendita a parte.`);
         return;
       }
     }
@@ -7930,7 +7954,7 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
   const saveMargOnly=async()=>{
     { // due società non si scontrinano insieme: vale anche qui
       const _soc = societaInCarrello(margItems);
-      if (_soc.length > 1) { sT(`⛔ Nel carrello c'è merce di ${_soc.map(_nomeSoc).join(" e ")}: sono due società e servono due scontrini.`); margLock.current=false; return; }
+      if (_soc.length > 1 && !localeDueCasse) { sT(`⛔ Nel carrello c'è merce di ${_soc.map(_nomeSoc).join(" e ")}. In questo negozio la cassa è una sola, e la seconda società non ha un registratore su cui uscire.`); margLock.current=false; return; }
     }
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); margLock.current=false;return; }
