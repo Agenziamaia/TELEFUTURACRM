@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
+import { eliminaFileMulti } from "@/lib/fileUrl";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -2465,7 +2466,7 @@ function UserAttachments({ userId }: { userId: string }) {
     };
 
     const remove = async (a: Attachment) => {
-        if (a.storage_path) await supabase.storage.from(ATT_BUCKET).remove([a.storage_path]);
+        if (a.storage_path) await eliminaFileMulti(ATT_BUCKET, [a.storage_path]);
         await supabase.from("user_attachments").delete().eq("id", a.id);
         load();
     };

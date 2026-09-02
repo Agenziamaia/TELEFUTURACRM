@@ -26,7 +26,7 @@
 // Salvarlo vorrebbe dire tenersi una fotografia che invecchia da sola.
 
 import { supabase } from "@/lib/supabaseClient";
-import { fileUrlDa } from "@/lib/fileUrl";
+import { fileUrlDa, eliminaFileMulti } from "@/lib/fileUrl";
 import { caricaDirezione, type DirBrandId } from "@/lib/direzioneTargets";
 
 export type RigaUfficiale = { cod_gara: string; pista: string; punti: number | null; pezzi: number | null };
@@ -220,7 +220,7 @@ export async function salvaAvanzamento(opts: {
     const { error: ePul } = await supabase.from("avanzamenti_ufficiali")
         .delete().eq("brand", opts.brand).eq("month", opts.monthISO).eq("al", opts.al)
         .in("pista", pisteToccate).lt("created_at", adesso);
-    if (daButtare.length) await supabase.storage.from("avanzamenti-files").remove(daButtare);
+    if (daButtare.length) await eliminaFileMulti("avanzamenti-files", daButtare);
     scordaConfronto(opts.brand, opts.monthISO);
     // i numeri nuovi ci sono comunque: della pulizia mancata si avvisa e basta
     if (ePul) return { ok: true, n: righe.length, avviso: "salvati, ma non ho potuto togliere i resti del caricamento precedente: ricontrolla lo storico" };
@@ -280,7 +280,7 @@ export async function eliminaAvanzamento(brand: string, monthISO: string, al: st
     const percorsi = [...new Set(((fogli ?? []) as { file_path: string }[]).map((r) => r.file_path))];
     const { error } = await supabase.from("avanzamenti_ufficiali")
         .delete().eq("brand", brand).eq("month", monthISO).eq("al", al);
-    if (!error && percorsi.length) await supabase.storage.from("avanzamenti-files").remove(percorsi);
+    if (!error && percorsi.length) await eliminaFileMulti("avanzamenti-files", percorsi);
     scordaConfronto(brand, monthISO);
     return error ? { ok: false, errore: error.message } : { ok: true };
 }

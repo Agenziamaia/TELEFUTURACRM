@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { eliminaFileMulti } from "@/lib/fileUrl";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -158,7 +159,7 @@ export function StoreAttachments({ storeId }: { storeId: string }) {
     };
 
     const del = async (a: StoreAtt) => {
-        if (a.storage_path) await supabase.storage.from(STORE_BUCKET).remove([a.storage_path]);
+        if (a.storage_path) await eliminaFileMulti(STORE_BUCKET, [a.storage_path]);
         const { error } = await supabase.from("store_attachments").delete().eq("id", a.id);
         if (!dbError("Eliminazione allegato", error)) notify("Allegato eliminato", "ok");
         setConfirmDel(null);

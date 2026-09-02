@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { eliminaFileMulti } from "@/lib/fileUrl";
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
     Folder,
@@ -1093,7 +1094,7 @@ export default function DocumentazionePage() {
                                 <button
                                     onClick={async () => {
                                         const doc = adminAct.doc;
-                                        if (doc.file_path) await supabase.storage.from("documentation").remove([doc.file_path]);
+                                        if (doc.file_path) await eliminaFileMulti("documentation", [doc.file_path]);
                                         await supabase.from("documentation").delete().eq("id", doc.id);
                                         await fetchDocs();
                                         setAdminAct(null);

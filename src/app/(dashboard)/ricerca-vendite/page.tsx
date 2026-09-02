@@ -23,7 +23,7 @@ import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, capAllowed, CAP_RICERCA_MODIFICA, CAP_RICERCA_EXTRA, CAP_RICERCA_NON_VALIDA } from "@/lib/capabilities";
 import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento } from "@/lib/matchAppuntamento";
-import { percorsoDaUrl } from "@/lib/fileUrl";
+import { percorsoDaUrl, eliminaFileMulti } from "@/lib/fileUrl";
 
 interface ContrattoRow {
     id: string;
@@ -1393,7 +1393,7 @@ export default function RicercaContratto() {
             // veniva cancellato SENZA conteggio (l'opposto del best-effort)
             if (!cntErr && count === 0) {
                 const path = percorsoDaUrl(a.file_url, "contracts");
-                if (path) await supabase.storage.from("contracts").remove([path]);
+                if (path) await eliminaFileMulti("contracts", [path]);
             }
         } catch { /* best-effort */ }
         // 3) traccia nella storia del contratto, come le altre modifiche dirette

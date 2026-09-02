@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
+import { eliminaFileMulti } from "@/lib/fileUrl";
 import { createPortal } from "react-dom";
 import { CercaOCreaCliente } from "@/components/CercaOCreaCliente";
 import FirmaUsato, { type FirmaInfo } from "@/components/FirmaUsato";
@@ -647,7 +648,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
         return coda || (s.startsWith("http") ? null : s);
       };
       const daTogliere = [pathDa(dev.allegato_documento), pathDa(dev.allegato_dichiarazione), dev.pagamento?.bonifico_contabile?.path || null].filter(Boolean) as string[];
-      if (daTogliere.length) { try { await supabase.storage.from("usati_attachments").remove(daTogliere); } catch { /* best-effort */ } }
+      if (daTogliere.length) { try { await eliminaFileMulti("usati_attachments", daTogliere); } catch { /* best-effort */ } }
       onDeleted(dev.id);
     } catch (e) { alert("Eliminazione NON riuscita: " + String((e as Error)?.message || e)); setEliminando(false); }
   };
@@ -821,10 +822,10 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
       const esito = await Promise.resolve(onSave(upd));
       if (esito) {
         setDev(prev => ({ ...prev, pagamento: { ...prev.pagamento, bonifico_contabile: cur.pagamento.bonifico_contabile || null } }));
-        try { await supabase.storage.from("usati_attachments").remove([path]); } catch { /* best-effort */ }
+        try { await eliminaFileMulti("usati_attachments", [path]); } catch { /* best-effort */ }
         alert("Salvataggio non riuscito: " + esito + " — il file non è stato archiviato, riprova.");
       } else if (vecchio && vecchio !== path) {
-        try { await supabase.storage.from("usati_attachments").remove([vecchio]); } catch { /* best-effort */ }
+        try { await eliminaFileMulti("usati_attachments", [vecchio]); } catch { /* best-effort */ }
       }
     } catch (e) { alert("Caricamento contabile non riuscito: " + (e instanceof Error ? e.message : "errore")); }
     setContabileBusy(false);
@@ -1493,7 +1494,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         try {
           for (const f of files) {
             const marker = "/qr-uploads/"; const i = String(f.url).indexOf(marker);
-            if (i >= 0) await supabase.storage.from("qr-uploads").remove([decodeURIComponent(String(f.url).slice(i + marker.length))]);
+            if (i >= 0) await eliminaFileMulti("qr-uploads", [decodeURIComponent(String(f.url).slice(i + marker.length))]);
           }
         } catch { }
         try { await supabase.from("qr_uploads").delete().eq("token", qrToken); } catch { }
@@ -2213,7 +2214,7 @@ function GestioneUsatiInner() {
   };
   const rimuoviFileBon = async (path: string | null) => {
     if (!path) return;
-    try { await supabase.storage.from("usati_attachments").remove([path]); } catch { /* best-effort */ }
+    try { await eliminaFileMulti("usati_attachments", [path]); } catch { /* best-effort */ }
   };
   // salvataggio MIRATO del solo jsonb pagamento (rilievo revisore 25/08):
   // niente riscrittura a riga intera da snapshot — le modifiche concorrenti su

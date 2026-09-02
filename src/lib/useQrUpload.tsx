@@ -11,6 +11,7 @@
    smontaggio del componente che usa l'hook. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { eliminaFileMulti } from "@/lib/fileUrl";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { supabase } from "@/lib/supabaseClient";
@@ -64,7 +65,7 @@ export function useQrUpload(onFiles: (files: File[]) => void) {
                 try {
                     for (const f of files) {
                         const marker = "/qr-uploads/"; const i = String(f.url).indexOf(marker);
-                        if (i >= 0) await supabase.storage.from("qr-uploads").remove([decodeURIComponent(String(f.url).slice(i + marker.length))]);
+                        if (i >= 0) await eliminaFileMulti("qr-uploads", [decodeURIComponent(String(f.url).slice(i + marker.length))]);
                     }
                 } catch { /* staging orfano: scade da solo */ }
                 try { await supabase.from("qr_uploads").delete().eq("token", token); } catch { /* idem */ }

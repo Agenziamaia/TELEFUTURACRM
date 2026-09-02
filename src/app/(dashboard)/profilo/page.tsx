@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { eliminaFile, percorsoDaUrl } from "@/lib/fileUrl";
 import { CAMPI_PROFILO, campiMancanti, caricaProfilo, type RigaProfilo } from "@/lib/profilo";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
 import { civicoMancante } from "@/components/IndirizzoAutocomplete";
@@ -116,7 +117,11 @@ export default function ProfiloPage() {
                cambiare: stesso identico difetto degli allegati WhatsApp.
                Con l'istante nel nome, ogni foto è un file nuovo — e la
                precedente si cancella dopo, quando la nuova è al sicuro. */
-            const vecchia = String(avatarUrl || "").split("/avatars/")[1]?.split("?")[0] || null;
+            /* ⚠️ IL PERCORSO SI RICAVA CON L'AIUTANTE DI CASA, che conosce tutte
+               e quattro le forme di indirizzo esistenti nel database: uno
+               `split` scritto a mano è una seconda copia della stessa regola,
+               e la copia sbagliata cancellerebbe il file di qualcun altro. */
+            const vecchia = percorsoDaUrl(avatarUrl, "avatars") || null;
             const path = `${user.id}-${Date.now()}.jpg`;
             const up = await supabase.storage.from("avatars").upload(path, blob, { contentType: "image/jpeg" });
             if (up.error) {
@@ -127,9 +132,10 @@ export default function ProfiloPage() {
             }
             /* la vecchia si toglie solo ora: se si cancellasse prima e il
                caricamento fallisse, l'utente resterebbe senza foto */
-            if (vecchia && vecchia !== path) await supabase.storage.from("avatars").remove([vecchia]).catch(() => {});
+            if (vecchia && vecchia !== path) await eliminaFile("avatars", vecchia);
             const { data: pub } = supabase.storage.from("avatars").getPublicUrl(path);
-            // ?v=timestamp: il path e' sempre lo stesso, cosi' la cache del browser non mostra la foto vecchia
+            // ?v=timestamp: resta per non far vedere alla cache la foto di prima
+            // nei punti che tengono in memoria l'indirizzo vecchio
             const nuovaUrl = `${pub.publicUrl}?v=${Date.now()}`;
             const { error } = await supabase.from("app_users").update({ avatar_url: nuovaUrl }).eq("id", user.id);
             if (error) {
@@ -153,7 +159,13 @@ export default function ProfiloPage() {
         if (!user?.id || avatarBusy) return;
         setAvatarBusy(true);
         try {
-            try { await supabase.storage.from("avatars").remove([`${user.id}.jpg`]); } catch { /* best-effort */ }
+            /* ⚠️ IL PERCORSO VERO, non `<id>.jpg`. Da quando ogni foto è un file
+               nuovo col suo istante, questo puntava a un file che non esiste
+               più: l'indirizzo si azzerava — la persona vedeva le iniziali e
+               credeva di aver cancellato — e la foto restava nel deposito,
+               scaricabile da chiunque sia dentro il CRM. */
+            const daTogliere = percorsoDaUrl(avatarUrl, "avatars");
+            if (daTogliere) await eliminaFile("avatars", daTogliere);
             const { error } = await supabase.from("app_users").update({ avatar_url: null }).eq("id", user.id);
             if (error) { setMsg("⚠ Rimozione non riuscita: " + error.message); return; }
             setAvatarUrl(null);

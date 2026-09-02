@@ -15,6 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 "use client";
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
+import { eliminaFileMulti } from "@/lib/fileUrl";
 import { rigaConImei } from "@/lib/rigaScontrino";
 import { createPortal } from "react-dom";
 import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
@@ -5264,7 +5265,7 @@ function CRM() {
         try {
           for (const f of files) {
             const marker = "/qr-uploads/"; const i = String(f.url).indexOf(marker);
-            if (i >= 0) await supabase.storage.from("qr-uploads").remove([decodeURIComponent(String(f.url).slice(i + marker.length))]);
+            if (i >= 0) await eliminaFileMulti("qr-uploads", [decodeURIComponent(String(f.url).slice(i + marker.length))]);
           }
         } catch { }
         try { await supabase.from("qr_uploads").delete().eq("token", qrToken); } catch { }

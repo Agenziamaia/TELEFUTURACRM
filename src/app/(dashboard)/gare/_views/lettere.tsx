@@ -8,6 +8,7 @@
 // La card vive nella pagina Gare del brand, lato azienda.
 
 import { useEffect, useRef, useState } from "react";
+import { eliminaFileMulti } from "@/lib/fileUrl";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { isAdminOrAbove } from "@/lib/roles";
@@ -56,7 +57,7 @@ export function LettereGara({ brand, month, colore = "var(--tf-f59e0b)" }) {
 
     const elimina = async (r) => {
         if (!confirm(`Eliminare la lettera «${r.filename}» di ${meseIt(r.month)}?`)) return;
-        await supabase.storage.from("contracts").remove([r.path]);
+        await eliminaFileMulti("contracts", [r.path]);
         await supabase.from("gare_lettere").delete().eq("id", r.id);
         carica();
     };

@@ -49,3 +49,43 @@ export function percorsoDaUrl(u: string | null | undefined, deposito: string): s
     }
     return "";
 }
+
+/* ═══ CANCELLARE UN FILE, DAL BROWSER ═════════════════════════════════════
+   ⚠️ NON SI USA PIÙ `supabase.storage.remove()` DA QUI. Dal 31/08, con i
+   depositi chiusi al pubblico, quella chiamata non cancella niente: una DELETE
+   con un `where` pretende anche una policy di lettura, e senza nessuna il
+   controllo diventa un «falso» fisso. Postgres non protesta — cancella zero
+   righe — e il client risponde `200 []`, quindi il codice crede di aver
+   fatto e va avanti. Sedici punti del CRM ci sono cascati in silenzio per
+   giorni, e nel deposito di transito dei documenti dei clienti sono rimasti
+   477 file per 512,7 MB che dovevano sparire subito.
+
+   La cancellazione passa dal custode, come la lettura: stesse regole, stessa
+   porta, e un esito che si può guardare. */
+export async function eliminaFile(deposito: string, percorso: string): Promise<{ ok: boolean; errore?: string }> {
+    const p = String(percorso || "").replace(/^\/+/, "");
+    if (!deposito || !p) return { ok: false, errore: "percorso mancante" };
+    try {
+        const r = await fetch(fileUrlDa(deposito, p), { method: "DELETE" });
+        if (r.ok) return { ok: true };
+        const j = await r.json().catch(() => ({}));
+        return { ok: false, errore: (j as { error?: string })?.error || `errore ${r.status}` };
+    } catch (e) {
+        return { ok: false, errore: (e as Error)?.message || "cancellazione non riuscita" };
+    }
+}
+
+/** Come sopra, partendo dall'indirizzo salvato invece che dal percorso. */
+export async function eliminaFileDaUrl(url: string | null | undefined, deposito: string) {
+    return eliminaFile(deposito, percorsoDaUrl(url, deposito));
+}
+
+/** Più file in un colpo, con la stessa forma di `supabase.storage.remove()`
+ *  così i punti che la usavano cambiano una parola e basta.
+ *  ⚠️ Restituisce `{ error }` come faceva quella — ma stavolta un errore vero
+ *  ci arriva davvero, invece di un `200 []` che sembra un successo. */
+export async function eliminaFileMulti(deposito: string, percorsi: string[]): Promise<{ error: { message: string } | null }> {
+    const esiti = await Promise.all((percorsi || []).map((x) => eliminaFile(deposito, x)));
+    const ko = esiti.filter((e) => !e.ok);
+    return { error: ko.length ? { message: ko.map((e) => e.errore).join(" · ") } : null };
+}

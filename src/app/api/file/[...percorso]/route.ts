@@ -126,3 +126,61 @@ export async function GET(request: Request, ctx: { params: Promise<{ percorso: s
         headers: { "Cache-Control": "private, max-age=0, no-store" },
     });
 }
+
+/* ═══ CANCELLARE UN FILE ══════════════════════════════════════════════════
+   ⚠️ DAL 31/08 IL BROWSER NON CANCELLAVA PIÙ NIENTE, IN SILENZIO. La
+   migrazione che ha chiuso i depositi diceva «qui si toglie la LETTURA, non la
+   scrittura» — ed è vero per un inserimento nudo, ma non per una cancellazione:
+   una DELETE con un `where` sulle colonne della tabella pretende anche una
+   policy di SELECT, e senza nessuna quel controllo diventa un «falso» fisso.
+   Postgres non dà errore: cancella zero righe. E il client risponde `200 []`,
+   quindi il codice e la persona vedono «fatto».
+
+   MISURATO: nel deposito di transito dei documenti che i clienti mandano dal
+   telefono (`qr-uploads`), dove ogni file va cancellato subito dopo essere
+   stato importato nella pratica, sono rimasti 477 file per 512,7 MB, tutti dal
+   31/08 in poi. Prima ne sopravvivevano meno di sette al giorno.
+
+   Quindi la cancellazione passa da qui, come la lettura: stesse regole, stessa
+   porta, chiave di servizio. Aggiungere una policy di SELECT avrebbe rimesso
+   in piedi il buco chiuso il 31/08 — chiunque sia dentro il CRM potrebbe
+   elencare e scaricare i file di tutti. */
+export async function DELETE(request: Request, ctx: { params: Promise<{ percorso: string[] }> }) {
+    if (!serviceRolePresente()) {
+        return NextResponse.json({ error: "Chiave di servizio assente: non posso cancellare." }, { status: 500 });
+    }
+    const g = await accesso(request, "file");
+    if (!g.ok) return g.risposta;
+    const sess = g.sess;
+
+    const { percorso } = await ctx.params;
+    const deposito = String(percorso?.[0] || "");
+    const dentro = (percorso || []).slice(1).map((s) => decodeURIComponent(s)).join("/");
+    if (!deposito || !dentro) return NextResponse.json({ error: "Percorso incompleto." }, { status: 400 });
+
+    const regola = REGOLE[deposito];
+    if (!regola) return NextResponse.json({ error: "Deposito sconosciuto." }, { status: 404 });
+
+    /* ⚠️ CHI PUÒ CANCELLARE È CHI PUÒ VEDERE, non di meno: le regole sono le
+       stesse della lettura, così non nascono due verità che fra sei mesi
+       divergono. Per la posta e per WhatsApp il controllo lo fa il database. */
+    if (regola === "casella" || regola === "numero") {
+        const { data, error } = await supabaseAdmin.rpc("tf_puo_vedere_file", {
+            p_utente: sess.id, p_deposito: deposito, p_cartella: cartellaConversazione(dentro),
+        });
+        if (error) return NextResponse.json({ error: "Controllo non riuscito." }, { status: 500 });
+        if (data !== true) return NextResponse.json({ error: "Questo file non è tuo." }, { status: 403 });
+    }
+    /* ⚠️ LA FOTO PROFILO È DI CHI CE L'HA. Il deposito `avatars` è aperto in
+       cancellazione a chiunque sia dentro il CRM, e il percorso arriva dal
+       browser: senza questo, chiunque potrebbe cancellare la foto di un
+       collega passando il suo percorso. Il nome del file comincia con l'id
+       della persona, ed è quello che si controlla. */
+    if (deposito === "avatars" && !dentro.startsWith(sess.id)) {
+        return NextResponse.json({ error: "Questa foto non è tua." }, { status: 403 });
+    }
+
+    const { error } = await supabaseAdmin.storage.from(deposito).remove([dentro]);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+}
