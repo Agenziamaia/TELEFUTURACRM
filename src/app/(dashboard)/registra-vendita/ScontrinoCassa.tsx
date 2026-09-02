@@ -346,6 +346,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     // (b) Commit differito: lo scontrino è emesso ma il salvataggio a DB è fallito →
     // si offre il retry del SOLO salvataggio (senza riemettere lo scontrino).
     const [commitFail, setCommitFail] = useState(false);
+    /* CHE COSA È ANDATO STORTO. Senza distinguerlo, dopo un incasso fallito il
+       pulsante diceva «Ristampa scontrino» e la seconda pressione saltava
+       l'incasso (che risultava «fatto») andando dritta alla stampa: uno
+       scontrino emesso senza aver preso i soldi. Con una ricarica dentro
+       sarebbe anche partita l'erogazione (Luca 02/09). */
+    const [erroreDi, setErroreDi] = useState<"" | "pagamento" | "scontrino">("");
     // Annulla incasso (spec Francesco 31/08): un flag che ferma l'attesa dei contanti
     // dal CRM. Ref e non stato: il loop di poll lo legge subito, senza aspettare un re-render.
     const cancelCashRef = useRef(false);
@@ -374,8 +380,8 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         const tel = data?.telefoni || [];
         setImporti(Object.fromEntries(tel.map(t => [t.chiave, { anticipo: "", resto: "", forma: DOMANDE_TELEFONO[t.modo].forma || "" }])));
         setFase(tel.length ? "telefoni" : "scelta"); setIncassato(0); setResto(0);
-        setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
-        setAssegna({}); setRighePerAz({}); setCassaPerAz({}); cashFatti.current = {};
+        setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false); setErroreDi("");
+        setAssegna({}); setRighePerAz({});
         setAziende([]); setAziendaSel(null);
         setCouponInput("");
         setCoupon(cIn ? { code: cIn.code, valore: Number(cIn.valore) || 0, sconto: sc } : null);
@@ -477,14 +483,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     const _chiaveRiga = (i: RigaScontrino, k: number) => `${i.productId || i.codice || i.description}|${k}`;
     const [assegna, setAssegna] = useState<Record<string, string>>({});
     const [righePerAz, setRighePerAz] = useState<Record<string, RigaPagamento[]>>({});
-    const [cassaPerAz, setCassaPerAz] = useState<Record<string, string>>({});
     /* QUALI INCASSI SONO GIÀ ANDATI. Ref e non stato: fra il primo incasso e il
        secondo non c'è un re-render, e uno stato letto qui sarebbe ancora quello
        di prima — cioè il primo cassetto si riaprirebbe. */
-    const cashFatti = useRef<Record<string, boolean>>({});
     /* UN SOLO GIRO PER VOLTA. `conferma` non aveva nessun lucchetto: due clic
-       nello stesso istante superavano entrambi la guardia di `cashFatti`, che
-       si scrive dopo due `await`, e la macchina si apriva DUE volte. */
+       nello stesso istante superavano entrambi la guardia dell'incasso, che si
+       scrive dopo due `await`, e la macchina si apriva DUE volte. */
     const inCorso = useRef(false);
 
     /* LE SOCIETÀ CHE LA MERCE IMPONE. Solo quelle: se in carrello ci sono solo
@@ -575,12 +579,6 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     /* OGNI SEZIONE NASCE COL SUO IMPORTO GIÀ SCRITTO e col cassetto della sua
        insegna: è la risposta giusta nove volte su dieci, e chi vuole cambiarla
        la cambia. Si rifà quando cambiano gli importi, non a ogni respiro. */
-    /* LA FIRMA COMPRENDE ANCHE IL NEGOZIO. `aziende` arriva dal database DOPO
-       il primo render: senza il negozio nella firma l'effetto non rigirava, e
-       `cassaPerAz` restava col ripiego del primo giro — cioè a Magliana i
-       contanti di Telefutura 2 finivano nel cassetto di Magliana W3.
-       E il ripiego giusto è IL NEGOZIO IN CUI SI STA, non quello della
-       società: «faccio pagare il cliente da me» (Luca 31/08). */
     const _firmaSez = sezioni.map((s2) => `${s2.azienda}:${s2.totale}:${s2.negozio}`).join("|");
     useEffect(() => {
         if (!sezioni.length) return;
@@ -601,14 +599,6 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 out[s2.azienda] = resta > 0.004
                     ? [{ forma: v?.[0]?.forma || "", importo: resta }, ...fisse]
                     : [...fisse];
-            });
-            return out;
-        });
-        setCassaPerAz((vecchie) => {
-            const out: Record<string, string> = {};
-            sezioni.forEach((s2) => {
-                out[s2.azienda] = vecchie[s2.azienda]
-                    || (insegne.includes(data?.negozio || "") ? (data?.negozio as string) : s2.negozio);
             });
             return out;
         });
@@ -779,27 +769,28 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
             return;
         }
-        /* ═══ DUE SEZIONI = DUE INCASSI, ognuno sul suo cassetto ═══════════
-           `cashFatti` tiene il conto di quali sono già andati: se il secondo
-           fallisce e l'operatore riprova, il primo NON si ripete — i soldi
-           erano già nel cassetto, e chiederli due volte è il difetto peggiore
-           che questa finestra possa avere. */
-        if (multiSocieta) {
-            for (const s2 of sezioni) {
-                const q = contantiDi(s2.azienda);
-                if (q <= 0 || cashFatti.current[s2.azienda]) continue;
-                if (chk?.testMode) { cashFatti.current[s2.azienda] = true; continue; }
-                const r = await incassaContanti(q, cassaPerAz[s2.azienda] || s2.negozio);
+        /* ⭐ UN SOLO CASSETTO, ANCHE CON DUE SCONTRINI (Luca 02/09): «quando
+           selezionano cash, anche se sono due scontrini, l'importo va incassato
+           su una sola cash machine, non su due, perché non ha senso».
+           Ha ragione: il cliente tira fuori i soldi una volta sola, e la
+           macchina calcola il resto sul totale. Chiedendone due, a Magliana la
+           prima ha preso 5 € e reso 3, la seconda non si è mai accesa e la
+           vendita è rimasta in mezzo al guado. Gli scontrini restano due —
+           quelli li impone la partita IVA — l'incasso no. */
+        if (multiSocieta && contantiTotali > 0 && !cashDone) {
+            if (chk?.testMode) {
+                setIncassato(contantiTotali); setResto(0); setCashDone(true); setPaidCash(contantiTotali);
+            } else {
+                const r = await incassaContanti(contantiTotali, cassaSel || data.negozio);
                 if (!r || !r.ok) {
                     if (r?.cancelled) { setFase("scelta"); setMsg(""); return; }
-                    setFase("errore");
-                    setMsg(`${s2.label}: incasso non riuscito — ` + (r?.erroreMsg || "annullato"));
+                    setFase("errore"); setErroreDi("pagamento");
+                    setMsg("Incasso non riuscito: " + (r?.erroreMsg || "annullato") + ". Lo scontrino NON è stato emesso.");
                     return;
                 }
-                cashFatti.current[s2.azienda] = true;
-                setIncassato((v) => v + (r.incassato ?? q));
-                setResto((v) => v + (r.resto ?? 0));
-                setPaidCash((v) => v + q);
+                setIncassato(r.incassato ?? contantiTotali);
+                setResto(r.resto ?? 0);
+                setPaidCash(contantiTotali);
                 setCashDone(true);
             }
         }
@@ -815,8 +806,8 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 const r = await incassaContanti(cashRounded, cassaSel || data.negozio);
                 if (!r || !r.ok) {
                     if (r?.cancelled) { setFase("scelta"); setMsg(""); return; }  // annullato: si torna al pagamento
-                    setFase("errore");
-                    setMsg("Incasso non riuscito: " + (r?.erroreMsg || "annullato"));
+                    setFase("errore"); setErroreDi("pagamento");
+                    setMsg("Incasso non riuscito: " + (r?.erroreMsg || "annullato") + ". Lo scontrino NON è stato emesso.");
                     return;
                 }
                 setIncassato(r.incassato ?? cashRounded);
@@ -835,7 +826,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 }))])) : undefined);
         setEsclusi(Array.isArray(p.esclusi) ? p.esclusi : []);
         if (!p.ok) {
-            setFase("errore");
+            setFase("errore"); setErroreDi("scontrino");
             setMsg("Scontrino non emesso: " + (p.error || "errore"));
             return;
         }
@@ -1404,25 +1395,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                                 </div>
                                             )}
 
-                                            {/* IL CASSETTO, per questa sezione. Ogni insegna ha il suo:
-                                                di partenza è quello della società che emette, che è la
-                                                risposta giusta quasi sempre. */}
-                                            {contanti > 0 && insegne.length > 1 && (
-                                                <div>
-                                                    <p className="text-[11px] text-slate-500 mb-1.5">I {eur(contanti)} in contanti entrano nella cassa di…</p>
-                                                    <div className="flex gap-2">
-                                                        {insegne.map((n) => (
-                                                            <button key={n} type="button"
-                                                                onClick={() => setCassaPerAz((v) => ({ ...v, [s2.azienda]: n }))}
-                                                                className={"flex-1 py-2 rounded-xl border text-[11px] font-bold transition "
-                                                                    + ((cassaPerAz[s2.azienda] || s2.negozio) === n
-                                                                        ? "bg-emerald-500/25 border-emerald-400/60 text-white"
-                                                                        : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                                                                💶 {n}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
+                                            {contanti > 0 && (
+                                                <p className="text-[11px] text-slate-500">
+                                                    {eur(contanti)} in contanti — si incassano una volta sola, insieme all&apos;altro scontrino.
+                                                </p>
                                             )}
                                         </div>
                                     );
@@ -1536,9 +1512,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             scontrino esce comunque dal registratore della
                             società che possiede la merce: qui si sceglie solo
                             dove il cliente mette i soldi. */}
-                        {!multiSocieta && insegne.length > 1 && cashRounded > 0 && (
+                        {insegne.length > 1 && (multiSocieta ? contantiTotali : cashRounded) > 0 && (
                             <div>
-                                <p className="text-[11px] text-slate-500 mb-1.5">Il cliente paga alla cassa di…</p>
+                                <p className="text-[11px] text-slate-500 mb-1.5">
+                                    Il cliente paga {multiSocieta ? `i ${eur(contantiTotali)} in contanti ` : ""}alla cassa di…
+                                </p>
                                 <div className="flex gap-2">
                                     {insegne.map((n) => (
                                         <button key={n} type="button" onClick={() => setCassaSel(n)}
@@ -1553,7 +1531,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             </div>
                         )}
 
-                        {!multiSocieta && cashRounded > 0 && (
+                        {cashRounded > 0 && (
                             <p className="text-[11px] text-slate-500 text-center">
                                 La cassa automatica chiederà {eur(cashRounded)} in contanti ed erogherà il resto.
                                 {arrotondamento !== 0 && <> Arrotondamento {arrotondamento > 0 ? "+" : ""}{eur(arrotondamento)}.</>}
@@ -1631,12 +1609,34 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     <div className="space-y-3 text-center py-1">
                         <div className="text-4xl">⚠️</div>
                         <p className="text-rose-300 text-sm">{msg}</p>
-                        {cashDone && <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)} (quota {eur(paidCash)}). NON reincassare — usa «Ristampa scontrino».</p>}
+                        {/* ⭐ LO SCONTRINO SI FA SOLO DOPO CHE IL PAGAMENTO È
+                            CERTIFICATO (Luca 02/09): «se va in errore perché
+                            magari la cash non funziona, non deve chiedermi di
+                            ristampare lo scontrino, se no faccio uno scontrino
+                            senza aver incassato soldi — e se c'è una ricarica di
+                            mezzo erogo una ricarica quando il cliente non ha
+                            pagato».
+                            Prima il pulsante diceva «Ristampa scontrino» anche
+                            quando a fallire era l'INCASSO, e premendolo l'incasso
+                            veniva saltato perché risultava già fatto. */}
+                        {erroreDi === "pagamento" ? (
+                            <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2 text-left">
+                                <b>Lo scontrino non è stato emesso</b>, e non lo sarà finché l&apos;incasso non riesce.
+                                Prima di riprovare <b>guarda nel cassetto</b>: se la macchina i soldi li ha già presi,
+                                non farli mettere una seconda volta — chiudi qui e chiama l&apos;amministrazione.
+                            </p>
+                        ) : cashDone && (
+                            <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">
+                                Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)} (quota {eur(paidCash)}). NON reincassare — usa «Ristampa scontrino».
+                            </p>
+                        )}
                         <div className="flex gap-2">
                             <button type="button" onClick={chiudiConCautela} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Chiudi</button>
                             {commitFail
                                 ? <button type="button" onClick={retrySalvataggio} className="flex-1 primary-btn py-2.5 text-sm font-semibold">Salva vendita</button>
-                                : <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>}
+                                : erroreDi === "pagamento"
+                                    ? <button type="button" onClick={() => { setFase("scelta"); setMsg(""); setErroreDi(""); }} className="flex-1 primary-btn py-2.5 text-sm font-semibold">Torna al pagamento</button>
+                                    : <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>}
                         </div>
                     </div>
                 )}

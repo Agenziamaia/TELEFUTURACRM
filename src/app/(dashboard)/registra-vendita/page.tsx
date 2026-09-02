@@ -9631,22 +9631,14 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
         {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div className="rvCard" style={{borderLeft:"4px solid #28a745"}}>
           <div className="rvCardT" style={{color:"var(--tf-28a745)",marginBottom:14}}>🏪 Attribuzione</div>
           <div className="rvG3">
-            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/>{/* ⭐ IL NEGOZIO NON SI SCEGLIE PIÙ QUI (Luca 02/09): «la selezione del
-                negozio vicino al nome del venditore confonde i ragazzi e confonde
-                anche te, DEVE SPARIRE; l'unico parametro vero è il popup di login
-                che dice dove lavora quel collaboratore».
-                Aveva ragione anche sui fatti: da questo campo dipendono lo
-                scontrino, la cassa che incassa e il magazzino da cui esce la
-                merce, e lasciarlo aperto voleva dire che una svista al terzo
-                clic della giornata mandava uno scontrino sulla partita IVA
-                dell'altra società. Adesso si legge e basta: per cambiarlo si
-                cambia la dichiarazione del mattino, che è un gesto solo e
-                lascia traccia. */}
-            <div>
-              <div className="rvLab">Negozio</div>
-              <div className="rvIn rvIn-fermo">🏪 {selNeg || "—"}</div>
-              <div className="rvHint">Da «dove stai lavorando oggi». Per cambiarlo, cambia la dichiarazione.</div>
-            </div>
+            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/>{/* ⭐ IL NEGOZIO NON COMPARE PIÙ QUI (Luca 02/09, due volte: «DEVE
+                SPARIRE», e poi «la sezione che ti dicevo di togliere era proprio
+                questa»). L'avevo lasciato in sola lettura per far vedere dove
+                stava andando la vendita: sbagliato lo stesso, perché una riga in
+                più su cui non si può fare niente è comunque una riga da leggere,
+                e questa schermata si compila di fretta.
+                Il negozio della vendita è quello dichiarato la mattina in «dove
+                stai lavorando oggi», si vede lì, e da lì si cambia. */}
             <div><div className="rvLab">Data <span style={{color:"var(--tf-f87171)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} className="rvIn"/></div>
           </div>
         </div>}
