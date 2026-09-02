@@ -167,8 +167,14 @@ function matricolaDoc(result: string | null): string | null {
    capire se ha fatto uno scontrino è la risposta sbagliata, e su quella
    risposta uno rifà lo scontrino e batte due volte. */
 type Esito = { et: string; tono: string; spiega: string };
-function esitoDi(stato: string, result: string | null): Esito | null {
-    if (stato === "done") return null;
+function esitoDi(stato: string, result: string | null, tentativi = 1): Esito | null {
+    /* ⚠️ «RIEMESSO», non «emesso» (Luca 02/09): se ci sono voluti due
+       tentativi il documento è uscito, ma qualcosa era andato storto — e chi
+       guarda l'elenco deve vederlo senza aprire la riga. Un «emesso» pulito
+       su un documento rifatto nasconde proprio la cosa che si sta cercando. */
+    if (stato === "done") return tentativi > 1
+        ? { et: "riemesso", tono: "rvBadge-warn", spiega: `il primo tentativo non era andato a buon fine: il documento è uscito al tentativo n° ${tentativi}.` }
+        : null;
     if (stato === "pending") return { et: "in coda", tono: "rvBadge-warn", spiega: "è ancora in attesa che la cassa lo ritiri." };
     if (stato === "sent") return { et: "in stampa", tono: "rvBadge-warn", spiega: "la cassa l'ha ritirato e sta stampando: fra poco si saprà com'è andata." };
     if (stato === "error") {
@@ -185,6 +191,61 @@ function esitoDi(stato: string, result: string | null): Esito | null {
         return { et: "non uscito", tono: "rvBadge-ko", spiega: "la cassa ha risposto con un errore: il documento non è stato emesso." };
     }
     return { et: stato, tono: "rvBadge-empty", spiega: "" };
+}
+
+/* ═══ I TENTATIVI DELLO STESSO DOCUMENTO, IN UNA RIGA SOLA ═════════════════
+   Luca 02/09: «nel momento in cui uno scontrino fallisce e lo si rifà, non
+   deve generare una nuova riga: bisogna tenere il conto — che ne so, due
+   tentativi — e aggiornare l'esito dell'ultimo. Se sono stati fatti due
+   tentativi è chiaro che il primo è andato male, dopodiché l'esito può essere
+   "riemesso" e non "emesso", così mi fa capire che c'è stato un problema.
+   Comunque non deve generare due righe, sicuramente.»
+
+   A database i lavori restano due, ed è giusto: sono due tentativi di
+   documento fiscale, e se per caso fossero usciti entrambi la doppia
+   emissione deve restare visibile. Ma nell'elenco vanno letti come uno solo —
+   due righe identiche fanno pensare a due scontrini battuti, che è
+   esattamente la cosa da non far credere a chi sta controllando la cassa.
+
+   La riga che resta è la PRIMA (l'ora della vendita è quella), con l'esito e
+   il numero dell'ULTIMO tentativo: è l'ultimo che dice come sono andate le
+   cose adesso. */
+function uniscoTentativi(tutti: Doc[]): Doc[] {
+    const perId = new Map(tutti.map((d) => [d.id, d]));
+    /* la radice della catena: una ristampa può essere a sua volta ristampata,
+       quindi si risale finché si trova il primo tentativo. Il contatore è la
+       rete contro un anello di dati storti, che bloccherebbe la pagina. */
+    const radiceDi = (d: Doc): string => {
+        let cur = d, giri = 0;
+        while (cur.ristampaDi && perId.has(cur.ristampaDi) && giri++ < 20) cur = perId.get(cur.ristampaDi)!;
+        return cur.id;
+    };
+    const catene = new Map<string, Doc[]>();
+    for (const d of tutti) {
+        const k = radiceDi(d);
+        (catene.get(k) || catene.set(k, []).get(k)!).push(d);
+    }
+    const out: Doc[] = [];
+    for (const [radice, righe] of catene) {
+        const ordinate = [...righe].sort((a, b) => a.quando.localeCompare(b.quando));
+        const primo = ordinate.find((d) => d.id === radice) || ordinate[0];
+        const ultimo = ordinate[ordinate.length - 1];
+        out.push({
+            ...primo,
+            /* dall'ULTIMO tentativo: com'è andata, e il numero del documento
+               che è uscito davvero */
+            stato: ultimo.stato,
+            result: ultimo.result,
+            numero: ultimo.numero,
+            matricola: ultimo.matricola ?? primo.matricola,
+            tentativi: ordinate.length,
+            storia: ordinate.map((d) => ({ id: d.id, quando: d.quando, stato: d.stato, result: d.result })),
+        });
+    }
+    /* ⚠️ una catena che ha la radice FUORI dal periodo scelto resta comunque
+       una riga sola: la radice non si trova, quindi la ristampa fa catena per
+       conto suo — meglio una riga in più che una riga persa. */
+    return out.sort((a, b) => b.quando.localeCompare(a.quando));
 }
 
 type Doc = {
@@ -207,6 +268,16 @@ type Doc = {
     ristampaDi: string | null;   // se questo doc È una ristampa: id dell'originale
     righe: RigaDoc[];
     pagamenti: PagDoc[];
+    /* ⚠️ I TENTATIVI DI UNO STESSO DOCUMENTO STANNO IN UNA RIGA SOLA (Luca
+       02/09): «quando uno scontrino fallisce e lo si rifà non deve generare
+       una nuova riga; bisogna tenere il conto dei tentativi e aggiornare
+       l'esito dell'ultimo».
+       A database i lavori restano DUE — sono due tentativi di documento
+       fiscale e la tracciabilità non si tocca — ma qui si vedono come uno:
+       due righe uguali fanno pensare a due scontrini emessi, che è la cosa
+       peggiore da far credere a chi sta controllando la cassa. */
+    tentativi: number;
+    storia: { id: string; quando: string; stato: string; result: string | null }[];
 };
 
 const NOME_PAG: Record<number, string> = { 0: "Contanti", 1: "Assegno", 2: "Carta / elettronico", 3: "Ticket", 4: "Non riscosso" };
@@ -308,7 +379,7 @@ function Documenti() {
             /* LE PROVE DI COLLEGAMENTO FUORI SUBITO: «== CHECK COLLATINA W3 ==»
                e' il tasto che verifica se la cassa risponde, non un documento. */
             const lette = grezze.map(r => ({ r, x: leggiXml(r.request_xml) })).filter(o => !o.x.diagnostica);
-            setDocs(lette.map(({ r, x }) => {
+            setDocs(uniscoTentativi(lette.map(({ r, x }) => {
                 const m = (r.meta || {}) as Record<string, unknown>;
                 const { righe, pagamenti, totaleDichiarato } = x;
                 return {
@@ -335,8 +406,10 @@ function Documenti() {
                     azienda: (m.azienda as string) || null,
                     ristampaDi: (m.ristampaDi as string) || null,
                     righe, pagamenti,
+                    tentativi: 1,
+                    storia: [],
                 };
-            }));
+            })));
         } catch (e) {
             setErrore((e as Error)?.message || "non sono riuscito a leggere i documenti");
         } finally { setCaricando(false); }
@@ -451,7 +524,7 @@ function Documenti() {
             ...righe.map(d => [gg(d.quando), ora(d.quando), d.negozio,
                 d.storno ? "Annullo" : d.fiscale ? "Fiscale" : "Non fiscale",
                 d.numero || "", d.matricola || "", String(d.totale ?? "").replace(".", ","), d.cliente || "", d.operatore || "",
-                esitoDi(d.stato, d.result)?.et || "emesso", d.righe.map(r => r.descrizione).join(" + ")].join(";")),
+                esitoDi(d.stato, d.result, d.tentativi)?.et || "emesso", d.righe.map(r => r.descrizione).join(" + ")].join(";")),
         ].join("\n");
         const a = document.createElement("a");
         a.href = URL.createObjectURL(new Blob(["﻿" + righeCsv], { type: "text/csv;charset=utf-8" }));
@@ -549,9 +622,33 @@ function Documenti() {
        tabella, con trecento righe caricate, compare a migliaia di pixel dalla
        riga che l'ha aperto — cioè fuori schermo. */
     const dettaglio = (d: Doc) => {
-        const es = esitoDi(d.stato, d.result);
+        const es = esitoDi(d.stato, d.result, d.tentativi);
         return (
             <div className="rvDett">
+                {/* LA STORIA DEI TENTATIVI, quando ce n'è più di uno: chi controlla
+                    la cassa deve poter vedere che cosa è successo e quando, senza
+                    andarsi a cercare due righe diverse in elenco. */}
+                {d.tentativi > 1 && (
+                    <div className="rvNota rvNota-info">
+                        <div className="rvNota-t">🖨️ {d.tentativi} tentativi di stampa</div>
+                        {d.storia.map((t, i) => {
+                            const e2 = esitoDi(t.stato, t.result, 1);
+                            return (
+                                <div key={t.id} className="rvDettR">
+                                    <span className="rvTab-min">{i + 1}°</span>
+                                    <span>{new Date(t.quando).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                                    <span className={cn("rvBadge", e2 ? e2.tono : "rvBadge-ok")}>{e2 ? e2.et : "emesso"}</span>
+                                    {t.result && e2 && <span className="rvTab-min">{t.result.slice(0, 90)}</span>}
+                                </div>
+                            );
+                        })}
+                        <div className="rvNota-s">
+                            A registro i tentativi restano distinti — sono due invii al registratore, e
+                            se per caso fossero usciti entrambi la doppia emissione deve restare
+                            visibile. Qui si leggono come un documento solo.
+                        </div>
+                    </div>
+                )}
                 {es && (
                     <div className={cn("rvNota", es.tono === "rvBadge-ko" ? "rvNota-ko" : "rvNota-att")}>
                         <div className="rvNota-t">Questo documento è «{es.et}»</div>
@@ -787,7 +884,7 @@ function Documenti() {
                                 )}
                                 {righe.map(d => {
                                     const apertaQui = aperto === d.id;
-                                    const es = esitoDi(d.stato, d.result);
+                                    const es = esitoDi(d.stato, d.result, d.tentativi);
                                     return (
                                         <Fragment key={d.id}>
                                             <tr onClick={() => setAperto(apertaQui ? null : d.id)}
@@ -812,6 +909,14 @@ function Documenti() {
                                                                 : d.stato === "done" ? <span className="rvBadge rvBadge-ok">fiscale</span>
                                                                     : <span className="rvBadge rvBadge-empty">fiscale</span>}
                                                     {es && <span className={cn("rvBadge ml-1", es.tono)}>{es.et}</span>}
+                                                    {/* ⚠️ QUANTE VOLTE ci si è provati. Sta accanto all'esito
+                                                        perché è la stessa informazione: un documento uscito al
+                                                        secondo tentativo non è come uno uscito al primo. */}
+                                                    {d.tentativi > 1 && (
+                                                        <span className="rvBadge rvBadge-empty ml-1" title={`${d.tentativi} tentativi di stampa per questo documento`}>
+                                                            {d.tentativi} tentativi
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="rvTab-nome">
                                                     {d.righe.length
