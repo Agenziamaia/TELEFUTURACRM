@@ -49,8 +49,20 @@ const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Lug
    indietro» proprio nelle ore in cui uno le va a guardare. */
 const oggiISO = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const primoDelMese = () => oggiISO().slice(0, 8) + "01";
-/** il giorno di N giorni fa, in ora di Roma */
-const giornoMeno = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+/** il giorno (di Roma) in cui è stata fatta una ricarica.
+ *  ⚠️ `creata_il.slice(0,10)` è il giorno di GREENWICH: fra mezzanotte e le due
+ *  d'estate una vendita di stanotte risulterebbe di ieri — e con il
+ *  nascondimento delle già fatte, sparirebbe il giorno stesso in cui è nata. */
+const giornoRoma = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+/** il giorno di N giorni fa.
+ *  ⚠️ La sottrazione si fa sulla DATA, non sui millisecondi: la notte del
+ *  cambio dell'ora un giorno dura 23 o 25 ore, e `- n*86400000` sbagliava di
+ *  un giorno — «Ieri» impostava lo stesso periodo di «Oggi». */
+const giornoMeno = (n: number) => {
+    const [y, m, g] = oggiISO().split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1, g - n));
+    return d.toISOString().slice(0, 10);
+};
 const eur = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const eurC = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 2 });
 /* ⚠️ I COLORI VERI DEI MARCHI, gli stessi del resto del CRM (Luca 01/09:
@@ -227,23 +239,42 @@ export function PayStoreAdminView() {
        quanto si è incassato. Il periodo lo dicono i quattro numeroni in alto,
        la lista dice quello che si sta guardando adesso — e sotto la lista c'è
        scritto quante sono e quanto valgono. */
-    const rimastaIndietro = (r: Riga) => r.stato === "fallita" || (r.stato === "sospeso" && r.creata_il.slice(0, 10) < oggiS);
+    const rimastaIndietro = (r: Riga) => r.stato === "fallita" || (r.stato === "sospeso" && giornoRoma(r.creata_il) < oggiS);
     /* Ogni filtro è una funzione a sé, così il contatore di un pulsante si può
        calcolare CON GLI ALTRI FILTRI ATTIVI e senza il proprio.
        ⚠️ È la differenza fra un numero e una bugia: contando ogni pulsante
        sull'insieme intero, «Donna» + «senza scontrino» mostrava 7 sul quadrato
        e ZERO righe sotto. Il numero su un pulsante deve dire quante righe si
        vedranno premendolo. */
-    /* già fatta, e di un giorno che non è oggi */
+    /* ⚠️ «CHIUSA» NON VUOL DIRE SOLO CHE IL CREDITO È PARTITO. Lo stato parla
+       della ricarica; una riga può avere il credito erogato e restare aperta
+       sul FISCALE — misurato al primo giro: fra le 72 che nascondevo c'erano
+       2 clienti che avevano pagato e NON avevano lo scontrino, 2 di cui non si
+       sapeva se lo scontrino fosse uscito, e tutte e 8 le righe dell'archivio
+       finite sul reparto 3 invece che sull'1, cioè ricariche assoggettate a
+       IVA per sbaglio (art. 74). Sparivano proprio dal posto dove
+       l'amministrazione le deve trovare.
+       Si nasconde solo quello che non chiede più niente a nessuno: credito
+       partito, documento uscito, reparto giusto, numero scritto. */
     const chiusaVecchia = (r: Riga) =>
-        (r.stato === "ok_automatico" || r.stato === "ok_manuale") && r.creata_il.slice(0, 10) < oggiS;
+        (r.stato === "ok_automatico" || r.stato === "ok_manuale")
+        && r.scontrino_stato === "emesso"
+        && (r.reparto_usato == null || r.reparto_usato === 1)
+        && !!String(r.numero || "").trim()
+        && giornoRoma(r.creata_il) < oggiS;
     /* ⚠️ TRE MODI DI RIVEDERLE, e sono tutti espliciti: l'interruttore, il
        filtro sullo stato «ok» (chiederle è già chiedere di vederle), e il
        periodo che non arriva a oggi — cioè quando si torna indietro a
        guardare una giornata chiusa, dove nascondere le fatte vorrebbe dire
        mostrare una giornata vuota. */
-    const periodoPassato = periodo.a < oggiS;
-    const mostraTutte = mostraChiuse || periodoPassato || stato === "ok_automatico" || stato === "ok_manuale";
+    /* ⚠️ «TORNARE INDIETRO» È UN GESTO, NON UNA DATA. Avevo legato la
+       riapertura al periodo che FINISCE prima di oggi: così «7 giorni» e
+       «Mese» — che sono i modi normali di guardare indietro — continuavano a
+       nascondere, e l'unica scorciatoia che funzionava era «Ieri».
+       Ora è il gruppo «Quando» ad accendere l'interruttore: toccare il periodo
+       fra i filtri VUOL DIRE «fammi vedere tutto», ed è quello che Luca ha
+       chiesto. Resta un interruttore visibile, che si può rispegnere. */
+    const mostraTutte = mostraChiuse || periodo.a < oggiS || stato === "ok_automatico" || stato === "ok_manuale";
     const F = {
         chiuse: (r: Riga) => mostraTutte || !chiusaVecchia(r),
         negozio: (r: Riga) => !negoziSel || negoziSel.includes(String(r.negozio || "")),
@@ -257,7 +288,7 @@ export function PayStoreAdminView() {
     const righe = tutte.filter((r) => F.chiuse(r) && F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r));
     /* quante ne sta tenendo da parte: si dice, se no sembra che manchino */
     const nascoste = mostraTutte ? 0
-        : tutte.filter((r) => chiusaVecchia(r) && F.negozio(r) && F.origine(r) && F.allarme(r)).length;
+        : tutte.filter((r) => chiusaVecchia(r) && F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r)).length;
     /** quante righe resterebbero premendo questo pulsante, con quello che è
      *  già premuto adesso */
     /* ⚠️ `tranne` è una LISTA. Le pastiglie degli stati «ok» devono contare
@@ -266,15 +297,15 @@ export function PayStoreAdminView() {
     const quanteCon = (tranne: (keyof typeof F)[], cond: (r: Riga) => boolean) =>
         tutte.filter((r) => cond(r) && (Object.keys(F) as (keyof typeof F)[])
             .every((k) => tranne.includes(k) || F[k](r))).length;
-    /* ⚠️ I DUE ALLARMI SI CONTANO SUL PERIODO INTERO, dal server, quando non
-       c'è nessun altro filtro attivo: sono l'unica ragione per cui uno apre
-       questa schermata di fretta, e devono dire il numero vero anche se la
-       lista ne disegna un pezzo per volta. Con un filtro attivo, invece,
-       contano quello che il filtro lascia — se no promettono righe che non si
-       vedranno. */
-    const senzaAltri = !negoziSel && !stato && !origine;
-    const senzaScontrino = senzaAltri ? d.senzaScontrino : quanteCon(["allarme"], (r) => r.scontrino_stato === "errore");
-    const daGuardareDavvero = senzaAltri ? d.rimasteIndietro : quanteCon(["allarme"], rimastaIndietro);
+    /* ⚠️ I DUE ALLARMI CONTANO QUELLO CHE SI VEDRÀ, SEMPRE. Prima, a filtri
+       spenti, usavano i numeri del server — che non sanno del nascondimento:
+       il quadrato prometteva 9 righe senza scontrino e la lista ne mostrava 7.
+       E domani mattina, chiuse le sospese di oggi, avrebbe detto 9 su una
+       lista vuota. Il numero del server serviva quando la rotta mandava solo
+       200 righe; ora le manda tutte, e contare qui è insieme più semplice e
+       sempre coerente con l'elenco sotto. */
+    const senzaScontrino = quanteCon(["allarme"], (r) => r.scontrino_stato === "errore");
+    const daGuardareDavvero = quanteCon(["allarme"], rimastaIndietro);
     /* ⚠️ IL GRAFICO PARLA DI GIORNI, e le ore le mostra solo se gliele chiedi
        (Luca 02/09): «questo grafico deve darmi l'andamento giorno per giorno,
        poi nel momento in cui io clicco su un giorno a quel punto mi esplode
@@ -622,21 +653,25 @@ export function PayStoreAdminView() {
                                         { id: "7gg", et: "7 giorni", da: giornoMeno(6), a: oggiISO() },
                                         { id: "mese", et: "Mese", da: primoDelMese(), a: oggiISO() },
                                     ].map((v) => {
-                                        const on = tipoP === "range" && range.da === v.da && range.a === v.a;
+                                        /* ⚠️ SI CONFRONTA CON `periodo`, NON CON `range`: all'apertura
+                                           il periodo È il mese corrente, cioè esattamente quello che
+                                           imposta la pastiglia «Mese» — ma con `tipoP === "range"` non
+                                           si accendeva nessuna pastiglia. */
+                                        const on = periodo.da === v.da && periodo.a === v.a;
                                         return (
                                             <button key={v.id} aria-pressed={on}
-                                                onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); }}
+                                                onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); setMostraChiuse(true); }}
                                                 className={cn("rvPill rvPill-sm rvPill-tinta rvT-ambra", on && "rvPill-on")}>
                                                 {v.et}{on ? " ✓" : ""}
                                             </button>
                                         );
                                     })}
                                     <input type="date" value={periodo.da} max={oggiISO()} title="dal"
-                                        onChange={(e) => { setTipoP("range"); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
+                                        onChange={(e) => { setTipoP("range"); setMostraChiuse(true); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
                                         className="an-data glass-input px-2 py-1 rounded-lg text-xs" />
                                     <span className="text-[11px] text-slate-500">→</span>
                                     <input type="date" value={periodo.a} min={periodo.da} max={oggiISO()} title="al"
-                                        onChange={(e) => { setTipoP("range"); setRange({ da: periodo.da, a: e.target.value }); }}
+                                        onChange={(e) => { setTipoP("range"); setMostraChiuse(true); setRange({ da: periodo.da, a: e.target.value }); }}
                                         className="an-data glass-input px-2 py-1 rounded-lg text-xs" />
                                 </div>
                             </div>
@@ -701,7 +736,10 @@ export function PayStoreAdminView() {
                                         );
                                     })}
                                     {(negoziSel || stato || origine || allarme || operatore) && (
-                                        <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); setMostraChiuse(false); }}
+                                        <button /* ⚠️ NON rispegne «mostra le già fatte»: un pulsante che promette
+                                                di togliere filtri e fa vedere MENO righe di prima è la cosa
+                                                più confusa che possa fare. Quello è un filtro che allarga. */
+                                            onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
                                             className="rvPill rvPill-sm rvPill-via">✕ togli i filtri</button>
                                     )}
                                 </div>
@@ -736,7 +774,7 @@ export function PayStoreAdminView() {
                                                 nel periodo possono esserci nove ricariche senza
                                                 scontrino: su un documento fiscale mancante quella
                                                 frase è il giudizio sbagliato. */}
-                                            <small>{q.n ? q.sub : senzaAltri ? "tutto a posto" : "nessuna con questi filtri"}</small>
+                                            <small>{q.n ? q.sub : (negoziSel || stato || origine) ? "nessuna con questi filtri" : "tutto a posto"}</small>
                                         </button>
                                     );
                                 })}
@@ -771,18 +809,34 @@ export function PayStoreAdminView() {
                                     </span>
                                 )}
                             </h3>
-                            <span className="text-[11px] text-slate-500 tabular-nums">{eurC(righe.reduce((t, r) => t + Number(r.importo || 0), 0))}</span>
+                            {/* ⚠️ DI COSA PARLA QUESTO NUMERO. Con le già fatte nascoste
+                                qui si leggeva 778 € mentre il quadrato «Incassato» diceva
+                                1.710: 932 € di scarto, taciuto, senza aver premuto niente. */}
+                            <span className="text-[11px] text-slate-500 tabular-nums">
+                                {eurC(righe.reduce((t, r) => t + Number(r.importo || 0), 0))}
+                                {righe.length !== d.ultime.length ? " in elenco" : ""}
+                            </span>
                         </div>
                         {righe.length === 0 ? (
                             <div className="py-8 text-center">
                                 <p className="text-xs text-slate-500">
-                                    {d.ultime.length ? "Nessuna ricarica con questi filtri." : "Ancora nessuna ricarica registrata in questo periodo."}
+                                    {!d.ultime.length ? "Ancora nessuna ricarica registrata in questo periodo."
+                                        : nascoste > 0 && !negoziSel && !stato && !origine && !allarme
+                                            /* ⚠️ «vuoto» su un registro di soldi incassati è il messaggio
+                                                peggiore possibile: se sono tutte già fatte, si dice così. */
+                                            ? `Tutte le ricariche di questo periodo sono già state fatte nei giorni scorsi.`
+                                            : "Nessuna ricarica con questi filtri."}
                                 </p>
                                 {/* la via d'uscita sta dentro il vuoto, non venti righe più
                                     su: chi ci arriva sta cercando proprio quella */}
-                                {d.ultime.length > 0 && (
+                                {nascoste > 0 && (
+                                    <button onClick={() => setMostraChiuse(true)} className="rvPill rvPill-sm rvPill-tinta rvT-grigio mt-3">
+                                        👁 mostra le già fatte<span className="rvPillN">{nascoste}</span>
+                                    </button>
+                                )}
+                                {d.ultime.length > 0 && (negoziSel || stato || origine || allarme || operatore) && (
                                     <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
-                                        className="rvPill rvPill-sm rvPill-via mt-3">✕ togli i filtri</button>
+                                        className="rvPill rvPill-sm rvPill-via mt-3 ml-2">✕ togli i filtri</button>
                                 )}
                             </div>
                         ) : (
