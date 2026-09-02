@@ -88,6 +88,29 @@ function useFeriePendenti(userId: string | undefined, role: string | undefined):
     return n;
 }
 
+/** Pallino PAYSTORE (Luca 02/09): le ricariche «in sospeso», cioè quelle il
+ *  cui processo non si è concluso — scontrino mancante o messo in pausa, o
+ *  API non ancora collegata — e che quindi qualcuno deve caricare a mano.
+ *  Lo vede chi può aprire la sezione: se non ha il permesso, il conteggio
+ *  non arriva nemmeno (la rotta lo controlla) e il pallino non c'è. */
+function useRicaricheSospese(userId: string | undefined): number {
+    const [n, setN] = useState(0);
+    useEffect(() => {
+        if (!userId) { setN(0); return; }
+        let vivo = true;
+        const load = async () => {
+            try {
+                const r = await fetch("/api/paystore/sospese", { cache: "no-store" }).then((x) => x.json());
+                if (vivo) setN(r?.ok ? Number(r.sospese || 0) : 0);
+            } catch { /* pallino best-effort */ }
+        };
+        load();
+        const stop = visibleInterval(load, 120000);
+        return () => { vivo = false; stop(); };
+    }, [userId]);
+    return n;
+}
+
 function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps) {
     const pathname = usePathname();
     // auto-nascondi: "peek" = ricomparsa temporanea perche' il mouse e' sul bordo
@@ -430,6 +453,10 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
 function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const { user } = useAuth();
+    /* il conteggio delle ricariche da caricare a mano si legge QUI, dove si
+       disegna la voce: passarlo da fuori vorrebbe dire farlo attraversare tre
+       componenti per una cifra */
+    const ricaricheSospese = useRicaricheSospese(user?.id);
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
     // Le sezioni interne dell'hub seguono i permessi (default: roles del child,
@@ -545,6 +572,18 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                             />
                         )}
                         {c.name}
+                        {/* ⚠️ IL PALLINO DI PAYSTORE (Luca 02/09): quante ricariche
+                            aspettano di essere caricate a mano. Sta qui e non su
+                            «Amministrazione» perché è un lavoro di una sezione
+                            precisa, e chi lo deve fare deve vederlo senza aprire
+                            niente. Ambra come le ferie: è una coda da smaltire,
+                            non un guasto. */}
+                        {c.sez === "paystore" && ricaricheSospese > 0 && (
+                            <span title={`${ricaricheSospese} ricariche in sospeso: da caricare a mano`}
+                                className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center">
+                                {ricaricheSospese > 99 ? "99+" : ricaricheSospese}
+                            </span>
+                        )}
                     </Link>
                 );
             })}

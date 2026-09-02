@@ -73,7 +73,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null };
+type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null; scontrino_stato: string | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;
@@ -99,12 +99,26 @@ const SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" }
    Non descrivono COME è stata fatta, ma se il credito è partito — che è la
    sola domanda che conta quando il cliente ha già pagato. */
 const STATI: Record<string, { testo: string; colore: string; sfondo: string }> = {
-    da_fare: { testo: "da fare", colore: "text-amber-300", sfondo: "bg-amber-500/15 border-amber-400/40" },
-    fatta: { testo: "fatta", colore: "text-emerald-300", sfondo: "bg-emerald-500/15 border-emerald-400/40" },
+    /* «fatta» non bastava: dice che il credito è partito, non CHI l'ha fatto
+       partire. Con l'API accesa la differenza è tutta lì — l'automatico è la
+       norma, il manuale è l'eccezione da guardare (Luca 02/09). */
+    sospeso: { testo: "in sospeso", colore: "text-amber-300", sfondo: "bg-amber-500/15 border-amber-400/40" },
+    ok_automatico: { testo: "ok automatico", colore: "text-emerald-300", sfondo: "bg-emerald-500/15 border-emerald-400/40" },
+    ok_manuale: { testo: "ok manuale", colore: "text-teal-300", sfondo: "bg-teal-500/12 border-teal-400/35" },
     fallita: { testo: "NON partita", colore: "text-rose-300", sfondo: "bg-rose-500/15 border-rose-400/40" },
     annullata: { testo: "annullata", colore: "text-slate-500", sfondo: "bg-white/5 border-white/15" },
 };
-const ORDINE_STATI = ["da_fare", "fatta", "fallita", "annullata"];
+const ORDINE_STATI = ["sospeso", "ok_automatico", "ok_manuale", "fallita", "annullata"];
+
+/* Lo stato dello SCONTRINO, che è una cosa diversa dallo stato della ricarica:
+   il primo dice se il documento è uscito, il secondo se il credito è partito.
+   Verde tenue quando è tutto a posto — non deve attirare l'occhio: attira
+   quando c'è qualcosa da fare. */
+const SCONTRINO: Record<string, { testo: string; classe: string; nota: string }> = {
+    emesso: { testo: "emesso", classe: "text-emerald-400/80 bg-emerald-500/[0.08] border-emerald-500/25", nota: "il registratore ha stampato lo scontrino" },
+    errore: { testo: "NON uscito", classe: "text-rose-200 bg-rose-500/20 border-rose-400/50 font-bold", nota: "il lavoro di stampa è fallito: l'amministrazione deve verificare" },
+    in_pausa: { testo: "in pausa", classe: "text-amber-200 bg-amber-500/18 border-amber-400/45 font-bold", nota: "la vendita è stata messa da parte: lo scontrino non è ancora uscito" },
+};
 
 export function PayStoreAdminView() {
     const [tipoP, setTipoP] = useState<"mese" | "range">("mese");
@@ -164,7 +178,7 @@ export function PayStoreAdminView() {
        ricarica: lo scontrino che non è uscito (il cliente ha pagato e non ha
        il documento) e la riga finita su un reparto che non è l'1 (una
        ricarica assoggettata a IVA per sbaglio). */
-    const senzaScontrino = d.ultime.filter((r) => r.scontrino_emesso === false);
+    const senzaScontrino = d.ultime.filter((r) => r.scontrino_stato === "errore");
     const repartoStorto = d.ultime.filter((r) => r.reparto_usato != null && r.reparto_usato !== 1);
     /* le ricariche per ora della giornata, dalla prima all'ultima: si usa
        quando i giorni con vendite sono uno o due */
@@ -578,6 +592,7 @@ export function PayStoreAdminView() {
                                             <th className="text-right font-bold">Importo</th>
                                             <th className="text-left font-bold pl-3">Negozio</th>
                                             <th className="text-left font-bold">Chi</th>
+                                            <th className="text-left font-bold">Scontrino</th>
                                             {/* con quale partita IVA è uscita: è il dato per cui
                                                 esiste la regola delle due società di Donna */}
                                             <th className="text-left font-bold">Società</th>
@@ -608,9 +623,14 @@ export function PayStoreAdminView() {
                                                 </td>
                                                 <td className="text-right font-bold text-white tabular-nums">{eurC(r.importo)}</td>
                                                 <td className="pl-3 text-slate-400">{r.negozio || "—"}</td>
-                                                <td className="text-slate-400">
-                                                    {r.venditore || "—"}
-                                                    {r.scontrino_emesso === false && <span className="psNoScontrino" title="il registratore non ha stampato lo scontrino">🧾✕</span>}
+                                                <td className="text-slate-400">{r.venditore || "—"}</td>
+                                                <td>
+                                                    {r.scontrino_stato ? (
+                                                        <span title={SCONTRINO[r.scontrino_stato]?.nota}
+                                                            className={cn("inline-block px-2 py-0.5 rounded-lg border text-[10.5px] whitespace-nowrap", SCONTRINO[r.scontrino_stato]?.classe)}>
+                                                            {SCONTRINO[r.scontrino_stato]?.testo || r.scontrino_stato}
+                                                        </span>
+                                                    ) : <span className="text-slate-600 text-[11px]" title="non abbiamo trovato il lavoro di stampa di questa vendita">non risulta</span>}
                                                 </td>
                                                 <td className="text-slate-400">{SOCIETA[r.azienda || ""] || "—"}</td>
                                                 <td>

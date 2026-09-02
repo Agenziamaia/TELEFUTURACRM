@@ -27,6 +27,8 @@ type Riga = {
     con_attivazione: boolean | null;
     /* lo scontrino è uscito davvero? e con quale reparto? */
     scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null;
+    /* emesso · errore · in_pausa · null (non lo sappiamo) */
+    scontrino_stato: string | null;
 };
 
 const giorno = (iso: string) => iso.slice(0, 10);
@@ -142,10 +144,10 @@ async function recuperaScontrinate(da: string, a: string) {
 async function completaDalloScontrino(da: string, a: string) {
     try {
         const { data: righe } = await supabase.from("paystore_ricariche")
-            .select("id, negozio, creata_il, importo, numero, azienda, scontrino_emesso")
+            .select("id, negozio, creata_il, importo, numero, azienda, scontrino_stato")
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
             .limit(5000);
-        const daFare = (righe || []).filter((r) => !r.numero || !r.azienda || r.scontrino_emesso === null);
+        const daFare = (righe || []).filter((r) => !r.numero || !r.azienda || !r.scontrino_stato);
         if (!daFare.length) return;
 
         const { data: job } = await supabase.from("print_jobs")
@@ -158,6 +160,17 @@ async function completaDalloScontrino(da: string, a: string) {
 
         /* ogni riga di ricarica stampata, con il suo scontrino: importo e
            numero vengono dalla descrizione, che è quella che il cliente legge */
+        /* i conti messi da parte: servono a distinguere «lo scontrino non è
+           ancora uscito perché la vendita è in pausa» da «il registratore ha
+           fallito» */
+        const { data: sosp } = await supabase.from("pos_sospesi")
+            .select("negozio, created_at, stato")
+            .gte("created_at", new Date(new Date(da + "T00:00:00Z").getTime() - 3600000).toISOString())
+            .lte("created_at", new Date(new Date(a + "T23:59:59Z").getTime() + 3600000).toISOString())
+            .limit(5000);
+        const sospesiPerNegozio: Record<string, { t: number }[]> = {};
+        for (const x of sosp || []) (sospesiPerNegozio[String(x.negozio || "")] ||= []).push({ t: new Date(x.created_at).getTime() });
+
         type RigaStampata = { negozio: string; t: number; importo: number; numero: string; reparto: number; emesso: boolean; azienda: string | null; errore: string | null };
         const stampate: RigaStampata[] = [];
         const scontriniPerNegozio: Record<string, { t: number; emesso: boolean; azienda: string | null }[]> = {};
@@ -206,12 +219,21 @@ async function completaDalloScontrino(da: string, a: string) {
             const sc = (scontriniPerNegozio[String(r.negozio || "")] || []).filter(vicino);
             if (sc.length) {
                 const esiti = [...new Set(sc.map((x) => x.emesso))];
-                if (esiti.length === 1 && r.scontrino_emesso === null) {
+                if (esiti.length === 1 && !r.scontrino_stato) {
+                    patch.scontrino_stato = esiti[0] ? "emesso" : "errore";
                     patch.scontrino_emesso = esiti[0];
                     if (!esiti[0]) patch.scontrino_errore = "il registratore non ha stampato";
                 }
                 const soc = [...new Set(sc.map((x) => x.azienda).filter(Boolean))];
                 if (!r.azienda && soc.length === 1) patch.azienda = soc[0];
+            } else if (!r.scontrino_stato && sospesiPerNegozio[String(r.negozio || "")]?.some(vicino)) {
+                /* ⚠️ NESSUNO SCONTRINO, MA UN CONTO MESSO DA PARTE. «Tieni in
+                   sospeso» scrive la vendita e rimanda l'incasso: la ricarica
+                   c'è, lo scontrino no, e non è un guasto — è una vendita che
+                   il cliente deve ancora chiudere. Va distinta da quella dove
+                   il registratore ha fallito, perché la prima si aspetta e la
+                   seconda si va a controllare (Luca 02/09). */
+                patch.scontrino_stato = "in_pausa";
             }
             if (Object.keys(patch).length) aggiornamenti.push({ id: r.id, patch });
         }
@@ -257,7 +279,7 @@ export async function GET(request: Request) {
     await recuperaScontrinate(da, a);
     await completaDalloScontrino(da, a);
 
-    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione, scontrino_emesso, scontrino_errore, reparto_usato";
+    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione, scontrino_emesso, scontrino_errore, reparto_usato, scontrino_stato";
     const [{ data: righe }, { data: prima }, { data: tagli }] = await Promise.all([
         supabase.from("paystore_ricariche").select(campi)
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
