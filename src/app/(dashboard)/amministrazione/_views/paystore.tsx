@@ -638,8 +638,12 @@ export function PayStoreAdminView() {
                                                     {/* ⚠️ LO STATO SI CAMBIA DA QUI. Finché le ricariche si
                                                         fanno sul terminale del fornitore, l'unico modo che il
                                                         CRM ha di sapere se il credito è partito è che glielo
-                                                        dica chi l'ha caricato — e resta scritto chi è stato. */}
-                                                    <StatoRicarica r={r} onCambiato={() => void carica()} />
+                                                        dica chi l'ha caricato — e resta scritto chi è stato.
+                                                        Accanto, il pulsante che la fa partire davvero. */}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <StatoRicarica r={r} onCambiato={() => void carica()} />
+                                                        <RifaiRicarica r={r} onFatto={() => void carica()} />
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -676,6 +680,54 @@ function MarchioRiga({ op }: { op: string }) {
             <i className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: tintaOp(op) }} />
             {nomeOp(op)}
         </span>
+    );
+}
+
+/* ── RIFARE LA RICARICA ─────────────────────────────────────────────────────
+   Luca 02/09: «un pulsante che di fatto la rinvia, perché magari ho verificato
+   che dal sospeso ora la ricarica va fatta: devo poter cliccare lì e la
+   ricarica si collega direttamente all'API di PayStore e la rifà».
+
+   ⚠️ CHIEDE CONFERMA, e la conferma dice cosa sta per succedere: quanto, su
+   che numero, e — quando siamo in collaudo — che nessun credito partirà
+   davvero. Un pulsante che eroga denaro non si preme per sbaglio. */
+function RifaiRicarica({ r, onFatto }: { r: Riga; onFatto: () => void }) {
+    const [lavoro, setLavoro] = useState(false);
+    // su una già fatta non c'è niente da rifare
+    if (r.stato === "ok_automatico" || r.stato === "ok_manuale") return null;
+
+    const esegui = async () => {
+        if (!r.numero) { alert("Manca il numero da ricaricare: scrivilo prima di eseguire."); return; }
+        const conferma = `Faccio partire questa ricarica adesso?\n\n` +
+            `${nomeOp(r.operatore)} · ${eurC(r.importo)}\nsul numero ${r.numero}\n\n` +
+            `Verrà chiamata l'API di PayStore.`;
+        if (!window.confirm(conferma)) return;
+        setLavoro(true);
+        try {
+            const x = await fetch("/api/paystore/esegui", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.id }) });
+            const j = await x.json().catch(() => ({}));
+            if (x.ok && j?.ok) {
+                alert(j.collaudo
+                    ? `Ambiente di COLLAUDO: la chiamata è andata a buon fine (operazione ${j.operationId}) ma NESSUN credito è stato erogato. Lo stato resta invariato.`
+                    : j.gia
+                        ? `Risultava già eseguita da PayStore (operazione ${j.operationId}): l'ho segnata come fatta.`
+                        : `Ricarica eseguita. Operazione ${j.operationId}, ricevuta ${j.receiptId}.`);
+            } else {
+                alert((j?.definitivo === false
+                    ? "⚠️ " : "⛔ ") + (j?.error || `errore ${x.status}`));
+            }
+            onFatto();
+        } catch (e) {
+            alert("⛔ " + String((e as Error)?.message || e));
+        } finally { setLavoro(false); }
+    };
+
+    return (
+        <button onClick={() => void esegui()} disabled={lavoro || !r.numero}
+            title={r.numero ? "Fai partire questa ricarica adesso, tramite l'API di PayStore" : "manca il numero da ricaricare"}
+            className="psRifai" aria-label="rifai la ricarica">
+            {lavoro ? "…" : "↻"}
+        </button>
     );
 }
 
