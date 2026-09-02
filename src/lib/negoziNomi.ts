@@ -60,3 +60,17 @@ export function negozioInValues(stores: string[]): string[] {
     });
     return [...out];
 }
+
+/* ═══ IL LABORATORIO ═══════════════════════════════════════════════════════
+   Via della Magliana 263, Roma — dietro il negozio di Magliana. È dove i
+   telefoni usati vengono riparati, e in anagrafica è un LUOGO senza società:
+   non è un punto vendita e non ha un magazzino, è un reparto.
+   ⚠️ Il nome stava scritto a mano dentro Gestione Usati: il server, che deve
+   riconoscere le tratte che lo toccano, non poteva vederlo. */
+export const LABORATORIO = "Laboratorio";
+
+/** Gli stati in cui il telefono è al laboratorio, o ne sta uscendo.
+ *  ⚠️ `invio_in_negozio` ci sta dentro: è il momento in cui PARTE dal
+ *  laboratorio, e lasciandolo fuori il documento di quel viaggio — l'unico che
+ *  riporta il telefono al negozio — verrebbe rifiutato. */
+export const STATI_AL_LABORATORIO = ["in_transito", "ricevuto", "in_lavorazione", "pronto", "invio_in_negozio"];

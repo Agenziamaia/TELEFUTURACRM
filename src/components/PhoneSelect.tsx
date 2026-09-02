@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Search, ChevronDown, Check, Loader2 } from "lucide-react";
 import { cn } from "@/utils";
+import { nomeDispositivo } from "@/lib/nomeDispositivo";
 
 type PhoneOption = { brand: string; model: string; label: string };
 
@@ -31,7 +32,11 @@ export function PhoneSelect({
             .then(data => {
                 if (!data.error) {
                     const allPhones = Object.entries(data as Record<string, string[]>).flatMap(([brand, models]) =>
-                        models.map(model => ({ brand, model, label: `${brand} ${model}` }))
+                        /* ⚠️ 38 delle 222 voci del catalogo portano già la marca dentro
+                           il modello («Xiaomi» + «Xiaomi 15 Ultra»): composte a mano
+                           diventavano «Xiaomi Xiaomi 15 Ultra», e da qui il nome doppio
+                           finiva dritto nel modulo che il cliente firma. */
+                        models.map(model => ({ brand, model, label: nomeDispositivo(brand, model) }))
                     );
                     setPhones(allPhones);
                 }

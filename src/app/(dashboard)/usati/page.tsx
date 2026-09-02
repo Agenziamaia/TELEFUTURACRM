@@ -37,6 +37,8 @@ import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, stessoMagazzino } from "@/lib/visibleStores";
 import { useAuth } from "@/context/AuthContext";
 import { useSearchParams } from "next/navigation";
+import { nomeDispositivo } from "@/lib/nomeDispositivo";
+import { LABORATORIO as LAB_NOME } from "@/lib/negoziNomi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UsatoStatus =
@@ -198,7 +200,7 @@ const KPI_CARDS = [
    consegna: il laboratorio in anagrafica non è un negozio, quindi il documento
    uscirebbe senza indirizzo. Finché non è deciso dove sta, il nome è questo e
    si cambia in una riga — ma è una cosa da decidere, non da indovinare. */
-const LABORATORIO = "Laboratorio";
+const LABORATORIO = LAB_NOME;
 const NEGOZI_USATI = ["Acilia Multi", "Baleniere", "Collatina Multi", "Donna", "Garbatella", "Magliana Multi", "Promontori"];
 const DATE_FIELDS = [
   { key: "created_at", label: "Data Registrazione" },
@@ -291,25 +293,6 @@ function parseDate(s: string | null): Date {
   return isNaN(d.getTime()) ? new Date(0) : d;
 }
 
-/** Il nome del telefono come si legge in elenco: marca + modello, MA senza
- *  ripetere la marca se il modello la porta già dentro.
- *  ⚠️ Luca 02/09, con la fotografia di «ZTE ZTE Blade A34»: pensava che i
- *  negozi scrivessero male il modello. Misurato: non lo scrivono affatto — lo
- *  scelgono da una tendina, ed è il CATALOGO a contenerlo già («ZTE Blade
- *  A34» sotto la marca ZTE). Sono 4.335 voci su 40.133.
- *  Perciò la ripetizione si toglie QUI, dove il nome si compone: chiedere ai
- *  negozi di stare attenti a una cosa che non fanno loro non l'avrebbe tolta.
- *  ⚠️ E si guardano le PAROLE INTERE: «Apple» + «Apple Watch (38mm)» deve
- *  restare «Apple Watch (38mm)», ma «Honor» + «Honor 200 Lite» non può
- *  diventare «Hon...» — il confronto è su parola, non su lettere. */
-function nomeDispositivo(brand: string | null | undefined, modello: string | null | undefined): string {
-    const b = (brand || "").trim(), m = (modello || "").trim();
-    if (!b) return m || "Modello non specificato";
-    if (!m) return b;
-    const primaParola = m.split(/\s+/)[0];
-    if (primaParola.toLowerCase() === b.toLowerCase()) return m;
-    return `${b} ${m}`;
-}
 
 function parseHistory(h: unknown): Record<string, { date: Date; operatore: string }> {
   if (!h || typeof h !== "object") return {};
@@ -622,7 +605,11 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
   // AUTOSALVATAGGIO (Luca 31/07): niente piu' tasto Salva — ogni azione
   // persiste subito, come nel resto del gestionale. Note e prezzo si salvano
   // quando si esce dal campo (onBlur).
-  const persist = (u: Device) => { setDev(u); onSave(u); };
+  /** ⚠️ L'ESITO NON SI BUTTA VIA. `onSave` scrive sul database e dice se ce
+   *  l'ha fatta; ignorandolo, tutto quello che viene dopo (un documento di
+   *  trasporto, un avviso, una task) parte anche su un salvataggio fallito —
+   *  cioè su un telefono che non si è mosso di un metro. */
+  const persist = (u: Device) => { setDev(u); return Promise.resolve(onSave(u)); };
 
   // ── CESTINO ADMIN (03/08, richiesta Luca): eliminazione DEFINITIVA di un
   //    usato, senza lasciare traccia — riga di magazzino (con dentro la sua
@@ -768,7 +755,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
     persist({ ...dev, status: "muletto", note_tecnico: noteTecnico,
       status_history: { ...dev.status_history, muletto: { date: new Date(), operatore } } });
   };
-  const advanceStatus = () => {
+  const advanceStatus = async () => {
     if (needsStore && !targetStore) return;
     // Registra data+ora e operatore del cambio stato (prima non veniva salvato,
     // quindi la cronologia in ciascun usato restava vuota dopo l'acquisto).
@@ -787,13 +774,23 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
     // VENDUTO nasce SOLO dallo scarico in Registra Vendita (Luca 31/07), che
     // archivia prezzo effettivo e cliente: qui il passaggio manuale non esiste.
     if (next === "venduto") return;
-    persist(u);
-    /* ⚠️ IL DOCUMENTO SEGUE IL TELEFONO, non lo stato. Due passaggi lo
-       muovono davvero: quando lascia il negozio per il laboratorio, e quando
-       il laboratorio lo manda a un punto vendita. Gli altri (ricevuto, in
+    /* ⚠️ PRIMA SI ASPETTA CHE IL TELEFONO SI SIA MOSSO DAVVERO. Il documento
+       partiva subito dopo `persist`, che però non veniva atteso: se il
+       salvataggio falliva — un permesso, la rete — restava emesso un documento
+       di trasporto per un viaggio mai avvenuto. E siccome ce n'è uno solo per
+       telefono-tratta-giorno, al secondo tentativo il server restituisce
+       quello già fatto e il documento fantasma non si toglie più. */
+    const koSalvataggio = await persist(u);
+    if (koSalvataggio) {
+      setDdtAvviso(`⚠️ Il passaggio di stato NON è stato salvato (${koSalvataggio}): niente documento di trasporto. Riprova.`);
+      return;
+    }
+    /* IL DOCUMENTO SEGUE IL TELEFONO, non lo stato. Due passaggi lo muovono
+       davvero: quando lascia il negozio per il laboratorio, e quando il
+       laboratorio lo manda a un punto vendita. Gli altri (ricevuto, in
        lavorazione, pronto) succedono senza che il telefono cambi posto. */
-    if (next === "in_transito") void chiediDdt(dev.store, LABORATORIO);
-    if (next === "invio_in_negozio" && targetStore) void chiediDdt(LABORATORIO, targetStore);
+    if (next === "in_transito") await chiediDdt(dev.store, LABORATORIO);
+    if (next === "invio_in_negozio" && targetStore) await chiediDdt(LABORATORIO, targetStore);
   };
   // PASSO INDIETRO (Luca 31/07): dall'amministrativo in su si corregge un
   // avanzamento sbagliato riportando lo stato a 1..N passi prima — con
@@ -817,14 +814,17 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
   // Trasferimento tra negozi anche a dispositivo GIA' IN VENDITA (es. fermo in
   // vetrina da troppo): torna "in arrivo" verso il negozio scelto, che deve
   // accettarlo — solo all'accettazione passa in carico a lui. Ripetibile.
-  const sendToStore = () => {
+  const sendToStore = async () => {
     if (!targetStore) return;
     const da = dev.store;
-    persist({ ...dev, status: "invio_in_negozio", store: targetStore, target_store: targetStore, note_tecnico: noteTecnico,
+    /* stesso principio del passaggio di stato: prima il telefono si muove
+       davvero, poi nasce la carta che lo accompagna */
+    const ko = await persist({ ...dev, status: "invio_in_negozio", store: targetStore, target_store: targetStore, note_tecnico: noteTecnico,
       status_history: { ...dev.status_history, invio_in_negozio: { date: new Date(), operatore } } });
+    if (ko) { setDdtAvviso(`⚠️ Il trasferimento NON è stato salvato (${ko}): niente documento di trasporto. Riprova.`); return; }
     /* anche il trasferimento fra due punti vendita: è il caso in cui il
        telefono percorre più strada di tutti */
-    void chiediDdt(da, targetStore);
+    await chiediDdt(da, targetStore);
   };
   const setKO = () => persist({ ...dev, status: "ko", note_tecnico: noteTecnico,
     status_history: { ...dev.status_history, ko: { date: new Date(), operatore } } });
@@ -1631,7 +1631,10 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       indirizzo: business ? ana.sedeLegale : ana.domicilio,
     },
     dispositivo: {
-      marca: brand, modello: [model, capacita].filter(Boolean).join(" "), imei,
+      /* ⚠️ il nome COMPOSTO, non marca e modello sciolti: il modulo li
+         rimetteva insieme per conto suo e stampava «ZTE ZTE Blade A34»
+         sotto la firma del cliente */
+      marca: "", modello: [nomeDispositivo(brand, model), capacita].filter(Boolean).join(" "), imei,
       colore, grado: gradoEtichetta, accessori: "",
       note: difettiDichiarati,
     },

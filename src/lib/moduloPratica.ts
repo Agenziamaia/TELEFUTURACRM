@@ -11,6 +11,7 @@
  * parte — per questo il documento ha due campi e non uno.
  */
 import { TIPOLOGIE, TERMINE_MAX_GG, GIORNI_RITIRO, GIORNI_CESSIONE, BUONO_MESI, BUONO_ESCLUSI, eur } from "@/lib/pratiche";
+import { nomeDispositivo } from "@/lib/nomeDispositivo";
 
 export type DatiModulo = {
     protocollo: string; tipologia: string; negozio: string; operatore: string;
@@ -128,7 +129,7 @@ decorrono i termini della sezione 6. Il cliente si impegna a comunicare ogni var
 ${conDispositivo ? `
 <h2>2 · Il dispositivo lasciato in assistenza</h2>
 <div class="griglia">
-  <div><b>Marca e modello:</b> ${esc(`${dev.brand || ""} ${dev.modello || ""}`.trim() || "—")}</div>
+  <div><b>Marca e modello:</b> ${esc(nomeDispositivo(dev.brand, dev.modello) || "—")}</div>
   <div><b>IMEI / seriale:</b> ${esc(d.imei || "—")}</div>
   <div><b>Colore:</b> ${esc(dev.colore || "—")}</div>
   <div><b>Codice di sblocco comunicato:</b> ${dev.pin ? "sì" : "no"}</div>

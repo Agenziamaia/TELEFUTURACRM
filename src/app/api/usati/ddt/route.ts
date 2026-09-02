@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { stessoMagazzino } from "@/lib/negoziNomi";
+import { stessoMagazzino, LABORATORIO, STATI_AL_LABORATORIO } from "@/lib/negoziNomi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,9 +71,48 @@ export async function POST(req: Request) {
     }
 
     const { data: dev } = await supabaseAdmin.from("usati")
-        .select("id, model, imei, purchase_price, sale_price, store").eq("id", b.usatoId).maybeSingle();
+        .select("id, model, imei, purchase_price, sale_price, store, target_store, status").eq("id", b.usatoId).maybeSingle();
     if (!dev) return NextResponse.json({ error: "telefono non trovato" }, { status: 404 });
-    const u = dev as { id: number; model: string; imei: string; purchase_price: number | null; sale_price: number | null };
+    const u = dev as {
+        id: number; model: string; imei: string; purchase_price: number | null;
+        sale_price: number | null; store: string | null; target_store: string | null; status: string | null;
+    };
+
+    /* ⚠️ PARTENZA E ARRIVO NON SI ACCETTANO SULLA PAROLA. La rotta è aperta a
+       chiunque veda Gestione Usati — una quindicina di persone — e prendeva
+       `da` e `a` così com'erano scritti nella richiesta. Da lì si poteva far
+       nascere un documento di trasporto fra due punti vendita qualsiasi, anche
+       di società diverse: cioè una CESSIONE fra soggetti giuridici, con la
+       fattura che ne consegue, per un telefono che non si è mosso.
+       Due controlli: i due posti devono esistere davvero in anagrafica, e la
+       partenza dev'essere dove il telefono STA — non dove qualcuno dice. */
+    const { data: luoghi } = await supabaseAdmin.from("stores").select("name");
+    const esiste = new Set(((luoghi || []) as { name: string }[]).map((s) => s.name));
+    if (!esiste.has(b.da) || !esiste.has(b.a)) {
+        return NextResponse.json({ error: "partenza o arrivo non sono un punto vendita valido" }, { status: 400 });
+    }
+    /* ⚠️ SI ANCORA UN CAPO ALLA RIGA DEL TELEFONO, NON LA PARTENZA.
+       Il primo tentativo pretendeva che la partenza fosse il negozio scritto in
+       `usati.store` — e avrebbe RIFIUTATO il trasferimento fra due punti
+       vendita, che è la tratta più lunga di tutte: chi lo fa scrive prima la
+       destinazione in `store` e poi chiede il documento, quindi al server la
+       partenza risulta già sostituita. Le tre tratte vere sono queste, e in
+       ognuna almeno un capo è verificabile sulla riga:
+         · negozio → laboratorio        la PARTENZA è `store`
+         · laboratorio → negozio        l'ARRIVO è `store`/`target_store`
+         · negozio → negozio            l'ARRIVO è `store`/`target_store`
+       Chiedere che uno dei due capi combaci lascia passare tutte e tre e
+       impedisce la cosa che fa danno: inventare una tratta fra due società fra
+       cui questo telefono non sta viaggiando, cioè una cessione — con la
+       fattura che ne consegue — dal nulla. */
+    const suoi = [u.store, u.target_store].filter(Boolean) as string[];
+    if (STATI_AL_LABORATORIO.includes(String(u.status || ""))) suoi.push(LABORATORIO);
+    const ancorato = suoi.some((p) => stessoMagazzino(p, b.da!) || stessoMagazzino(p, b.a!));
+    if (!ancorato) {
+        return NextResponse.json({
+            error: `questo telefono non sta viaggiando fra «${b.da}» e «${b.a}»: risulta a «${u.store || "—"}». Documento non emesso.`,
+        }, { status: 409 });
+    }
 
     const giorno = giornoRoma();
     /* già emesso oggi per questo viaggio? si restituisce quello, non se ne fa

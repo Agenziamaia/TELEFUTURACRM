@@ -26,6 +26,7 @@ import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/compone
 import { stampaModulo, type DatiModulo } from "@/lib/moduloPratica";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { brandsDispositivi, modelliDispositivi, BRAND_COMUNI, type CategoriaDispositivo } from "@/lib/dispositivi";
+import { nomeDispositivo } from "@/lib/nomeDispositivo";
 import {
     TIPOLOGIE, tipologieDi, APPROVVIGIONAMENTO, etichettaApprovv, siFaSubito,
     statiDi, flussoDi, firmaCompleta, eur, giorniLavorativi,
@@ -1581,7 +1582,7 @@ function Riepilogo({ protocollo, sezione, tipologia, cliente, righe, dev, imei, 
                 {dato("Cliente", cliente ? etichettaCliente(cliente) : "—", [cliente?.cellulare, cliente?.email].filter(Boolean).join(" · "))}
                 {dato("Punto vendita", negozio, operatore)}
                 {dato("Tipo di intervento", t ? t.icona + " " + t.label : "—", t && t.approvvigionamento ? etichettaApprovv(approvv) : undefined)}
-                {dato(t ? t.valoreLabel : "Valore", eur(totale), sezione === "ordini" ? righe.length + (righe.length === 1 ? " riga" : " righe") : `${dev.brand} ${dev.modello}`.trim())}
+                {dato(t ? t.valoreLabel : "Valore", eur(totale), sezione === "ordini" ? righe.length + (righe.length === 1 ? " riga" : " righe") : nomeDispositivo(dev.brand, dev.modello))}
                 {dato("Acconto", accImporto > 0 ? eur(accImporto) : "nessuno",
                     accImporto > 0 ? `${voceAcconto} · da incassare in cassa` : "riepilogo, niente di fiscale",
                     accImporto > 0 ? "text-emerald-300" : "text-slate-400")}
@@ -1785,7 +1786,7 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
                             + (pratica.attesa_da ? " — da " + pratica.attesa_da : "")} />
                     )}
                     {pratica.imei && <Voce et="IMEI" v={pratica.imei} />}
-                    {pratica.dispositivo && <Voce et="Dispositivo" v={`${pratica.dispositivo.brand || ""} ${pratica.dispositivo.modello || ""}`.trim()} />}
+                    {pratica.dispositivo && <Voce et="Dispositivo" v={nomeDispositivo(pratica.dispositivo.brand, pratica.dispositivo.modello)} />}
                     {pratica.dispositivo?.condizioni && <Voce et="Condizioni" v={pratica.dispositivo.condizioni} />}
                     {pratica.dispositivo?.difetto && <Voce et="Difetto" v={pratica.dispositivo.difetto} />}
                 </div>

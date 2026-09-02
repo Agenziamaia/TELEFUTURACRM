@@ -18,6 +18,7 @@
  */
 import { eur } from "@/lib/pratiche";
 import { LOGO_TELEFUTURA } from "@/lib/logoTelefutura";
+import { nomeDispositivo } from "@/lib/nomeDispositivo";
 
 export type DatiUsato = {
     protocollo: string;
@@ -200,7 +201,7 @@ export function contrattoUsatoHtml(d: DatiUsato, perFirmaDigitale = false): stri
     <h2><span class="n">2</span> Il bene</h2>
     <div class="box">
       <div class="g">
-        <div style="grid-column:1/-1"><b>Modello</b> ${esc(`${dev.marca || ""} ${dev.modello || ""}`.trim() || "—")}</div>
+        <div style="grid-column:1/-1"><b>Modello</b> ${esc(nomeDispositivo(dev.marca, dev.modello) || "—")}</div>
         <div style="grid-column:1/-1"><b>IMEI</b> <span class="imei">${esc(dev.imei || "—")}</span></div>
         ${dato("Colore", dev.colore)}
         ${dato("Stato d'uso", dev.grado)}

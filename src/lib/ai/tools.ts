@@ -315,7 +315,10 @@ export async function runTool(name: string, args: any, scope: Scope): Promise<an
     case "usati_lookup": {
       const like = `%${args.q}%`;
       const { data, error } = await supabase.from("usati").select("*")
-        .or(`imei.ilike.${like},modello.ilike.${like}`).limit(25);
+        /* ⚠️ `modello` su `usati` NON ESISTE (le colonne sono `model` e
+         `imei`): ogni ricerca di un usato via AI moriva con un errore di
+         PostgREST, non con «nessun risultato». */
+        .or(`imei.ilike.${like},model.ilike.${like}`).limit(25);
       if (error) throw new Error(error.message);
       return { rows: redact(data || []) };
     }
