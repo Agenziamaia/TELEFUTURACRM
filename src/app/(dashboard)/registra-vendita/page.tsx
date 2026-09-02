@@ -5420,14 +5420,28 @@ function CRM() {
            persona è assegnata, poi quello che ha la cassa predefinita. */
         let mio = dentro.find(n => n === user.negozio) || "";
         if (!mio) {
-          const { data: ass } = await supabase.from("user_stores").select("store").eq("user_id", user.id);
-          const suoi = (ass || []).map((x) => String(x.store));
+          /* ⚠️ LA COLONNA SI CHIAMA `store_name` (revisione 02/09). Con
+             `store` la query tornava sempre vuota e questo criterio non ha
+             MAI funzionato: si scendeva subito all'ultimo, e l'ultimo è
+             l'ordine alfabetico — cioè «Magliana Multi». È esattamente la
+             trappola che dicevo di aver chiuso stamattina. */
+          const { data: ass } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
+          const suoi = (ass || []).map((x) => String(x.store_name));
           mio = dentro.find(n => suoi.includes(n)) || "";
         }
         if (!mio) {
-          const { data: rt } = await supabase.from("pos_rt").select("negozio, is_default").eq("is_default", true);
-          const conCassa = (rt || []).map((x) => String(x.negozio));
-          mio = dentro.find(n => conCassa.includes(n)) || "";
+          /* ⚠️ «QUELLA CON LA CASSA PREDEFINITA» NON DISCRIMINA NIENTE: nei
+             locali doppi `is_default` è true su TUTTE E DUE le insegne
+             (misurato su Magliana, Collatina e Acilia). Al suo posto vale un
+             segnale vero: dove quella persona ha davvero battuto le vendite
+             nell'ultimo mese. */
+          const dal = new Date(Date.now() - 30 * 864e5).toISOString();
+          const { data: ct } = await supabase.from("contracts")
+            .select("negozio").eq("venditore", user.name || "").gte("created_at", dal).in("negozio", dentro);
+          const conteggio = {};
+          (ct || []).forEach((x) => { const n = String(x.negozio); conteggio[n] = (conteggio[n] || 0) + 1; });
+          mio = dentro.slice().sort((x, y) => (conteggio[y] || 0) - (conteggio[x] || 0))
+                      .find(n => (conteggio[n] || 0) > 0) || "";
         }
         if (!mio) mio = dentro[0];
         negDichiarato.current = mio;
