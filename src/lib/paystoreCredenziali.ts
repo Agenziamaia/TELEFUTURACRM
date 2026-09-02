@@ -48,7 +48,12 @@ export async function credenzialeDi(negozio: string | null, azienda: string | nu
        insegne: PayStore ne conosce una sola, e la ricarica può risultare
        battuta sull'altra. `stessoMagazzino` è la regola che il resto del CRM
        usa già per riconoscerli. */
-    const cand = righe.filter((r) => r.negozio === negozio || stessoMagazzino(r.negozio, negozio));
+    /* ⚠️ LE DISATTIVATE NON SONO CANDIDATE. Contandole, una terna vecchia
+       lasciata lì avrebbe fatto scattare il «ne risultano due» e bloccato le
+       ricariche di quel punto vendita — cioè una credenziale spenta avrebbe
+       spento il negozio. */
+    const cand = righe.filter((r) => r.attivo !== false)
+        .filter((r) => r.negozio === negozio || stessoMagazzino(r.negozio, negozio));
     if (!cand.length) {
         return { ok: false, errore: `PayStore non ha credenziali per ${negozio} come ${azienda}. Caricale in Amministrazione → PayStore → Credenziali.` };
     }

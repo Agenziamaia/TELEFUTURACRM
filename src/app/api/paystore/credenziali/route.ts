@@ -150,7 +150,19 @@ export async function POST(req: Request) {
             signing_cifrata: cifraSegreto(r.signingKey!.trim()),
             attivo: true, creato_da: g.sess.id, aggiornato_il: new Date().toISOString(),
         }, { onConflict: "negozio,azienda" });
-        esiti.push({ societa: r.societa!, identificativo: r.identificativo!, negozio, esito: error ? "NON salvata: " + error.message : "salvata" });
+        /* ⚠️ L'ERRORE GREZZO DI POSTGRES NON LO CAPISCE NESSUNO. «there is no
+           unique or exclusion constraint matching the ON CONFLICT
+           specification» vuol dire che manca un vincolo sul database: chi
+           legge il pannello deve sapere che non è colpa del suo foglio. */
+        const spiegato = !error ? "salvata"
+            : /ON CONFLICT/i.test(error.message)
+                ? "NON salvata: manca un vincolo sul database — non dipende dal foglio, va sistemato lato server"
+                : "NON salvata: " + error.message;
+        esiti.push({ societa: r.societa!, identificativo: r.identificativo!, negozio, esito: spiegato });
     }
-    return NextResponse.json({ ok: true, prova: !!b.prova, esiti });
+    const salvate = esiti.filter((e) => e.esito === "salvata" || e.esito === "pronta").length;
+    return NextResponse.json({
+        ok: true, prova: !!b.prova, esiti,
+        salvate, fallite: esiti.length - salvate,
+    });
 }

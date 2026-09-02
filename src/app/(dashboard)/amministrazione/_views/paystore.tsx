@@ -1408,6 +1408,19 @@ function CredenzialiPayStore() {
 
             {esiti.length > 0 && (
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    {/* ⚠️ IL TOTALE IN CIMA. Con sedici righe tutte rosse, il fatto che
+                        NON sia entrato niente si capiva solo leggendole una per una: e
+                        una schermata dove il fallimento totale sembra un dettaglio è
+                        peggio di una che non dice niente. */}
+                    {(() => {
+                        const ko = esiti.filter((e) => /NON salvata|nessun negozio/.test(e.esito)).length;
+                        return ko > 0 ? (
+                            <div className="rvNota rvNota-ko" style={{ marginTop: 0, marginBottom: 10 }}>
+                                <div className="rvNota-t">⛔ {ko} su {esiti.length} non {ko === 1 ? "è entrata" : "sono entrate"}</div>
+                                <div className="rvNota-s">L'accoppiamento col negozio può essere giusto lo stesso: guarda l'ultima colonna per il perché.</div>
+                            </div>
+                        ) : null;
+                    })()}
                     <div className="rvLab">Accoppiamento</div>
                     <table className="psTab text-[12px] mt-1">
                         <tbody>
