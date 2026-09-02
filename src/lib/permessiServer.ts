@@ -81,6 +81,9 @@ export const SEZIONE_DI: Record<string, string> = {
     /* far uscire un telefono usato senza vendita registrata: sta in Usati, ma
        la rotta controlla anche il RUOLO */
     "usati/consegna": "/usati",
+    /* svuotare il deposito di transito dei documenti: sta nel pannello, e la
+       rotta controlla anche il RUOLO */
+    "file/transito": "/amministrazione",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".

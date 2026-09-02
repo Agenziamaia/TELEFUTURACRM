@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { cn } from "@/utils";
 
 // MONITOR NEGOZI (Luca/Rahib 01/09): salute in tempo reale degli agenti di stampa
 // e cassa di ogni negozio. Legge /api/print/health (sessione admin). Verde = ok,
@@ -12,6 +13,52 @@ type Store = {
 };
 
 const fmtAge = (s: number | null) => s == null ? "—" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`;
+
+function PuliziaTransito() {
+  const [dati, setDati] = useState<{ tutti: number; daTogliere: number; mb: number; sessioniVive: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [esito, setEsito] = useState("");
+  const guarda = useCallback(async () => {
+    setEsito("");
+    const r = await fetch("/api/file/transito").then((x) => x.json()).catch(() => null);
+    if (r?.ok) setDati(r); else setEsito(r?.error || "non riesco a contarli");
+  }, []);
+  useEffect(() => { guarda(); }, [guarda]);
+  const pulisci = async () => {
+    if (!dati?.daTogliere || busy) return;
+    if (!window.confirm(`Cancellare ${dati.daTogliere} file di transito (${dati.mb} MB)?\n\nSono le copie di passaggio dei documenti fotografati col QR: il documento vero è già dentro la vendita. Restano fuori i file delle sessioni ancora aperte.\n\nNon si torna indietro.`)) return;
+    setBusy(true); setEsito("");
+    try {
+      const r = await fetch("/api/file/transito", { method: "POST" }).then((x) => x.json());
+      setEsito(r?.ok ? `✓ Tolti ${r.tolti} file (${r.mb} MB)` : `Non tolti: ${r?.error || (r?.errori || []).join(" · ")}`);
+      await guarda();
+    } finally { setBusy(false); }
+  };
+  if (!dati) return null;
+  return (
+    <div className="glass-card rounded-2xl p-4 mt-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[240px]">
+          <div className="text-sm font-bold text-white">🧹 Documenti di transito (QR)</div>
+          <div className="rvNota-s mt-1">
+            Le copie di passaggio dei documenti fotografati col telefono: il documento vero è già dentro la
+            vendita, queste vanno tolte appena importate. {dati.sessioniVive > 0 ? <>Le {dati.sessioniVive} sessioni ancora aperte non si toccano.</> : null}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className={cn("text-2xl font-black tabular-nums", dati.daTogliere > 0 ? "text-amber-300" : "text-emerald-300")}>{dati.daTogliere}</div>
+          <div className="text-[11px] text-slate-500">da togliere · {dati.mb} MB</div>
+        </div>
+        {dati.daTogliere > 0 && (
+          <button onClick={pulisci} disabled={busy} className="rvPill rvPill-tinta rvT-rosso">
+            {busy ? "tolgo…" : "🧹 Svuota adesso"}
+          </button>
+        )}
+      </div>
+      {esito && <div className="rvNota-s mt-2">{esito}</div>}
+    </div>
+  );
+}
 
 export function MonitorNegoziView() {
   const [stores, setStores] = useState<Store[] | null>(null);
@@ -81,7 +128,15 @@ export function MonitorNegoziView() {
         <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {stores.map((s) => {
             const c = COL[s.stato];
-            return (
+          /* ═══ I FILE DI TRANSITO RIMASTI INDIETRO ═══════════════════════════════
+   Il deposito dei documenti fotografati col QR è di PASSAGGIO: il file arriva,
+   il computer del negozio se lo prende e lo mette dentro la vendita, e la
+   copia va cancellata subito. Dal 31/08 quella cancellazione non avveniva più
+   — 481 file, 516 MB rimasti lì. Il meccanismo è riparato; questo riquadro
+   serve a togliere l'arretrato, e a far vedere il numero così non ricresce in
+   silenzio. */
+
+  return (
               <div key={s.negozio} className={"relative overflow-hidden rounded-xl border px-4 py-3 "
                 + (s.stato === "down" ? "bg-rose-500/[0.07] border-rose-400/30"
                   : s.stato === "warn" ? "bg-amber-500/[0.05] border-amber-400/20"
@@ -120,6 +175,7 @@ export function MonitorNegoziView() {
           })}
         </div>
       )}
+      <PuliziaTransito />
     </div>
   );
 }
