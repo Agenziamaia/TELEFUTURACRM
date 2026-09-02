@@ -320,6 +320,19 @@ export async function POST(req: Request) {
        Adesso è il server a dire chi è chi, e il modale disegna le sezioni su
        quello che uscirà davvero: quello che si legge è quello che si stampa. */
     const perRiga: (string | null)[] = new Array(righe.length).fill(null);
+    /* ⚠️ CHI POSSIEDE LA RIGA È UN'ALTRA DOMANDA DA CHI LA EMETTE.
+       Luca 02/09: «tutto ciò che è un prodotto, e quindi ha una disponibilità
+       di magazzino, deve essere collegato alla società proprietaria di quel
+       prodotto. Tutto il resto, per differenza, può essere spostato da una
+       società all'altra».
+       `perRiga` è la società con cui la riga ESCE, e ha una catena di ripieghi
+       — la merce del carrello, la scelta dell'operatore, il default del
+       negozio — che dà una società anche a chi non ce l'ha. Va bene per
+       emettere; NON va bene per decidere cosa si può spostare, perché così una
+       ricarica o un telefono usato risultavano di qualcuno e restavano
+       inchiodati alla loro sezione.
+       `perRigaMerce` dice solo chi POSSIEDE: null = nessuno, cioè libero. */
+    const perRigaMerce: (string | null)[] = new Array(righe.length).fill(null);
     const esclusi: { description: string; motivo: string }[] = [];
     for (let _i = 0; _i < righe.length; _i++) {
         const r = righe[_i];
@@ -345,8 +358,12 @@ export async function POST(req: Request) {
            fare. Adesso la regola PayStore PREIMPOSTA la società nel modale
            (`ScontrinoCassa`), così quello che si legge è quello che esce, e
            resta la possibilità di correggere quando serve. */
-        const az = (meta && meta.azienda) || societaDelSeriale[serialeDi(r)] || r.azienda || societaDelCodice[String(r.codice || "")]
-            || azDellaMerce || b.azienda || azRicaricheSciolte || defaultAzienda || "__def";
+        /* la proprietà: solo quello che la MERCE impone — la voce di catalogo,
+           il seriale, la società scritta sulla riga, il codice di magazzino */
+        const proprietaria = (meta && meta.azienda) || societaDelSeriale[serialeDi(r)] || r.azienda
+            || societaDelCodice[String(r.codice || "")] || null;
+        perRigaMerce[_i] = proprietaria;
+        const az = proprietaria || azDellaMerce || b.azienda || azRicaricheSciolte || defaultAzienda || "__def";
         perRiga[_i] = az === "__def" ? null : az;
         const desc = tagliaRiga(r.description);
         const price = Number(r.unitPrice);
@@ -393,7 +410,7 @@ export async function POST(req: Request) {
                 esclusi, testMode,
             }, { status: 400 });
         }
-        return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), perRiga, esclusi, testMode });
+        return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), perRiga, perRigaMerce, esclusi, testMode });
     }
 
     /* CHI HA BATTUTO LO SCONTRINO. Si legge dal database con l'id della

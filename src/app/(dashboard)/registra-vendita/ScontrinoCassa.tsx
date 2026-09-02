@@ -560,10 +560,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        la finestra è pronta. Se la risposta non arriva si ricade su `i.azienda`,
        che è quello che si faceva prima: non si peggiora mai. */
     const [perRigaSrv, setPerRigaSrv] = useState<(string | null)[] | null>(null);
+    const [perRigaMerceSrv, setPerRigaMerceSrv] = useState<(string | null)[] | null>(null);
     const _firmaItems = itemsTutte.map((i) => `${i.description}|${i.unitPrice}|${i.qty ?? 1}`).join("~");
     useEffect(() => {
         let vivo = true;
-        setPerRigaSrv(null);
+        setPerRigaSrv(null); setPerRigaMerceSrv(null);
         if (!data?.negozio || !itemsTutte.length) return;
         (async () => {
             try {
@@ -573,21 +574,33 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 });
                 const j = await res.json().catch(() => ({}));
                 if (vivo && Array.isArray(j?.perRiga)) setPerRigaSrv(j.perRiga as (string | null)[]);
+                /* ⚠️ SE IL SERVER È VECCHIO e non manda `perRigaMerce`, si
+                   ripiega su `perRiga`: meglio qualche riga bloccata di troppo
+                   che tutte libere e assegnate a caso. */
+                if (vivo) setPerRigaMerceSrv((Array.isArray(j?.perRigaMerce) ? j.perRigaMerce : j?.perRiga) as (string | null)[] ?? null);
             } catch { /* si resta su quello che dice la riga */ }
         })();
         return () => { vivo = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [_firmaItems, data?.negozio]);
 
-    /** La società di una riga: quella che ha detto il server, se l'ha detta. */
-    const _azDi = (i: RigaScontrino, k: number) => (perRigaSrv?.[k] ?? i.azienda) || null;
+    /** Chi POSSIEDE la riga: solo la merce, cioè quello che ha una giacenza di
+     *  magazzino. Null = nessuno la possiede, e allora si può spostare.
+     *
+     *  ⚠️ PRIMA SI USAVA `perRiga`, che è un'altra cosa: quella dice con quale
+     *  società la riga ESCE, e ha dei ripieghi (la merce del carrello, il
+     *  default del negozio) che danno una società anche a chi non ce l'ha. Così
+     *  una ricarica o un telefono usato risultavano «di qualcuno» e restavano
+     *  inchiodati a una sezione, mentre la regola è l'opposto: se non è
+     *  magazzino, si sposta. */
+    const _azDi = (i: RigaScontrino, k: number) => (perRigaMerceSrv?.[k] ?? i.azienda) || null;
 
     /* LE SOCIETÀ CHE LA MERCE IMPONE. Solo quelle: se in carrello ci sono solo
        servizi la domanda è un'altra (chi emette), ed è già risolta sopra. */
     const aziendeMerce = useMemo(
         () => Array.from(new Set(itemsTutte.map((i, k) => _azDi(i, k)).filter(Boolean))) as string[],
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [itemsTutte, perRigaSrv]);
+        [itemsTutte, perRigaMerceSrv]);
     const multiSocieta = aziendeMerce.length > 1;
 
     const sezioni = useMemo(() => {
