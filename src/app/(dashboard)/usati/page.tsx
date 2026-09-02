@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
+import { CercaOCreaCliente } from "@/components/CercaOCreaCliente";
 import FirmaUsato, { type FirmaInfo } from "@/components/FirmaUsato";
 import { type DatiUsato } from "@/lib/moduloUsato";
 import { societaDelNegozio, type Societa } from "@/lib/societa";
@@ -536,7 +537,7 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, puoAmministrare, 
 }
 
 //  DevicePanel 
-function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; onClose: () => void; onSave: (d: Device) => void | Promise<string | null>; onDeleted: (id: number) => void }) {
+function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { device: Device; onClose: () => void; onSave: (d: Device) => void | Promise<string | null>; onDeleted: (id: number) => void; onRicarica?: () => void }) {
   const NEGOZI = useStores();
   const { user } = useAuth();
   const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
@@ -655,6 +656,42 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
   };
   const removeRicambio = (idx: number) => persist({ ...dev, ricambi: dev.ricambi.filter((_, i) => i !== idx) });
 
+  /* ═══ IL TELEFONO CHE ESCE SENZA VENDITA (Luca 02/09) ══════════════════
+     «Dobbiamo abilitare l'amministrativo a poter mettere un telefono in stato
+     venduto selezionando il cliente, così da tenere traccia della consegna
+     dentro la scheda del cliente. Però oggettivamente in questo modo non
+     facciamo lo scontrino e non registriamo la vendita: se vogliamo dare un
+     telefono a qualcuno, possiamo farlo così — deve uscire un popup di
+     conferma che glielo dice.»
+     Due passi obbligati, in quest'ordine: prima si legge cosa NON succede,
+     poi si sceglie il cliente. Chi salta il primo non arriva al secondo. */
+  const [consegna, setConsegna] = useState<"no" | "avviso" | "cliente">("no");
+  const [consegnaMotivo, setConsegnaMotivo] = useState("");
+  const [consegnaPrezzo, setConsegnaPrezzo] = useState("");
+  const [consegnaKo, setConsegnaKo] = useState("");
+  const [consegnaBusy, setConsegnaBusy] = useState(false);
+  const consegnaA = async (clientId: string, etichetta: string) => {
+    if (consegnaBusy) return;
+    setConsegnaBusy(true); setConsegnaKo("");
+    try {
+      const r = await fetch("/api/usati/consegna", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: dev.id, clientId, motivo: consegnaMotivo, prezzo: Number(consegnaPrezzo) || 0 }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "non è stato spostato");
+      /* ⚠️ NON si ripassa da `onSave`: la riga l'ha già scritta la rotta, e
+         risalvarla da qui sovrascriverebbe la cronologia con quella che il
+         pannello aveva in mano prima — cioè senza il marchio «uscito senza
+         vendita». Si ricarica dal database e si chiude. */
+      setConsegna("no"); setConsegnaMotivo(""); setConsegnaPrezzo("");
+      onRicarica?.();
+      onClose();
+      alert(`📦 ${dev.model} consegnato a ${etichetta}.\nÈ uscito dal magazzino SENZA vendita registrata: nessuno scontrino, nessun contratto.`);
+    } catch (e) { setConsegnaKo((e as Error)?.message || "non è stato spostato"); }
+    finally { setConsegnaBusy(false); }
+  };
+
   const smonta = () => {
     if (!window.confirm(`Smontare ${dev.model} (${dev.imei}) e usarlo per pezzi di ricambio?\nIl telefono esce dal flusso di vendita ma resta tracciato tra gli Smontati.`)) return;
     persist({ ...dev, status: "smontato", note_tecnico: noteTecnico,
@@ -764,6 +801,64 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
   const copyIban = () => { try { navigator.clipboard.writeText(dev.pagamento.iban); setIbanCopied(true); setTimeout(() => setIbanCopied(false), 2000); } catch (e) { } };
 
   return (
+    <>
+    {/* ═══ CONSEGNA SENZA VENDITA — due passi, in quest'ordine ══════════════
+        ⚠️ PRIMA SI LEGGE COSA NON SUCCEDE, POI SI SCEGLIE IL CLIENTE. Luca:
+        «lì deve uscire un pop-up di conferma dove gli chiede sei sicuro che
+        vuoi spostare un telefono in venduto? Questo non genera uno scontrino e
+        non genera una vendita registrata, quindi niente commissioning». Chi
+        non passa dal primo riquadro non arriva al secondo. */}
+    {consegna !== "no" && createPortal(
+      <div className="fixed inset-0 z-[3300] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+        onClick={() => !consegnaBusy && setConsegna("no")}>
+        <div className="rvCarta rvCarta-ko max-w-lg w-full" onClick={(e) => e.stopPropagation()}
+          style={{ maxHeight: "90vh", overflowY: "auto" }}>
+          {consegna === "avviso" ? (
+            <>
+              <div className="rvCarta-t">📦 Vuoi spostare questo telefono in «venduto»?</div>
+              {/* ⚠️ `rvCarta-r` mette i figli in fila: il modello finiva in una
+                  colonna stretta a sinistra e andava a capo a metà parola. Il
+                  telefono sta sopra, la spiegazione sotto. */}
+              <div className="text-sm font-bold text-white mb-2">{dev.model} · <span className="font-mono text-slate-400">{dev.imei}</span></div>
+              <div className="rvCarta-r rvCarta-r-ko">
+                <div className="rvNota-s">
+                  <span className="font-bold text-white">Questo non è una vendita.</span> Non batte scontrino, non scrive un contratto, non produce
+                  commissioning e non entra nei conteggi delle vendite. Serve ai casi che una vendita non
+                  sono: il telefono dato in omaggio, quello di cortesia che non torna, la sostituzione.
+                  <br /><br />
+                  Il telefono esce dal magazzino e resta scritto a chi è andato, dentro la sua scheda cliente.
+                  La strada normale resta <span className="font-bold text-white">Registra Vendita</span>.
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className="rvLab">Perché esce senza vendita (obbligatorio)</span>
+                <input value={consegnaMotivo} onChange={(e) => setConsegnaMotivo(e.target.value)} maxLength={200}
+                  placeholder="es. sostituzione in garanzia, omaggio al cliente…" className="glass-input w-full text-sm" />
+              </div>
+              <div className="mt-2">
+                <span className="rvLab">Valore, se ne ha uno (facoltativo)</span>
+                <input value={consegnaPrezzo} onChange={(e) => setConsegnaPrezzo(e.target.value.replace(/[^0-9.,]/g, ""))}
+                  placeholder="0" className="glass-input w-full text-sm" />
+              </div>
+              {consegnaKo && <div className="rvNota rvNota-ko mt-3"><div className="rvNota-s">{consegnaKo}</div></div>}
+              <button onClick={() => { if (consegnaMotivo.trim().length < 3) { setConsegnaKo("Scrivi perché esce senza vendita: è l'unica risposta che resta."); return; } setConsegnaKo(""); setConsegna("cliente"); }}
+                className="rvCarta-ko-b">Sì, procedi — ora scelgo il cliente</button>
+              <button onClick={() => setConsegna("no")} className="rvCarta-no rvCarta-no-ko w-full mt-2 text-xs font-bold">Annulla</button>
+            </>
+          ) : (
+            <>
+              <div className="rvCarta-t">👤 A chi lo consegni?</div>
+              <div className="rvNota-s mb-3">
+                Cerca il cliente col codice fiscale, la partita IVA o il nome. Se non c&apos;è, la scheda si
+                compila qui con le stesse informazioni di Registra Vendita.
+              </div>
+              {consegnaKo && <div className="rvNota rvNota-ko mb-3"><div className="rvNota-s">{consegnaKo}</div></div>}
+              <CercaOCreaCliente negozio={dev.store} onCliente={consegnaA} onAnnulla={() => setConsegna("avviso")} />
+              <button onClick={() => setConsegna("avviso")} className="rvPill rvPill-sm mt-3">← torna indietro</button>
+            </>
+          )}
+        </div>
+      </div>, document.body)}
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start justify-center pt-8 px-4" onClick={() => { if (!contabileBusy) onClose(); }}>
       {/* upload contabile in corso = scheda congelata (rilievo terzo revisore):
           un salvataggio sovrapposto poteva referenziare il file che il rollback
@@ -871,6 +966,12 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
             {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || ["ko", "venduto", "smontato", "muletto"].includes(dev.status)) && (
               <div className="mt-14 flex flex-col gap-2 border-t-2 border-dashed border-amber-500/20 pt-4 opacity-90">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">↩ Correzione stato (amministrazione)</div>
+                {/* ⚠️ «VENDUTO» NON È UN PASSO INDIETRO, e infatti non entra
+                    nella tendina: è una porta diversa, con la sua conferma e la
+                    sua scheda cliente. Metterlo fra gli altri stati vorrebbe
+                    dire poterci finire con un clic distratto, e da lì non si
+                    torna senza lasciare un telefono fuori dal magazzino senza
+                    uno scontrino che lo spieghi. */}
                 <SelectOpzioni value={indietroSel ? `${statusMap[indietroSel as UsatoStatus]?.icon} ${statusMap[indietroSel as UsatoStatus]?.label}` : ""}
                   onChange={(v) => { const sk = LIFECYCLE.find(k => `${statusMap[k]?.icon} ${statusMap[k]?.label}` === v); setIndietroSel(sk || ""); }}
                   opzioni={LIFECYCLE.filter((sk) => ["ko", "smontato", "muletto"].includes(dev.status) ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => `${statusMap[sk]?.icon} ${statusMap[sk]?.label}`)}
@@ -879,6 +980,13 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                   className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                   ↩ Torna indietro
                 </button>
+                {dev.status !== "venduto" && (
+                  <button onClick={() => { setConsegnaKo(""); setConsegna("avviso"); }}
+                    title="Il telefono esce dal magazzino e resta scritto a chi è andato, ma NON è una vendita: niente scontrino, niente contratto"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/30 text-xs font-semibold hover:bg-rose-500/20 transition-all">
+                    📦 Consegna senza vendita (venduto)
+                  </button>
+                )}
               </div>
             )}
             {/* eliminazione TOTALE — solo admin, in fondo, ben staccata */}
@@ -1150,6 +1258,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -2732,7 +2841,7 @@ function GestioneUsatiInner() {
 
 
       {/* Modals */}
-      {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { const esito = handleSaveDevice(u); setSelectedDevice(u); return esito; }} onDeleted={(id) => { setDevices(p => p.filter(d => d.id !== id)); setSelectedDevice(null); }} />}
+      {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { const esito = handleSaveDevice(u); setSelectedDevice(u); return esito; }} onDeleted={(id) => { setDevices(p => p.filter(d => d.id !== id)); setSelectedDevice(null); }} onRicarica={fetchDevices} />}
       {showRegistra && <RegistraUsatoPanel onClose={() => setShowRegistra(false)} onSave={handleRegistra} />}
       {couponGenerato && createPortal(
         <div onClick={() => setCouponGenerato(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 3200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: 16 }}>

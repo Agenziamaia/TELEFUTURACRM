@@ -68,20 +68,32 @@ export async function POST(req: Request) {
     const nomeCli = c.tipo === "business" ? (c.ragione_sociale || "—") : `${c.nome || ""} ${c.cognome || ""}`.trim();
 
     const ora = new Date().toISOString();
-    const storia = Array.isArray(u.status_history) ? u.status_history : [];
+    /* ⚠️ `status_history` È UN OGGETTO PER STATO, non una lista: tutte e 281 le
+       righe in archivio hanno la forma `{ venduto: { date, operatore }, … }`,
+       e la pagina la scrive così. Trattandola come una lista si sarebbe
+       cancellata la cronologia di tutti gli stati precedenti — con la solita
+       differenza fra immaginare la forma di un dato e andarla a guardare. */
+    const storia = (u.status_history && typeof u.status_history === "object" && !Array.isArray(u.status_history)
+        ? u.status_history : {}) as Record<string, unknown>;
     const { error } = await supabaseAdmin.from("usati").update({
         status: "venduto",
         sold_date: ora,
         client_id: b.clientId,
         sold_price: Number(b.prezzo) > 0 ? Number(b.prezzo) : 0,
-        status_history: [...storia, {
-            status: "venduto", at: ora, by: chi?.full_name || "amministrazione",
-            /* ⚠️ IL MARCHIO. Senza questo, fra un anno questa riga è
-               indistinguibile da una vendita vera: stesso stato, stessa data,
-               stesso cliente. Ma questa non ha scontrino né contratto. */
-            forzato: true,
-            note: `Uscito senza vendita registrata (niente scontrino, niente contratto, niente commissioning) — consegnato a ${nomeCli}. Motivo: ${motivo}`,
-        }],
+        status_history: {
+            ...storia,
+            venduto: {
+                date: ora,
+                operatore: `${chi?.full_name || "amministrazione"} — uscita SENZA vendita registrata`,
+                /* ⚠️ IL MARCHIO. Senza questo, fra un anno questa riga è
+                   indistinguibile da una vendita vera: stesso stato, stessa
+                   data, stesso cliente. Ma questa non ha scontrino né
+                   contratto, e chi conta i venduti deve poterla togliere. */
+                forzato: true,
+                consegnato_a: nomeCli,
+                motivo,
+            },
+        },
     }).eq("id", b.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

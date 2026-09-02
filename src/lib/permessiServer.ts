@@ -78,6 +78,9 @@ export const SEZIONE_DI: Record<string, string> = {
     /* togliere un documento dal fascicolo di un cliente: la scheda cliente la
        aprono in tanti, e la rotta controlla anche il RUOLO */
     "clienti/documento": "/clienti",
+    /* far uscire un telefono usato senza vendita registrata: sta in Usati, ma
+       la rotta controlla anche il RUOLO */
+    "usati/consegna": "/usati",
 };
 
 /** La sezione di una route: "passwords/credentials/[id]/reveal" → "/password-v2".
