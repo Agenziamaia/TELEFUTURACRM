@@ -2427,3 +2427,20 @@ html.light .rvFirmaBanco{color:#9a5b00 !important}
 html.light .rvCarta-ko{border-color:rgba(185,28,28,.28)}
 html.light .rvCarta-r-ko{background:rgba(185,28,28,.05);border-color:rgba(185,28,28,.2)}
 html.light .rvCarta-no-ko{color:#b91c1c}
+/* ═══ PAYSTORE — LA FASCIA DEI FILTRI (Luca 02/09) ══════════════════════
+   Sta sotto il grafico: i marchi dicono di che si parla, il grafico come sta
+   andando, i filtri servono dopo. I pulsanti degli stati portano il colore
+   dello stato che filtrano — il colore arriva dallo stile in linea (TINTE),
+   perché queste regole vincono sulle utility di Tailwind. */
+.psFiltro{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:8px;border:1px solid var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0);font-size:12px;font-weight:700;cursor:pointer;line-height:1.25;white-space:nowrap;transition:transform .12s,filter .15s,box-shadow .15s}
+.psFiltro:hover{transform:translateY(-1px);filter:brightness(1.25)}
+.psFiltro-on{box-shadow:0 0 0 1.5px currentColor inset,0 4px 14px rgba(0,0,0,.35)}
+.psFiltroN{min-width:17px;height:17px;padding:0 4px;border-radius:5px;background:rgba(0,0,0,.32);font-size:10.5px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.psFiltroVia{border-style:dashed;gap:0}
+/* i due allarmi: due quadrati, con il numero nell'ambra dei contatori dei
+   marchi qui sopra — è una coda da smaltire, non un totale */
+.psQuadro{display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:11px;border:1px solid rgba(248,113,113,.4);background:linear-gradient(180deg,rgba(239,68,68,.16),rgba(239,68,68,.07));color:#fca5a5;font-size:11px;font-weight:700;line-height:1.15;text-align:left;cursor:pointer;transition:transform .12s,box-shadow .15s,background .15s}
+.psQuadro:hover{transform:translateY(-1px);background:linear-gradient(180deg,rgba(239,68,68,.24),rgba(239,68,68,.12))}
+.psQuadro-on{box-shadow:0 0 0 1.5px #f87171 inset,0 6px 18px rgba(239,68,68,.22);color:#fff}
+.psQuadroN{min-width:28px;height:28px;padding:0 6px;border-radius:8px;background:#f8b516;color:#191400;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.psQuadroT{letter-spacing:.2px}

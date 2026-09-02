@@ -30,6 +30,7 @@ import { cn } from "@/utils";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { OPERATORI_PAYSTORE } from "../../registra-vendita/PayStore";
 import { STATI_RICARICA } from "@/lib/paystore";
+import { FiltroMulti } from "@/components/FiltroMulti";
 /* ⚠️ `_charts` è JS con i default nei parametri: TypeScript ne deduce tipi
    sbagliati. Si importano così, come dice lo standard. */
 import * as G from "../../analisi/_charts";
@@ -99,6 +100,18 @@ const SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" }
    buon fine, piuttosto che fallita, piuttosto che da fare».
    Non descrivono COME è stata fatta, ma se il credito è partito — che è la
    sola domanda che conta quando il cliente ha già pagato. */
+/* ⚠️ IL COLORE IN ESADECIMALE, oltre alle classi. I pulsanti del filtro lo
+   applicano con lo stile in linea: `.psFiltro` sta in globals.css, che vince
+   sulle utility di Tailwind, e un `bg-amber-500/15` scritto lì accanto non si
+   vedrebbe — è esattamente com'è andata al primo giro. */
+const TINTA_STATO: Record<string, { fondo: string; bordo: string; testo: string }> = {
+    sospeso:       { fondo: "rgba(245,158,11,.16)", bordo: "rgba(251,191,36,.45)", testo: "#fcd34d" },
+    ok_automatico: { fondo: "rgba(16,185,129,.16)", bordo: "rgba(52,211,153,.45)", testo: "#6ee7b7" },
+    ok_manuale:    { fondo: "rgba(20,184,166,.14)", bordo: "rgba(45,212,191,.40)", testo: "#5eead4" },
+    fallita:       { fondo: "rgba(244,63,94,.16)",  bordo: "rgba(251,113,133,.45)", testo: "#fda4af" },
+    annullata:     { fondo: "rgba(255,255,255,.05)", bordo: "rgba(255,255,255,.16)", testo: "#94a3b8" },
+};
+
 const STATI: Record<string, { testo: string; colore: string; sfondo: string }> = {
     /* «fatta» non bastava: dice che il credito è partito, non CHI l'ha fatto
        partire. Con l'API accesa la differenza è tutta lì — l'automatico è la
@@ -125,7 +138,12 @@ export function PayStoreAdminView() {
     const [tipoP, setTipoP] = useState<"mese" | "range">("mese");
     const [ym, setYm] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; });
     const [range, setRange] = useState({ da: primoDelMese(), a: oggiISO() });
-    const [negozio, setNegozio] = useState("");
+    /* i negozi in una tendina multiselezione: null = tutti (la convenzione del
+       FiltroMulti che il CRM usa già in Ricerca Vendite e nel Calendario) */
+    const [negoziSel, setNegoziSel] = useState<string[] | null>(null);
+    /* «senza scontrino» e «rimaste indietro»: due pulsanti che filtrano la
+       lista, non due elenchi da leggere */
+    const [allarme, setAllarme] = useState("");
     const [operatore, setOperatore] = useState("");
     /* ⚠️ LO STATO SI FILTRA QUI, non nella rotta: il server manda comunque
        tutto il periodo perché i totali e il giorno-per-giorno devono restare
@@ -155,12 +173,17 @@ export function PayStoreAdminView() {
     const carica = useCallback(async () => {
         setCaricando(true); setErr(null);
         try {
-            const r = await fetch(`/api/paystore/registro?da=${periodo.da}&a=${periodo.a}${negozio ? `&negozio=${encodeURIComponent(negozio)}` : ""}${operatore ? `&operatore=${operatore}` : ""}`, { cache: "no-store" }).then((x) => x.json());
+            /* ⚠️ IL NEGOZIO NON VA PIÙ AL SERVER. Con la tendina si possono
+               scegliere più negozi insieme, e il server filtrava per uno solo:
+               il filtro si applica qui, sulle righe, e i totali della testata
+               restano quelli del periodo intero — che è quello che serve
+               guardando l'insieme. */
+            const r = await fetch(`/api/paystore/registro?da=${periodo.da}&a=${periodo.a}${operatore ? `&operatore=${operatore}` : ""}`, { cache: "no-store" }).then((x) => x.json());
             if (!r?.ok) throw new Error(r?.error || "non sono riuscito a leggere il registro");
             setD(r);
         } catch (e) { setErr(String((e as Error)?.message || e)); }
         finally { setCaricando(false); }
-    }, [periodo.da, periodo.a, negozio, operatore]);
+    }, [periodo.da, periodo.a, operatore]);
     useEffect(() => { void carica(); }, [carica]);
 
     if (err) return <div className="m-4 text-sm text-rose-300 border border-rose-500/40 bg-rose-500/10 rounded-xl px-4 py-3">⚠️ {err}</div>;
@@ -170,10 +193,18 @@ export function PayStoreAdminView() {
        applica il server, perché devono cambiare anche i totali e i grafici;
        lo stato no — «solo le da fare» non deve far sembrare che si sia
        incassato meno di quanto si è incassato. */
-    const righe = d.ultime
-        .filter((r) => !stato || r.stato === stato)
-        .filter((r) => !origine || String(r.con_attivazione) === origine);
     const oggiS = oggiISO();
+    /* ⚠️ I FILTRI VALGONO SULL'ELENCO, non sui totali. «Solo le rimaste
+       indietro» non deve far sembrare che si sia incassato meno di quanto si è
+       incassato: la testata parla del periodo, la lista di quello che si sta
+       guardando. */
+    const righe = d.ultime
+        .filter((r) => !negoziSel || negoziSel.includes(String(r.negozio || "")))
+        .filter((r) => !stato || r.stato === stato)
+        .filter((r) => !origine || String(r.con_attivazione) === origine)
+        .filter((r) => !allarme
+            || (allarme === "scontrino" && r.scontrino_stato === "errore")
+            || (allarme === "indietro" && (r.stato === "fallita" || (r.stato === "sospeso" && r.creata_il.slice(0, 10) < oggiS))));
     const daGuardareDavvero = d.daGuardare.filter((r) => r.stato === "fallita" || r.creata_il.slice(0, 10) < oggiS);
     /* ⚠️ DUE COSE CHE VANNO VISTE SUBITO, e non c'entrano con lo stato della
        ricarica: lo scontrino che non è uscito (il cliente ha pagato e non ha
@@ -314,109 +345,7 @@ export function PayStoreAdminView() {
                             );
                         })}
                     </div>
-
-                    <div className="rvPillRow mt-3" style={{ "--rv-acc": "#f8b516" } as React.CSSProperties}>
-                        <button onClick={() => setNegozio("")} className={cn("rvPill rvPill-sm", !negozio && "rvPill-on")}>Tutti i negozi</button>
-                        {d.negozi.map((n) => (
-                            <button key={n} onClick={() => setNegozio(negozio === n ? "" : n)} className={cn("rvPill rvPill-sm", negozio === n && "rvPill-on")}>
-                                {n}<span className="psPillN">{d.perNegozio.find((x) => x.negozio === n)?.quante ?? 0}</span>
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="rvPillRow mt-2" style={{ "--rv-acc": "#818cf8" } as React.CSSProperties}>
-                        <button onClick={() => setStato("")} className={cn("rvPill rvPill-sm", !stato && "rvPill-on")}>Tutti gli stati</button>
-                        {ORDINE_STATI.map((x) => {
-                            const n = d.ultime.filter((r) => r.stato === x).length;
-                            if (!n && x !== "sospeso") return null;
-                            return (
-                                <button key={x} onClick={() => setStato(stato === x ? "" : x)}
-                                    className={cn("rvPill rvPill-sm", stato === x && "rvPill-on")}>
-                                    {STATI[x].testo}<span className="psPillN">{n}</span>
-                                </button>
-                            );
-                        })}
-                        {/* ⚠️ DUE COSE DIVERSE (Luca 01/09). La ricarica che segue
-                            una SIM appena venduta ha il numero dell'attivazione, ed
-                            è il completamento di quella vendita: se non parte, il
-                            cliente esce con una SIM senza credito. Quella «sciolta»
-                            è un servizio a sé, a chi entra solo per quello. */}
-                        {(d.perOrigine || []).map((o) => (
-                            <button key={String(o.conAttivazione)} onClick={() => setOrigine(origine === String(o.conAttivazione) ? "" : String(o.conAttivazione))}
-                                className={cn("rvPill rvPill-sm", origine === String(o.conAttivazione) && "rvPill-on")}>
-                                {o.conAttivazione ? "📶 con attivazione" : "🧾 sciolte"}<span className="psPillN">{o.quante}</span>
-                            </button>
-                        ))}
-                        {(negozio || operatore || stato || origine) && (
-                            <button onClick={() => { setNegozio(""); setOperatore(""); setStato(""); setOrigine(""); }} className="rvPill rvPill-sm psPillVia">
-                                ✕ togli i filtri
-                            </button>
-                        )}
-                    </div>
                 </div>
-
-                {/* ── LE COSE DA GUARDARE, in cima ─────────────────────────── */}
-                {/* ⚠️ «DA FARE» OGGI NON È UN ALLARME: è lo stato normale di ogni
-                    ricarica finché l'API non è collegata, e un riquadro rosso su
-                    tutte insegna solo a non guardarlo. Allarme è quello che NON
-                    è partito (fallita) e quello che è rimasto indietro — una da
-                    fare di ieri vuol dire che il credito non è mai stato
-                    caricato. */}
-                {(senzaScontrino.length > 0 || repartoStorto.length > 0) && (
-                    <div className="relative mt-4 rounded-2xl border border-rose-500/50 bg-rose-500/[0.12] p-3">
-                        {senzaScontrino.length > 0 && (
-                            <div className="mb-2">
-                                <div className="flex items-center gap-2 text-rose-200 font-bold text-sm mb-1">
-                                    <AlertTriangle className="w-4 h-4" />
-                                    {senzaScontrino.length === 1 ? "Una ricarica senza scontrino" : `${senzaScontrino.length} ricariche senza scontrino`}
-                                    <span className="font-normal text-rose-200/70 text-[11px]">— il registratore non ha stampato: il cliente ha pagato e non ha il documento</span>
-                                </div>
-                                {senzaScontrino.slice(0, 6).map((r) => (
-                                    <div key={r.id} className="flex flex-wrap items-center gap-x-3 text-[12px]">
-                                        <span className="text-slate-200 font-semibold">{nomeOp(r.operatore)} {eurC(r.importo)}</span>
-                                        <span className="font-mono text-slate-400">{r.numero || "—"}</span>
-                                        <span className="text-slate-500">{r.negozio} · {new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        {repartoStorto.length > 0 && (
-                            <div>
-                                <div className="flex items-center gap-2 text-amber-200 font-bold text-sm mb-1">
-                                    🧾 {repartoStorto.length === 1 ? "Una ricarica" : `${repartoStorto.length} ricariche`} con il reparto IVA sbagliato
-                                    <span className="font-normal text-amber-200/70 text-[11px]">— sono uscite assoggettate a IVA invece che «non soggetta» (reparto 1)</span>
-                                </div>
-                                {repartoStorto.slice(0, 8).map((r) => (
-                                    <div key={r.id} className="flex flex-wrap items-center gap-x-3 text-[12px]">
-                                        <span className="text-slate-200 font-semibold">{nomeOp(r.operatore)} {eurC(r.importo)}</span>
-                                        <span className="font-mono text-slate-400">{r.numero || "—"}</span>
-                                        <span className="text-slate-500">{r.negozio} · {new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                                        <span className="text-amber-300 font-bold">reparto {r.reparto_usato}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-                {daGuardareDavvero.length > 0 && (
-                    <div className="relative mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3">
-                        <div className="flex items-center gap-2 text-rose-200 font-bold text-sm mb-2">
-                            <AlertTriangle className="w-4 h-4" /> {daGuardareDavvero.length === 1 ? "Una ricarica rimasta indietro" : `${daGuardareDavvero.length} ricariche rimaste indietro`}
-                            <span className="font-normal text-rose-200/70 text-[11px]">— incassate in un giorno già chiuso, o non partite: il credito non risulta caricato</span>
-                        </div>
-                        <div className="space-y-1">
-                            {daGuardareDavvero.slice(0, 8).map((r) => (
-                                <div key={r.id} className="flex flex-wrap items-center gap-x-3 text-[12px]">
-                                    <span className="text-slate-200 font-semibold">{nomeOp(r.operatore)} {eurC(r.importo)}</span>
-                                    <span className="font-mono text-slate-400">{r.numero}</span>
-                                    <span className="text-slate-500">{r.negozio} · {new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                                    <span className={cn("font-bold", STATI[r.stato]?.colore)}>{STATI[r.stato]?.testo || r.stato}</span>
-                                    {r.errore && <span className="text-rose-300/80 truncate max-w-[300px]">«{r.errore}»</span>}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
 
                 {vista === "registro" && (
                     <div className="relative mt-5 grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-5">
@@ -568,6 +497,80 @@ export function PayStoreAdminView() {
 
             {vista === "registro" ? (
                 <>
+                    {/* ══ I FILTRI, SOTTO IL GRAFICO (Luca 02/09) ═══════════════
+                        «Apro la pagina di PayStore: devo vedere sopra i brand, poi
+                        il grafico, e sotto il grafico i filtri dei punti vendita e
+                        degli stati.» Ha ragione sull'ordine: i marchi dicono di che
+                        cosa si parla, il grafico dice come sta andando, i filtri
+                        servono dopo — quando si è visto l'insieme e si vuole
+                        guardare un pezzo. */}
+                    <div className="glass-card an-card rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-3">
+                        {/* i negozi sono dodici: una tendina, non dodici pastiglie.
+                            È la stessa di Ricerca Vendite e del Calendario. */}
+                        <FiltroMulti values={negoziSel} onChange={setNegoziSel} opzioni={d.negozi}
+                            etichettaTutti="Tutti i negozi" className="min-w-[186px]"
+                            etichette={Object.fromEntries(d.negozi.map((n) => [n, `${n} · ${d.perNegozio.find((x) => x.negozio === n)?.quante ?? 0}`]))} />
+
+                        {/* gli stati restano pulsanti, ma col colore del loro stato:
+                            così il filtro somiglia a quello che seleziona */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {ORDINE_STATI.map((x) => {
+                                const n = d.ultime.filter((r) => r.stato === x).length;
+                                if (!n && x !== "sospeso") return null;
+                                const t = TINTA_STATO[x];
+                                const on = stato === x;
+                                return (
+                                    <button key={x} onClick={() => setStato(on ? "" : x)}
+                                        className={cn("psFiltro", on && "psFiltro-on")}
+                                        style={{ background: t.fondo, borderColor: t.bordo, color: t.testo }}>
+                                        <span>{STATI[x].testo}</span>
+                                        <span className="psFiltroN">{n}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {(d.perOrigine || []).filter((o) => o.quante > 0).map((o) => (
+                                <button key={String(o.conAttivazione)} onClick={() => setOrigine(origine === String(o.conAttivazione) ? "" : String(o.conAttivazione))}
+                                    className={cn("psFiltro", origine === String(o.conAttivazione) && "psFiltro-on")}
+                                    title={o.conAttivazione ? "vendute insieme a un'attivazione" : "ricariche vendute da sole"}>
+                                    <span>{o.conAttivazione ? "con attivazione" : "sciolte"}</span>
+                                    <span className="psFiltroN">{o.quante}</span>
+                                </button>
+                            ))}
+                            {(negoziSel || stato || origine || allarme || operatore) && (
+                                <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
+                                    className="psFiltro psFiltroVia">✕ togli i filtri</button>
+                            )}
+                        </div>
+
+                        {/* ⚠️ I DUE ALLARMI SONO DIVENTATI FILTRI (Luca 02/09):
+                            «me li rendi due quadrati che sono due filtri che posso
+                            cliccare, a quel punto la lista sotto si regola in virtù
+                            dei filtri che clicco sopra». Elencare le righe dentro un
+                            riquadro rosso era un doppione della lista che sta già
+                            sotto — e su 62 ricariche diventava un muro. */}
+                        <div className="flex items-center gap-2 ml-auto">
+                            {senzaScontrino.length > 0 && (
+                                <button onClick={() => setAllarme(allarme === "scontrino" ? "" : "scontrino")}
+                                    className={cn("psQuadro", allarme === "scontrino" && "psQuadro-on")}
+                                    title="il registratore non ha stampato: il cliente ha pagato e non ha il documento">
+                                    <span className="psQuadroN">{senzaScontrino.length}</span>
+                                    <span className="psQuadroT">senza<br />scontrino</span>
+                                </button>
+                            )}
+                            {daGuardareDavvero.length > 0 && (
+                                <button onClick={() => setAllarme(allarme === "indietro" ? "" : "indietro")}
+                                    className={cn("psQuadro", allarme === "indietro" && "psQuadro-on")}
+                                    title="incassate in un giorno già chiuso, o non partite: il credito non risulta caricato">
+                                    <span className="psQuadroN">{daGuardareDavvero.length}</span>
+                                    <span className="psQuadroT">rimaste<br />indietro</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
                     {/* ── LE ULTIME ────────────────────────────────────────── */}
                     <div className="glass-card an-card rounded-2xl p-4">
                         <div className="flex items-baseline justify-between mb-3">
