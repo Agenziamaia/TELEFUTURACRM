@@ -5370,27 +5370,22 @@ function CRM() {
      gesto, non uno scivolone: da questo campo dipendono lo scontrino, la
      cassa che incassa e il magazzino da cui esce la merce. */
   const negDichiarato = useRef("");
-  const [cambioNeg,setCambioNeg]=useState<{da:string;a:string}|null>(null);
-  const chiediCambioNegozio = (v) => {
-    const nuovo = String(v || "");
-    if (!nuovo || nuovo === selNeg) { setSelNeg(nuovo); return; }
-    setCambioNeg({ da: selNeg, a: nuovo });
-  };
   const _loginPrefill=useRef(false);
   useEffect(()=>{
     if(_loginPrefill.current||!user)return;
     _loginPrefill.current=true;
     setSelVend(p=>p||user.name||"");
     setSelNeg(p=>p||user.negozio||"");
-    /* IL NEGOZIO DICHIARATO STAMATTINA VINCE (Luca 31/08). La schermata «dove
+    /* IL NEGOZIO DICHIARATO STAMATTINA COMANDA (Luca 31/08, reso definitivo il
+       02/09). La schermata «dove
        stai lavorando oggi» scrive una SEDE — «magliana», «donna» — perché le
        insegne gemelle sono un magazzino solo. Qui si torna a un nome di
        negozio: la propria insegna se sta in quella sede, se no la prima.
        Quale società emette lo scontrino continua a deciderlo la MERCE.
-       Per ora è solo il valore di partenza, e il campo resta modificabile: il
-       blocco vero arriva quando avremo visto che la dichiarazione funziona per
-       tutti — chiudere il campo il giorno dell'apertura, se qualcuno resta
-       senza presenza, vorrebbe dire un negozio che non vende. */
+       Dal 02/09 il campo non si modifica più: la dichiarazione è l'unica
+       fonte. Chi non l'ha fatta non resta a piedi — si ripiega sul negozio in
+       scheda — perché un negozio che non vende è peggio di un negozio che
+       vende sotto l'insegna di partenza. */
     (async () => {
       try {
         const { presenzaOggi } = await import("@/lib/doveLavoro");
@@ -8390,36 +8385,9 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
      dice le tre cose che cambiano davvero — chi emette lo scontrino, quale
      cassa incassa, da quale magazzino esce la merce — perché è esattamente
      quello che si sbaglia quando si cambia negozio per sbaglio. */
-  const pannelloCambioNegozio = cambioNeg && createPortal(
-    <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget)setCambioNeg(null);}}>
-      <div className="rvStoria">
-        <div className="rvStoria-t">
-          <div>
-            <div className="rvStoria-tit">Stai cambiando il punto vendita selezionato</div>
-            <div className="rvStoria-sot">
-              Da <b>{cambioNeg.da || "—"}</b> a <b>{cambioNeg.a}</b>
-              {negDichiarato.current && cambioNeg.a !== negDichiarato.current
-                ? <> — all&apos;accesso hai dichiarato di lavorare a <b>{negDichiarato.current}</b>.</>
-                : "."}
-            </div>
-          </div>
-        </div>
-        <div className="rvNota rvNota-att">
-          <div className="rvNota-t">Cosa cambia con il negozio</div>
-          <div className="rvNota-s">
-            Lo scontrino lo emette la società di quel punto vendita, l&apos;incasso finisce
-            nella sua cassa e la merce esce dal suo magazzino. Cambialo solo se questa
-            pratica è davvero dell&apos;altro negozio.
-          </div>
-        </div>
-        <div className="rvBarra rvBarra-c">
-          <button type="button" className="rvPill" onClick={()=>setCambioNeg(null)}>Lascia {cambioNeg.da || "com'è"}</button>
-          <button type="button" className="rvAzione" onClick={()=>{setSelNeg(cambioNeg.a);setCambioNeg(null);}}>
-            Sì, registro per {cambioNeg.a}
-          </button>
-        </div>
-      </div>
-    </div>, document.body);
+  /* IL PANNELLO «CAMBIA NEGOZIO» NON C'È PIÙ (Luca 02/09): il negozio della
+     vendita lo decide la dichiarazione del mattino e non si tocca da qui,
+     quindi non c'è più niente da confermare. */
   const pannelloVenditaFatta = venditaFatta && createPortal(
     <div className="rvFattaSfondo" onClick={e=>{if(e.target===e.currentTarget)chiudiVenditaFatta();}}>
       <div className="rvFatta">
@@ -8771,7 +8739,7 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
           </div>
         </div>}
         {/* #124: popup di conferma reset anche dentro il carrello */}
-        {pannelloCambioNegozio}{pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
+        {pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
       </div>
     );
     return cartContent;
@@ -9634,7 +9602,22 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
         {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div className="rvCard" style={{borderLeft:"4px solid #28a745"}}>
           <div className="rvCardT" style={{color:"var(--tf-28a745)",marginBottom:14}}>🏪 Attribuzione</div>
           <div className="rvG3">
-            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={chiediCambioNegozio} vals={negozi} nt="Dalla presenza dichiarata — si può cambiare"/>
+            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/>{/* ⭐ IL NEGOZIO NON SI SCEGLIE PIÙ QUI (Luca 02/09): «la selezione del
+                negozio vicino al nome del venditore confonde i ragazzi e confonde
+                anche te, DEVE SPARIRE; l'unico parametro vero è il popup di login
+                che dice dove lavora quel collaboratore».
+                Aveva ragione anche sui fatti: da questo campo dipendono lo
+                scontrino, la cassa che incassa e il magazzino da cui esce la
+                merce, e lasciarlo aperto voleva dire che una svista al terzo
+                clic della giornata mandava uno scontrino sulla partita IVA
+                dell'altra società. Adesso si legge e basta: per cambiarlo si
+                cambia la dichiarazione del mattino, che è un gesto solo e
+                lascia traccia. */}
+            <div>
+              <div className="rvLab">Negozio</div>
+              <div className="rvIn rvIn-fermo">🏪 {selNeg || "—"}</div>
+              <div className="rvHint">Da «dove stai lavorando oggi». Per cambiarlo, cambia la dichiarazione.</div>
+            </div>
             <div><div className="rvLab">Data <span style={{color:"var(--tf-f87171)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} className="rvIn"/></div>
           </div>
         </div>}
@@ -9662,7 +9645,7 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
       </div>}
 
       {/* ── CONFIRM RESET POPUP (condiviso, #124) ────────────────────────── */}
-      {pannelloCambioNegozio}{pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
+      {pannelloVenditaFatta}{pannelloAvvisiMag}{confirmResetModal}{confirmNoOpzModal}
 
       {/* ── VF QTY MODAL OVERLAY ─────────────────────────────────────────── */}
       {vfQtyModal&&(

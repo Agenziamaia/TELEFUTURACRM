@@ -150,6 +150,37 @@ export async function POST(req: Request) {
        pezzi a Telefutura 1, ma il default di Donna è Telefutura 2.
        Qui il negozio si sa, quindi la risposta si può leggere: la merce è di
        chi i pezzi ce li ha. Una query sola per scontrino. */
+    /* ⚠️ E IL PEZZO CON SERIALE LO DICE DA SÉ (Luca 02/09, guasto vero a
+       Magliana: uno ZTE Blade A35e di **Magliana W3 / Telefutura 1** è uscito
+       sulla cassa del **Multi / Telefutura 2**).
+       Perché succedeva: la ricerca qui sotto guarda `mag_giacenze`, che tiene
+       le quantità. Un telefono con IMEI non sta lì — sta in `mag_unita` — e
+       quindi non risultava di nessuno: si scendeva lungo tutta la catena fino
+       al valore di fabbrica del negozio, che al Multi è Telefutura 2.
+       Il seriale identifica IL pezzo, non l'articolo: è la fonte più
+       autorevole che esista sulla proprietà, e viene prima di quello che
+       manda il browser. L'IMEI si legge dal campo, se c'è, o dalla
+       descrizione, dove dal 01/09 viaggia sempre intero. */
+    const societaDelSeriale: Record<string, string> = {};
+    {
+        const seriali = [...new Set(righe.map((r) => {
+            const diretto = String((r as { seriale?: string; imei?: string }).seriale || (r as { imei?: string }).imei || "").trim();
+            if (diretto) return diretto;
+            return (String(r.description || "").match(/IMEI\s*([A-Za-z0-9]{6,})/i)?.[1] || "").trim();
+        }).filter(Boolean))];
+        if (seriali.length) {
+            const { data } = await supabase.from("mag_unita")
+                .select("seriale, azienda, negozio").in("seriale", seriali);
+            (data || []).forEach((u: { seriale: string; azienda: string | null; negozio: string }) => {
+                if (u.azienda) societaDelSeriale[String(u.seriale)] = String(u.azienda);
+            });
+        }
+    }
+    /** L'IMEI di una riga, come sopra: campo esplicito o descrizione. */
+    const serialeDi = (r: { seriale?: string; imei?: string; description?: unknown }) =>
+        String(r.seriale || r.imei || "").trim()
+        || (String(r.description || "").match(/IMEI\s*([A-Za-z0-9]{6,})/i)?.[1] || "").trim();
+
     const societaDelCodice: Record<string, string> = {};
     if (negozio) {
         const codici = [...new Set(righe.map((r) => String(r.codice || "")).filter(Boolean))];
@@ -219,7 +250,7 @@ export async function POST(req: Request) {
     const societaDelleRighe = new Set<string>();
     for (const r of righe) {
         const meta = byId[stripId(r.productId)] || byName[String(r.description || "").trim()] || null;
-        const suo = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")] || null;
+        const suo = (meta && meta.azienda) || societaDelSeriale[serialeDi(r)] || r.azienda || societaDelCodice[String(r.codice || "")] || null;
         if (suo) societaDelleRighe.add(String(suo));
     }
     const azDellaMerce = societaDelleRighe.size === 1 ? [...societaDelleRighe][0] : null;
@@ -286,7 +317,7 @@ export async function POST(req: Request) {
            fare. Adesso la regola PayStore PREIMPOSTA la società nel modale
            (`ScontrinoCassa`), così quello che si legge è quello che esce, e
            resta la possibilità di correggere quando serve. */
-        const az = (meta && meta.azienda) || r.azienda || societaDelCodice[String(r.codice || "")]
+        const az = (meta && meta.azienda) || societaDelSeriale[serialeDi(r)] || r.azienda || societaDelCodice[String(r.codice || "")]
             || azDellaMerce || b.azienda || azRicaricheSciolte || defaultAzienda || "__def";
         const desc = tagliaRiga(r.description);
         const price = Number(r.unitPrice);
