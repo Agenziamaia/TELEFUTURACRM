@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { stessoMagazzino, LABORATORIO, STATI_AL_LABORATORIO } from "@/lib/negoziNomi";
+import { negoziVisibiliDi } from "@/lib/visibleStoresServer";
+import { isAdminOrAbove } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,14 +45,26 @@ export const dynamic = "force-dynamic";
 /** Il giorno di Roma: lo stesso che finisce nell'indice unico. */
 const giornoRoma = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 
-async function aziendaDelNegozio(negozio: string): Promise<string | null> {
+/** La società di un luogo, e se quel luogo ne ospita più d'una.
+ *
+ *  ⚠️ UN USATO NON HA UNA SOCIETÀ SUA. In `usati` non c'è nessuna colonna che
+ *  dica di chi è il telefono: la si deduce dal posto dove sta. E il posto, in
+ *  quattro casi su otto, non basta — misurato: ad Acilia, Magliana, Donna e
+ *  Collatina battono DUE registratori di due società diverse, e lì stanno 141
+ *  telefoni su 281. `stores.azienda` dice «T1» per tutti e quattro, ma è un
+ *  campo unico su un locale che ne ospita due: nessuno ha mai confermato che i
+ *  telefoni usati siano di T1.
+ *  Qui non si indovina. Si dice qual è la società più probabile E che il posto
+ *  è ambiguo, e chi emette il documento se lo trova scritto sopra. */
+async function aziendaDelNegozio(negozio: string): Promise<{ azienda: string | null; incerta: boolean }> {
+    const { data: rt } = await supabaseAdmin.from("pos_rt")
+        .select("azienda, is_default").eq("negozio", negozio);
+    const casse = [...new Set(((rt || []) as { azienda: string }[]).map((r) => r.azienda))];
     const { data } = await supabaseAdmin.from("stores")
         .select("azienda").eq("name", negozio).maybeSingle();
-    const a = (data as { azienda?: string | null } | null)?.azienda;
-    if (a) return a;
-    const { data: rt } = await supabaseAdmin.from("pos_rt")
-        .select("azienda").eq("negozio", negozio).order("is_default", { ascending: false }).limit(1);
-    return ((rt || [])[0] as { azienda?: string | null } | undefined)?.azienda || null;
+    const anagrafica = (data as { azienda?: string | null } | null)?.azienda || null;
+    const def = ((rt || []) as { azienda: string; is_default: boolean }[]).find((r) => r.is_default)?.azienda || casse[0] || null;
+    return { azienda: anagrafica || def, incerta: casse.length > 1 };
 }
 
 export async function POST(req: Request) {
@@ -86,11 +100,58 @@ export async function POST(req: Request) {
        fattura che ne consegue, per un telefono che non si è mosso.
        Due controlli: i due posti devono esistere davvero in anagrafica, e la
        partenza dev'essere dove il telefono STA — non dove qualcuno dice. */
-    const { data: luoghi } = await supabaseAdmin.from("stores").select("name");
-    const esiste = new Set(((luoghi || []) as { name: string }[]).map((s) => s.name));
-    if (!esiste.has(b.da) || !esiste.has(b.a)) {
-        return NextResponse.json({ error: "partenza o arrivo non sono un punto vendita valido" }, { status: 400 });
+    const { data: luoghi, error: eLuoghi } = await supabaseAdmin.from("stores").select("name");
+    if (eLuoghi || !luoghi) {
+        /* ⚠️ SE L'ANAGRAFICA NON RISPONDE, NON SI INCOLPANO I NOMI. Con
+           l'elenco vuoto ogni richiesta usciva «partenza o arrivo non sono un
+           punto vendita valido», e nessuno sarebbe andato a cercare un guasto
+           di rete dietro un messaggio che parla di negozi. */
+        return NextResponse.json({ error: "non riesco a leggere l'anagrafica dei punti vendita: riprova fra poco" }, { status: 503 });
     }
+    /* ⚠️ IL NOME SI RISOLVE, NON SI CONFRONTA A LETTERE. Nella schermata la
+       tendina proponeva «Acilia Multi», «Collatina Multi», «Magliana Multi»:
+       tre insegne che in anagrafica non esistono più — misurato, `stores` ha
+       «Acilia», «Collatina», «Magliana». Con l'uguaglianza esatta il documento
+       veniva RIFIUTATO proprio nei tre negozi dove stanno 106 telefoni su 281,
+       e il telefono intanto si era già mosso.
+       La tendina adesso legge l'anagrafica; qui si risolve lo stesso, con la
+       tolleranza che il resto del CRM usa già per le doppie insegne. */
+    const nomi = (luoghi as { name: string }[]).map((x) => x.name);
+    const risolvi = (n: string) => nomi.find((x) => x === n) || nomi.find((x) => stessoMagazzino(x, n)) || null;
+    const daR = risolvi(b.da), aR = risolvi(b.a);
+    if (!daR || !aR) {
+        return NextResponse.json({
+            error: `«${!daR ? b.da : b.a}» non è un punto vendita dell'anagrafica: documento non emesso.`,
+        }, { status: 400 });
+    }
+    b.da = daR; b.a = aR;
+    /* risolti i nomi, il controllo di riga 69 va rifatto: «Magliana Multi» e
+       «Magliana» diventano lo stesso posto solo adesso */
+    if (b.da === b.a) {
+        return NextResponse.json({ ok: true, saltato: "partenza e arrivo sono lo stesso punto vendita" });
+    }
+    /* ⚠️ E CHI LA CHIEDE DEVE POTER TOCCARE QUEL TELEFONO.
+       Il solo `accesso(req, "usati/ddt")` apre la rotta a chiunque veda
+       Gestione Usati: quaranta account, venti dei quali venditori. Uno di loro
+       poteva mandare `{ usatoId: <telefono di Garbatella>, da: "Garbatella",
+       a: "Acilia" }` e far nascere una CESSIONE T2→T1 — con la fattura da
+       fare — su un telefono che non ha mai toccato. La schermata glielo
+       impediva, il server no: e la schermata non è una difesa.
+       La regola è quella del pannello: la direzione e chi lavora l'usato
+       possono sempre; agli altri serve che il telefono sia dei loro negozi. */
+    const { data: chi } = await supabaseAdmin.from("app_users")
+        .select("role").eq("id", g.sess.id).maybeSingle();
+    const ruolo = String((chi as { role?: string } | null)?.role || "");
+    if (!isAdminOrAbove(ruolo) && ruolo !== "tecnico") {
+        const { tutti, negozi } = await negoziVisibiliDi(g.sess.id);
+        const suo = (n: string | null) => !!n && (tutti || negozi.some((m) => stessoMagazzino(n, m)));
+        if (!suo(u.store) && !suo(u.target_store)) {
+            return NextResponse.json({
+                error: "questo telefono non è di un tuo punto vendita: il documento di trasporto lo emette chi lo sta spostando.",
+            }, { status: 403 });
+        }
+    }
+
     /* ⚠️ SI ANCORA UN CAPO ALLA RIGA DEL TELEFONO, NON LA PARTENZA.
        Il primo tentativo pretendeva che la partenza fosse il negozio scritto in
        `usati.store` — e avrebbe RIFIUTATO il trasferimento fra due punti
@@ -115,12 +176,6 @@ export async function POST(req: Request) {
     }
 
     const giorno = giornoRoma();
-    /* già emesso oggi per questo viaggio? si restituisce quello, non se ne fa
-       un secondo */
-    const { data: gia } = await supabaseAdmin.from("mag_ddt")
-        .select("id, numero, anno").eq("usato_id", b.usatoId)
-        .eq("da_negozio", b.da).eq("a_negozio", b.a).eq("viaggio_giorno", giorno).maybeSingle();
-    if (gia) return NextResponse.json({ ok: true, gia: true, ddt: gia });
 
     /* ⚠️ IL LABORATORIO NON È UNA SOCIETÀ, È UN REPARTO. Non ha `azienda` in
        anagrafica, e la lasciava nulla: il trigger la deduceva dal magazzino di
@@ -131,42 +186,45 @@ export async function POST(req: Request) {
        telefoni a un clic da lì.
        Il telefono che passa dal laboratorio resta di chi era: sulle tratte che
        lo toccano, la società è quella del negozio vero. */
-    let azDa = await aziendaDelNegozio(b.da);
-    let azA = await aziendaDelNegozio(b.a);
+    const infoDa = await aziendaDelNegozio(b.da);
+    const infoA = await aziendaDelNegozio(b.a);
+    let azDa = infoDa.azienda, azA = infoA.azienda;
     if (!azDa && azA) azDa = azA;
     if (!azA && azDa) azA = azDa;
     const cessione = !!azDa && !!azA && azDa !== azA;
 
-    const { data: creato, error } = await supabaseAdmin.from("mag_ddt").insert({
-        da_negozio: b.da, a_negozio: b.a,
-        azienda_da: azDa, azienda_a: azA,
-        tipo: cessione ? "cessione" : "trasferimento",
-        stato: "usato",
-        usato_id: b.usatoId, viaggio_giorno: giorno,
-        causale: b.causale || (cessione ? "Cessione tra società del gruppo — telefono usato" : "Trasferimento tra sedi — telefono usato"),
-        aspetto: "Telefono usato", trasporto: "Mittente", colli: 1,
-        creato_da: g.sess.id,
-        /* nasce chiuso: il negozio lo prende in carico in Gestione Usati */
-        chiuso_da: "gestione usati", chiuso_il: new Date().toISOString(),
-        note: "Documento emesso in automatico da Gestione Usati. Non si accetta qui: il telefono si prende in carico nella sua scheda, seguendo la timeline dell'usato.",
-    }).select("id, numero, anno, azienda_da, azienda_a").single();
-    if (error || !creato) {
+    /* ⚠️ SE IL POSTO OSPITA DUE SOCIETÀ, IL DOCUMENTO LO DICE. Un documento che
+       afferma «T1 → T2» quando la partenza poteva essere T2 dichiara una
+       cessione che forse non c'è (fattura da fare, ricavo e IVA inventati); uno
+       che afferma «T1 → T1» quando la partenza era T2 ne nasconde una vera. Il
+       CRM non ha il dato per scegliere, quindi non sceglie in silenzio: la
+       nota lo scrive, e l'amministrazione decide prima di fatturare. */
+    const incerta = infoDa.incerta || infoA.incerta;
+    const avvisoSocieta = incerta
+        ? `\n⚠️ SOCIETÀ DA CONFERMARE: ${[infoDa.incerta ? b.da : null, infoA.incerta ? b.a : null].filter(Boolean).join(" e ")} ${infoDa.incerta && infoA.incerta ? "ospitano" : "ospita"} due società alla cassa, e il telefono usato non ha una società propria registrata. Qui è scritta quella dell'anagrafica: verificarla prima di ${cessione ? "emettere la fattura" : "considerarlo un trasferimento interno"}.`
+        : "";
+
+    /* ⚠️ TESTATA E RIGA IN UNA TRANSAZIONE SOLA. Erano due chiamate separate:
+       se la seconda falliva restava un documento numerato, chiuso e VUOTO —
+       senza descrizione, senza IMEI, senza quantità — e l'indice unico lo
+       rendeva pure irrecuperabile, perché al tentativo dopo veniva restituito
+       quello. Adesso lo fa `tf_ddt_usato_crea`, che gestisce anche il doppio
+       clic restituendo il documento già fatto invece di un errore. */
+    const { data: creato, error } = await supabaseAdmin.rpc("tf_ddt_usato_crea", {
+        p_usato_id: b.usatoId, p_da: b.da, p_a: b.a,
+        p_azienda_da: azDa, p_azienda_a: azA,
+        p_tipo: cessione ? "cessione" : "trasferimento",
+        p_causale: b.causale || (cessione ? "Cessione tra società del gruppo — telefono usato" : "Trasferimento tra sedi — telefono usato"),
+        p_descrizione: `${u.model} — usato · IMEI ${u.imei}`,
+        p_seriale: u.imei,
+        p_valore: Number(u.sale_price) > 0 ? Number(u.sale_price) : (Number(u.purchase_price) || null),
+        p_giorno: giorno,
+        p_creato_da: g.sess.id,
+        p_note: "Documento emesso in automatico da Gestione Usati. Non si accetta qui: il telefono si prende in carico nella sua scheda, seguendo la timeline dell'usato." + avvisoSocieta,
+    });
+    const d = ((creato || []) as { id: string; numero: number; anno: number; azienda_da: string | null; azienda_a: string | null; gia: boolean }[])[0];
+    if (error || !d) {
         return NextResponse.json({ error: error?.message || "il documento non è stato creato" }, { status: 500 });
     }
-    const d = creato as { id: string; numero: number; anno: number; azienda_da: string | null; azienda_a: string | null };
-
-    const { error: eRiga } = await supabaseAdmin.from("mag_ddt_righe").insert({
-        ddt_id: d.id, riga: 1,
-        codice: null, descrizione: `${u.model} — usato · IMEI ${u.imei}`,
-        /* ⚠️ `unita_id` NULLO: questo telefono non è un pezzo di magazzino, e
-           agganciarlo a un'unità che non esiste romperebbe ogni conto che
-           parte da lì. Il seriale invece è l'IMEI, ed è il modo di ritrovarlo. */
-        unita_id: null, seriale: u.imei, quantita: 1,
-        valore_unitario: Number(u.sale_price) > 0 ? Number(u.sale_price) : (Number(u.purchase_price) || null),
-        negozio_da: b.da, negozio_a: b.a, azienda_da: d.azienda_da, azienda_a: d.azienda_a,
-        stato: "in_viaggio",
-    });
-    if (eRiga) return NextResponse.json({ error: eRiga.message, ddt: d }, { status: 500 });
-
-    return NextResponse.json({ ok: true, ddt: d, cessione });
+    return NextResponse.json({ ok: true, gia: d.gia, ddt: d, cessione, societaIncerta: incerta });
 }

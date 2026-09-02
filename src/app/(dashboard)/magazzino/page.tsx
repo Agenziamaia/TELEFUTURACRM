@@ -2313,9 +2313,16 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
        finge cliccabile (regola §7). */
     const puoAccettare = (d: Ddt) => gestisce && d.stato === "in_transito" && (puoCaricare || mio(d.a_negozio));
     const puoAnnullare = (d: Ddt) => gestisce && d.stato === "in_transito" && (puoCaricare || mio(d.da_negozio));
+    /* ⚠️ IL DOCUMENTO DI UN USATO NASCE CHIUSO (stato `usato`), quindi
+       `puoAnnullare` — che guarda solo `in_transito` — non lo raggiungeva mai:
+       un documento emesso per sbaglio restava lì per sempre, col suo numero
+       bruciato nel registro e, se fra due società diverse, per sempre
+       nell'elenco «da fatturare». Lo annulla l'amministrazione, e passa da una
+       rotta sua perché non è un gesto di magazzino: è una correzione fiscale. */
+    const puoAnnullareUsato = (d: Ddt) => puoCaricare && d.stato === "usato";
 
     /* ── LE AZIONI A SCHERMO ─────────────────────────────────────────────── */
-    type Azione = { d: Ddt; modo: "accetta" | "rifiuta" | "annulla" | "fattura" | "differenza"; riga?: RigaDdt };
+    type Azione = { d: Ddt; modo: "accetta" | "rifiuta" | "annulla" | "annullaUsato" | "fattura" | "differenza"; riga?: RigaDdt };
     const [azione, setAzione] = useState<Azione | null>(null);
     const [quante, setQuante] = useState<Record<string, number>>({});
     const [motivo, setMotivo] = useState("");
@@ -2351,6 +2358,17 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
             if (modo === "accetta") ({ avvisi } = await prendiInCarico(d, rs, quante, motivo, utente));
             else if (modo === "rifiuta") avvisi = await rimandaIndietro(d, rs, "rifiutato", motivo, utente);
             else if (modo === "annulla") avvisi = await rimandaIndietro(d, rs, "annullato", motivo, utente);
+            else if (modo === "annullaUsato") {
+                /* niente `rimandaIndietro`: un usato non ha giacenze da
+                   riportare indietro, e passarci dentro muoverebbe stock su un
+                   codice che non esiste */
+                const r = await fetch("/api/usati/ddt/annulla", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ddtId: d.id, motivo }),
+                });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(j?.error || "non è stato annullato");
+            }
             else if (modo === "differenza" && riga) avvisi = await chiudiDifferenza(d, riga, comeChiudo, motivo, utente);
             else if (modo === "fattura") {
                 await supabase.from("mag_ddt").update({
@@ -2699,6 +2717,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                                         tutto e poi disfare. */}
                                                     {puoAccettare(d) && <button onClick={() => apriAzione(d, "rifiuta")} className="rvPill rvPill-sm">↩️ Respingi</button>}
                                                     {puoAnnullare(d) && <button onClick={() => apriAzione(d, "annulla")} className="rvPill rvPill-sm">🚫 Annulla</button>}
+                                                    {puoAnnullareUsato(d) && <button onClick={() => apriAzione(d, "annullaUsato")} className="rvPill rvPill-sm">🚫 Annulla</button>}
                                                     {puoCaricare && daFatturare(d) && <button onClick={() => apriAzione(d, "fattura")} className="rvPill rvPill-sm rvPill-no">🧾 Fattura</button>}
                                                 </span>
                                             </td>
@@ -2862,16 +2881,19 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                 </>
                             ) : (
                                 <>
-                                    <div className="rvFatta-o rvFatta-att-o">{azione.modo === "annulla" ? "🚫" : "↩️"}</div>
-                                    <h3>{azione.modo === "annulla" ? "Annullare il documento?" : "Respingere tutta la merce?"}</h3>
+                                    <div className="rvFatta-o rvFatta-att-o">{azione.modo === "rifiuta" ? "↩️" : "🚫"}</div>
+                                    <h3>{azione.modo === "rifiuta" ? "Respingere tutta la merce?" : "Annullare il documento?"}</h3>
                                     <p>
                                         DDT n.{azione.d.numero} · {azione.d.da_negozio} → {azione.d.a_negozio}<br />
-                                        Tutto quello che sta ancora viaggiando torna <b>{azione.d.da_negozio}</b>.
-                                        Il documento non si cancella: resta col suo numero, marcato {azione.modo === "annulla" ? "annullato" : "respinto"}.
+                                        {azione.modo === "annullaUsato"
+                                            ? <>È il documento di un <b>telefono usato</b>: non ci sono giacenze da riportare indietro, il telefono lo segui nella sua scheda.<br /></>
+                                            : <>Tutto quello che sta ancora viaggiando torna <b>{azione.d.da_negozio}</b>.<br /></>}
+                                        Il documento non si cancella: resta col suo numero, marcato {azione.modo === "rifiuta" ? "respinto" : "annullato"}
+                                        {azione.modo === "annullaUsato" && azione.d.azienda_da !== azione.d.azienda_a ? ", e esce dall'elenco «da fatturare»" : ""}.
                                     </p>
                                     <label className="rvCampo"><span className="rvLab">Perché</span>
                                         <input value={motivo} onChange={e => setMotivo(e.target.value)} autoFocus className="rvIn"
-                                            placeholder={azione.modo === "annulla" ? "spedizione sbagliata, ci ripensiamo…" : "merce danneggiata, non è quella che avevo chiesto…"} /></label>
+                                            placeholder={azione.modo === "rifiuta" ? "merce danneggiata, non è quella che avevo chiesto…" : azione.modo === "annullaUsato" ? "il telefono non è mai partito, destinazione sbagliata…" : "spedizione sbagliata, ci ripensiamo…"} /></label>
                                 </>
                             )}
                         <div className="rvBarra rvBarra-c mt-4 justify-end">

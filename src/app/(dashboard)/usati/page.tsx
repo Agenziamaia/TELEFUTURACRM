@@ -201,7 +201,29 @@ const KPI_CARDS = [
    uscirebbe senza indirizzo. Finché non è deciso dove sta, il nome è questo e
    si cambia in una riga — ma è una cosa da decidere, non da indovinare. */
 const LABORATORIO = LAB_NOME;
-const NEGOZI_USATI = ["Acilia Multi", "Baleniere", "Collatina Multi", "Donna", "Garbatella", "Magliana Multi", "Promontori"];
+/* ⚠️ ERA SCRITTA A MANO, E NON ESISTEVA PIÙ. La lista diceva «Acilia Multi»,
+   «Collatina Multi», «Magliana Multi»: tre insegne che l'anagrafica non ha più
+   — `stores` ha «Acilia», «Collatina», «Magliana». Chi sceglieva una di quelle
+   scriveva in `usati.store` un negozio inesistente, e da lì in poi quel
+   telefono non risultava di nessuno.
+   La verità sta in `stores`: si legge da lì, una volta, e la costante resta
+   solo come rete se la lettura non riesce. */
+const NEGOZI_DI_SCORTA = ["Acilia", "Baleniere", "Collatina", "Donna", "Garbatella", "Magliana", "Promontori"];
+let _negoziCache: string[] | null = null;
+function useNegoziUsati(): string[] {
+    const [lista, setLista] = useState<string[]>(_negoziCache || NEGOZI_DI_SCORTA);
+    useEffect(() => {
+        if (_negoziCache) return;
+        supabase.from("stores").select("name, is_ufficio").order("name").then(({ data }) => {
+            /* fuori l'ufficio e il laboratorio: non sono punti vendita, e come
+               destinazione di un usato non hanno senso */
+            const n = ((data || []) as { name: string; is_ufficio: boolean | null }[])
+                .filter((x) => !x.is_ufficio).map((x) => x.name);
+            if (n.length) { _negoziCache = n; setLista(n); }
+        });
+    }, []);
+    return lista;
+}
 const DATE_FIELDS = [
   { key: "created_at", label: "Data Registrazione" },
   { key: "purchase_date", label: "Data Acquisto" },
@@ -727,6 +749,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
      lo si dice — non si annulla il passaggio per un pezzo di carta, ma non lo
      si nasconde nemmeno. */
   const [ddtAvviso, setDdtAvviso] = useState("");
+  const NEGOZI_USATI = useNegoziUsati();
   const chiediDdt = async (da: string | null, a: string | null) => {
     if (!da || !a) return;
     try {
@@ -737,7 +760,12 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setDdtAvviso(`⚠️ Il telefono si è mosso, ma il documento di trasporto non è stato emesso: ${j?.error || "errore"}. Segnalalo all'amministrazione.`); return; }
       if (j?.saltato) return;                       // stesso locale: nessun trasporto
-      if (j?.ddt?.numero) setDdtAvviso(`📄 Documento di trasporto n° ${j.ddt.numero}/${j.ddt.anno} emesso — lo trovi in Magazzino → Trasferimenti.`);
+      /* ⚠️ «GIÀ FATTO» NON È «EMESSO ADESSO». Con il doppio clic, o riaprendo
+         la scheda, il server restituisce il documento della prima volta: dirlo
+         come se fosse nuovo fa cercare due documenti che non ci sono. */
+      if (j?.ddt?.numero) setDdtAvviso(j?.gia
+        ? `📄 Il documento di trasporto n° ${j.ddt.numero}/${j.ddt.anno} per questo viaggio c'era già — lo trovi in Magazzino → Trasferimenti.`
+        : `📄 Documento di trasporto n° ${j.ddt.numero}/${j.ddt.anno} emesso — lo trovi in Magazzino → Trasferimenti.`);
     } catch (e) {
       setDdtAvviso(`⚠️ Il telefono si è mosso, ma il documento di trasporto non è stato emesso: ${(e as Error)?.message || "errore"}.`);
     }
@@ -790,7 +818,14 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
        laboratorio lo manda a un punto vendita. Gli altri (ricevuto, in
        lavorazione, pronto) succedono senza che il telefono cambi posto. */
     if (next === "in_transito") await chiediDdt(dev.store, LABORATORIO);
-    if (next === "invio_in_negozio" && targetStore) await chiediDdt(LABORATORIO, targetStore);
+    /* ⚠️ LA PARTENZA È DOVE STA IL TELEFONO, NON «LABORATORIO» PER DEFINIZIONE.
+       Qui era scritto `LABORATORIO` fisso: ma trenta telefoni in stato
+       ricevuto/in lavorazione/pronto NON sono al laboratorio — stanno a
+       Baleniere, ad Acilia, a Collatina — e il documento dichiarava una
+       partenza da Via della Magliana 263 per merce che era altrove. Peggio: su
+       un telefono di Collatina (T1) mandato a Garbatella (T2) la cessione fra
+       società spariva, perché il laboratorio eredita la società dell'arrivo. */
+    if (next === "invio_in_negozio" && targetStore) await chiediDdt(dev.store || LABORATORIO, targetStore);
   };
   // PASSO INDIETRO (Luca 31/07): dall'amministrativo in su si corregge un
   // avanzamento sbagliato riportando lo stato a 1..N passi prima — con
@@ -2134,6 +2169,7 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
 
 //  Main Page -
 function GestioneUsatiInner() {
+  const NEGOZI_USATI = useNegoziUsati();
   const { user } = useAuth();
   const NEGOZI = useStores();
   const [devices, setDevices] = useState<Device[]>([]);

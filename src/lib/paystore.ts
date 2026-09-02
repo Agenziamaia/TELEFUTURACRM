@@ -20,15 +20,35 @@
 import { createHash, createHmac, randomUUID, randomBytes } from "node:crypto";
 
 const BASE = process.env.PAYSTORE_BASE_URL || "https://api-test.paystore.it/api/partner/v1";
-const CLIENT_ID = process.env.PAYSTORE_CLIENT_ID || "";
-const CLIENT_SECRET = process.env.PAYSTORE_CLIENT_SECRET || "";
-const SIGNING_KEY = process.env.PAYSTORE_SIGNING_KEY || "";
+
+/* ═══ UNA TERNA PER NEGOZIO, NON UNA PER SERVER ════════════════════════════
+   Luca 02/09: «sono arrivate tutte le credenziali API di PayStore: ne hanno
+   creata una per ogni punto vendita, divisa per società».
+
+   ⚠️ PERCHÉ NON BASTAVA UNA VARIABILE D'AMBIENTE. Con sedici terne, ogni
+   ricarica dev'essere firmata con quella del negozio che l'ha venduta: il
+   plafond è separato, e una ricarica firmata con le credenziali di un altro
+   punto vendita ADDEBITA IL CREDITO DI QUELL'ALTRO. Il credito è denaro vero,
+   e la riconciliazione a fine mese la farebbe qualcun altro.
+
+   ⚠️ E IL TOKEN NON PUÒ ESSERE UNO SOLO. Era tenuto in una variabile di
+   modulo: con più credenziali il token del negozio A sarebbe finito su una
+   richiesta firmata per il negozio B — che PayStore rifiuta con un 401 che
+   sembra un problema di credenziali. La cassaforte dei token è per client id. */
+export type Credenziale = { clientId: string; clientSecret: string; signingKey: string };
+
+/** La terna delle variabili d'ambiente: è quella del COLLAUDO, e resta il
+ *  ripiego quando una ricarica non ha un negozio a cui agganciarsi. */
+export const credenzialeAmbiente = (): Credenziale | null => {
+    const c = { clientId: process.env.PAYSTORE_CLIENT_ID || "", clientSecret: process.env.PAYSTORE_CLIENT_SECRET || "", signingKey: process.env.PAYSTORE_SIGNING_KEY || "" };
+    return c.clientId && c.clientSecret && c.signingKey ? c : null;
+};
 
 /** Il prefisso dice l'ambiente, e la differenza non è cosmetica: su una
  *  credenziale `ps_live_` i numeri magici del collaudo sono numeri di
  *  telefono veri, e il plafond è denaro. */
-export const inCollaudo = () => CLIENT_ID.startsWith("ps_test_");
-export const configurato = () => !!(CLIENT_ID && CLIENT_SECRET && SIGNING_KEY);
+export const inCollaudo = (c?: Credenziale | null) => String((c || credenzialeAmbiente())?.clientId || "").startsWith("ps_test_");
+export const configurato = () => !!credenzialeAmbiente();
 
 const PATH_BASE = (() => { try { return new URL(BASE).pathname.replace(/\/$/, ""); } catch { return "/api/partner/v1"; } })();
 
@@ -41,25 +61,36 @@ export type EsitoPs<T> =
    chiamata satura il limite dell'endpoint (10 al minuto) e basterebbero
    dieci ricariche in un minuto per bloccare il negozio. Si rinnova 30
    secondi prima della scadenza, che è il margine per una richiesta lenta. */
-let token: { valore: string; scadeIl: number } | null = null;
-let tokenInCorso: Promise<string> | null = null;
+const token = new Map<string, { valore: string; scadeIl: number }>();
+const tokenInCorso = new Map<string, Promise<string>>();
 
-async function accessToken(): Promise<string> {
-    if (token && Date.now() < token.scadeIl) return token.valore;
-    if (tokenInCorso) return tokenInCorso;          // due ricariche insieme = una sola richiesta
-    tokenInCorso = (async () => {
+async function accessToken(c: Credenziale): Promise<string> {
+    /* ⚠️ LA CHIAVE DELLA CASSAFORTE È IL CLIENT ID. Con un token solo, la
+       seconda ricarica di un negozio diverso avrebbe riusato il token del
+       primo su una firma fatta con un'altra chiave. */
+    const k = c.clientId;
+    const v = token.get(k);
+    if (v && Date.now() < v.scadeIl) return v.valore;
+    const inCorso = tokenInCorso.get(k);
+    if (inCorso) return inCorso;                    // due ricariche insieme = una sola richiesta
+    const p = (async () => {
         const r = await fetch(BASE + "/oauth/token", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({ grant_type: "client_credentials", client_id: CLIENT_ID, client_secret: CLIENT_SECRET }),
+            body: new URLSearchParams({ grant_type: "client_credentials", client_id: c.clientId, client_secret: c.clientSecret }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j?.access_token) throw new Error(`token non ottenuto (${r.status}): ${j?.error || "risposta illeggibile"}`);
-        token = { valore: j.access_token, scadeIl: Date.now() + Math.max(30, Number(j.expires_in || 300) - 30) * 1000 };
-        return token.valore;
-    })().finally(() => { tokenInCorso = null; });
-    return tokenInCorso;
+        token.set(k, { valore: j.access_token, scadeIl: Date.now() + Math.max(30, Number(j.expires_in || 300) - 30) * 1000 });
+        return String(j.access_token);
+    })().finally(() => { tokenInCorso.delete(k); });
+    tokenInCorso.set(k, p);
+    return p;
 }
+
+/** Butta via il token di una credenziale: si usa quando PayStore risponde 401,
+ *  che di solito vuol dire token revocato prima della scadenza. */
+export const scordaToken = (clientId: string) => { token.delete(clientId); };
 
 /** La canonical string: otto righe separate da LF, senza newline finale. */
 export function canonica(p: {
@@ -103,8 +134,15 @@ export function provaFirma(): { ok: boolean; ottenuta: string; attesa: string } 
    Idempotency-Key, o riconciliato con GET /operations/{id}. */
 const DEFINITIVI = new Set([400, 401, 403, 404, 422]);
 
-async function chiama<T>(metodo: string, percorso: string, opts?: { body?: unknown; idempotencyKey?: string }): Promise<EsitoPs<T>> {
-    if (!configurato()) return { ok: false, stato: 0, errore: "non_configurato", descrizione: "Mancano le credenziali PayStore", definitivo: true };
+async function chiama<T>(metodo: string, percorso: string, opts?: { body?: unknown; idempotencyKey?: string; cred?: Credenziale | null; giaRiprovato?: boolean }): Promise<EsitoPs<T>> {
+    /* ⚠️ SE LA CREDENZIALE DEL NEGOZIO NON C'È, NON SI RIPIEGA IN SILENZIO SU
+       UN'ALTRA. Ripiegare vorrebbe dire addebitare il credito di un punto
+       vendita diverso: si ferma tutto e lo si dice. Il ripiego sull'ambiente
+       resta solo per le letture di catalogo, dove non si muove denaro, e lo
+       decide chi chiama passando `cred` esplicito. */
+    const c = opts?.cred ?? credenzialeAmbiente();
+    if (!c) return { ok: false, stato: 0, errore: "non_configurato", descrizione: "Mancano le credenziali PayStore", definitivo: true };
+    const { clientId: CLIENT_ID, signingKey: SIGNING_KEY } = c;
     const pathEQuery = PATH_BASE + percorso;
     /* ⚠️ il corpo si serializza UNA volta sola e da qui in poi è quella
        stringa: si firma quella e si spedisce quella */
@@ -113,7 +151,7 @@ async function chiama<T>(metodo: string, percorso: string, opts?: { body?: unkno
     const nonce = randomBytes(16).toString("hex");   // 32 caratteri, mai riusato
 
     let tk: string;
-    try { tk = await accessToken(); }
+    try { tk = await accessToken(c); }
     catch (e) { return { ok: false, stato: 401, errore: "token", descrizione: String((e as Error).message), definitivo: false }; }
 
     const headers: Record<string, string> = {
@@ -141,6 +179,16 @@ async function chiama<T>(metodo: string, percorso: string, opts?: { body?: unkno
 
     if (r.ok) return { ok: true, dati: j as T, replay: r.headers.get("Idempotent-Replay") === "true" };
 
+    /* ⚠️ UN 401 PUÒ ESSERE SOLO UN TOKEN REVOCATO. Il token dura 300 secondi e
+       lo teniamo in memoria: se PayStore lo invalida prima (rotazione, riavvio
+       dalla loro parte) tutte le ricariche di quel negozio fallirebbero finché
+       non scade da solo. Si butta via e si riprova UNA volta, con la STESSA
+       Idempotency-Key — quindi senza rischio di erogare due crediti. */
+    if (r.status === 401 && !opts?.giaRiprovato) {
+        scordaToken(CLIENT_ID);
+        return chiama<T>(metodo, percorso, { ...opts, cred: c, giaRiprovato: true });
+    }
+
     const e = (j || {}) as { error?: string; error_description?: string; correlationId?: string; correlation_id?: string };
     return {
         ok: false, stato: r.status,
@@ -164,11 +212,15 @@ export type Ricarica = {
 };
 export type Operazione = Ricarica & { serviceId: number; priceListId: number; transactionCode: string | null; transactionText: string | null; phoneNumber: string | null };
 
-export const saldo = () => chiama<Saldo>("GET", "/account/balance");
-export const servizi = () => chiama<Servizio[]>("GET", "/catalog/services");
-export const prodotti = (serviceId: number) => chiama<Prodotto[]>("GET", `/catalog/products?serviceId=${serviceId}`);
-export const listini = (productId: number) => chiama<Listino[]>("GET", `/catalog/pricelists?productId=${productId}`);
-export const operazione = (operationId: number) => chiama<Operazione>("GET", `/operations/${operationId}`);
+/* ⚠️ ANCHE LE LETTURE VOGLIONO LA CREDENZIALE GIUSTA. Il saldo è il plafond
+   DI QUEL NEGOZIO, e i listini possono essere diversi da cliente a cliente —
+   lo dice il loro manuale. Chiedere il catalogo con la credenziale di un altro
+   punto vendita restituisce numeri che sembrano giusti e non lo sono. */
+export const saldo = (cred?: Credenziale | null) => chiama<Saldo>("GET", "/account/balance", { cred });
+export const servizi = (cred?: Credenziale | null) => chiama<Servizio[]>("GET", "/catalog/services", { cred });
+export const prodotti = (serviceId: number, cred?: Credenziale | null) => chiama<Prodotto[]>("GET", `/catalog/products?serviceId=${serviceId}`, { cred });
+export const listini = (productId: number, cred?: Credenziale | null) => chiama<Listino[]>("GET", `/catalog/pricelists?productId=${productId}`, { cred });
+export const operazione = (operationId: number, cred?: Credenziale | null) => chiama<Operazione>("GET", `/operations/${operationId}`, { cred });
 
 /** Fa partire una ricarica telefonica.
  *
@@ -177,10 +229,10 @@ export const operazione = (operationId: number) => chiama<Operazione>("GET", `/o
  *  Per questo si salva insieme alla riga della ricarica, prima di partire:
  *  è l'unica cosa che impedisce di ricaricare due volte lo stesso numero
  *  quando una risposta si perde per strada. */
-export function ricaricaTelefonica(p: { priceListId: number; phoneNumber: string; externalReference?: string; idempotencyKey: string }) {
+export function ricaricaTelefonica(p: { priceListId: number; phoneNumber: string; externalReference?: string; idempotencyKey: string; cred: Credenziale }) {
     return chiama<Ricarica>("POST", "/recharges/phone", {
         body: { priceListId: p.priceListId, phoneNumber: p.phoneNumber, ...(p.externalReference ? { externalReference: p.externalReference } : {}) },
-        idempotencyKey: p.idempotencyKey,
+        idempotencyKey: p.idempotencyKey, cred: p.cred,
     });
 }
 

@@ -314,11 +314,25 @@ export async function runTool(name: string, args: any, scope: Scope): Promise<an
 
     case "usati_lookup": {
       const like = `%${args.q}%`;
-      const { data, error } = await supabase.from("usati").select("*")
-        /* ⚠️ `modello` su `usati` NON ESISTE (le colonne sono `model` e
-         `imei`): ogni ricerca di un usato via AI moriva con un errore di
-         PostgREST, non con «nessun risultato». */
-        .or(`imei.ilike.${like},model.ilike.${like}`).limit(25);
+      /* ⚠️ QUESTO STRUMENTO ERA ROTTO, E LA RIPARAZIONE LO HA ACCESO.
+         Interrogava la colonna `modello`, che su `usati` non esiste (ci sono
+         `model` e `imei`): ogni ricerca moriva con un errore di PostgREST,
+         quindi non ha mai restituito una riga. Correggere il nome della
+         colonna, da solo, avrebbe pubblicato due cose che dormivano dietro:
+
+         1. NIENTE AMBITO NEGOZI. A differenza di `search_contracts` qui non
+            c'era `applyStoreScope`: un responsabile di negozio avrebbe visto
+            gli usati di TUTTI i punti vendita, prezzi d'acquisto compresi.
+
+         2. `select("*")` PORTA VIA ANCHE `pagamento`, che è un jsonb con
+            dentro l'IBAN di chi ci ha venduto il telefono — 14 righe su 281.
+            La rete di sicurezza `redact` guarda solo le chiavi di primo
+            livello: un IBAN annidato le passa sotto. Le colonne si scelgono
+            a mano, e `pagamento` non è fra quelle. */
+      let q = supabase.from("usati")
+        .select("id, model, imei, status, store, target_store, created_at, purchase_date, sold_date, grado_usura, note_tecnico, venditore");
+      q = applyStoreScope(q, scope, "store");
+      const { data, error } = await q.or(`imei.ilike.${like},model.ilike.${like}`).limit(25);
       if (error) throw new Error(error.message);
       return { rows: redact(data || []) };
     }

@@ -31,7 +31,12 @@ export const AREE: { id: AreaAuto; nome: string; emoji: string; cosa: string }[]
 export type Parametro =
     | { chiave: string; tipo: "email"; nome: string; spiega: string; predefinito: string[] }
     | { chiave: string; tipo: "numero"; nome: string; spiega: string; predefinito: number; min?: number; max?: number }
-    | { chiave: string; tipo: "testo"; nome: string; spiega: string; predefinito: string };
+    | { chiave: string; tipo: "testo"; nome: string; spiega: string; predefinito: string }
+    /* ⚠️ L'INTERRUTTORE È SEMPRE «SPENTO SE NON DICE SÌ». Serve agli
+       automatismi che, accesi, fanno una cosa che non si annulla — erogare
+       credito, mandare denaro. Il valore salvato è un vero booleano, non la
+       parola «true»: chi lo legge non deve interpretare niente. */
+    | { chiave: string; tipo: "interruttore"; nome: string; spiega: string; predefinito: boolean; pericoloso?: string };
 
 export type Automatismo = {
     id: string;
@@ -49,11 +54,46 @@ export type Automatismo = {
     /** Dove resta scritto che è girato, se tiene un registro suo. */
     registro?: { tabella: string; quando: string; esito?: string; etichetta: string };
     parametri: Parametro[];
-    /** Come si prova senza fare danni. `sicura` = non manda niente a nessuno. */
-    prova?: { etichetta: string; corpo: Record<string, unknown>; sicura: boolean; spiega: string };
+    /** Come si prova senza fare danni. `sicura` = non manda niente a nessuno.
+     *
+     *  ⚠️ `metodo` NON È UN DETTAGLIO. La prova faceva sempre POST, cioè
+     *  chiamava la rotta nel modo in cui la chiama il lavoro vero: per un
+     *  automatismo che EROGA DENARO, un pulsante che dice «cosa farebbe
+     *  adesso» e intanto lo fa è la peggiore trappola possibile. Chi ha una
+     *  rotta con un GET di sola lettura lo dichiara qui. */
+    prova?: { etichetta: string; corpo: Record<string, unknown>; sicura: boolean; spiega: string; metodo?: "GET" | "POST" };
 };
 
 export const AUTOMATISMI: Automatismo[] = [
+    {
+        id: "paystore-motore",
+        area: "vendite",
+        nome: "Ricariche telefoniche PayStore",
+        emoji: "📲",
+        cosaFa: "Prende le ricariche vendute e scontrinate e le esegue da sé sull'API di PayStore, con le credenziali del negozio che le ha vendute. Quello che oggi fa una persona al terminale.",
+        perche: "«Sono arrivate tutte le credenziali API di PayStore: ne hanno creata una per ogni punto vendita, divisa per società» — Luca, 02/09.",
+        lavori: [{ nome: "paystore-motore", ruolo: "la corsa, ogni 5 minuti" }],
+        rotta: "/api/paystore/motore",
+        registro: { tabella: "paystore_ricariche", quando: "tentata_il", esito: "stato", etichetta: "Registro ricariche" },
+        parametri: [
+            {
+                chiave: "acceso", tipo: "interruttore", nome: "Motore acceso", predefinito: false,
+                spiega: "Finché è NO nessuna ricarica parte da sola: le carica una persona al terminale, come oggi.",
+                pericoloso: "Acceso, il motore EROGA CREDITO VERO sul plafond dei negozi. Una ricarica partita non torna indietro. Prima di accenderlo fai una prova con una ricarica sola, dal pulsante «rifai» del pannello PayStore, e controlla che risulti anche sul pannello di PayStore.",
+            },
+            { chiave: "tetto", tipo: "numero", nome: "Tetto per ricarica (€)", spiega: "Sopra questa cifra il motore non tocca la ricarica e la lascia a una persona. Nei primi giorni tienilo basso: è la rete sotto il trapezio.", predefinito: 50, min: 1, max: 500 },
+            { chiave: "max", tipo: "numero", nome: "Ricariche per corsa", spiega: "Quante ne esegue in un giro. Le fa una alla volta: il plafond è condiviso fra le ricariche dello stesso negozio.", predefinito: 10, min: 1, max: 50 },
+            { chiave: "finestra", tipo: "numero", nome: "Finestra (minuti)", spiega: "Guarda solo le ricariche nate negli ultimi tot minuti. ⚠️ Serve a NON ereditare l'arretrato: le ricariche più vecchie possono essere già state caricate a mano al terminale senza che nessuno l'abbia segnato, e rifarle vorrebbe dire erogare il credito due volte.", predefinito: 60, min: 5, max: 1440 },
+            { chiave: "lasso", tipo: "numero", nome: "Presa scaduta dopo (minuti)", spiega: "Se una corsa muore a metà, la ricarica che aveva preso torna disponibile dopo questo tempo. Troppo basso e due corse potrebbero sovrapporsi.", predefinito: 10, min: 2, max: 60 },
+        ],
+        prova: {
+            etichetta: "Cosa farebbe adesso",
+            corpo: {},
+            metodo: "GET",          // ⚠️ di sola lettura: il POST ESEGUE
+            sicura: true,
+            spiega: "Elenca le ricariche che il motore prenderebbe in questo momento, con negozio e importo. Non ne esegue nessuna e non tocca niente.",
+        },
+    },
     {
         id: "assenze-report-mensile",
         area: "amministrazione",

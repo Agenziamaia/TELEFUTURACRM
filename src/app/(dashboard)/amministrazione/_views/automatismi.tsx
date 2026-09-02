@@ -473,6 +473,11 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
         const p = a.parametri.find((x) => x.chiave === chiave)!;
         const salvato = (conf?.parametri as Record<string, unknown> | undefined)?.[chiave];
         const v = salvato !== undefined && salvato !== null ? salvato : p.predefinito;
+        /* ⚠️ UN INTERRUTTORE SI LEGGE «si»/«no», non «true»/«false»: i due
+           pulsanti confrontano quelle due parole, e con `String(false)` nessuno
+           dei due sarebbe mai risultato scelto — l'interruttore si sarebbe
+           disegnato spento anche da acceso. */
+        if (p.tipo === "interruttore") return v === true || v === "true" || v === "si" ? "si" : "no";
         return Array.isArray(v) ? v.join("\n") : String(v);
     };
     const cambiato = a.parametri.some((p) => bozza[p.chiave] !== undefined);
@@ -500,6 +505,11 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
                 else if (p.min != null && n < p.min) guai.push(`«${p.nome}» non può stare sotto ${p.min}`);
                 else if (p.max != null && n > p.max) guai.push(`«${p.nome}» non può superare ${p.max}`);
                 else parametri[p.chiave] = Math.round(n);
+            } else if (p.tipo === "interruttore") {
+                /* ⚠️ SI SALVA UN BOOLEANO VERO, non la parola. Il server legge
+                   `=== true`: una stringa «false» sarebbe un valore pieno e,
+                   letta male, accenderebbe un motore che eroga denaro. */
+                parametri[p.chiave] = v === "si";
             } else parametri[p.chiave] = v;
         }
         if (guai.length) { setEsito("⛔ " + guai.join(" · ")); setSalvo(false); return; }
@@ -544,11 +554,18 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
         if (!a.prova.sicura && !window.confirm(`${a.prova.spiega}\n\nVado avanti?`)) return;
         setProvo(true); setEsito(null);
         try {
-            const r = await fetch(a.rotta, {
-                method: "POST", credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(a.prova.corpo),
-            });
+            /* ⚠️ IL METODO LO DICE L'AUTOMATISMO. Qui era POST fisso, cioè la
+               prova chiamava la rotta esattamente come la chiama il lavoro
+               vero: su un automatismo che eroga denaro, un pulsante «cosa
+               farebbe adesso» che intanto lo fa è la trappola peggiore. */
+            const metodo = a.prova.metodo || "POST";
+            const r = await fetch(a.rotta, metodo === "GET"
+                ? { method: "GET", credentials: "include" }
+                : {
+                    method: "POST", credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(a.prova.corpo),
+                });
             const j = await r.json().catch(() => ({}));
             // ⚠️ il codice HTTP non basta: le rotte del triage rispondono 200
             // anche quando dicono di no, e una sessione scaduta risponde 200
@@ -699,6 +716,24 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
                                 <textarea value={valore(p.chiave)} rows={Math.max(2, valore(p.chiave).split("\n").length)}
                                     onChange={(e) => setBozza((b) => ({ ...b, [p.chiave]: e.target.value }))}
                                     className="glass-input w-full text-[12px] px-2 py-1.5 font-mono" />
+                            ) : p.tipo === "interruttore" ? (
+                                <div className="space-y-1.5">
+                                    <div className="flex gap-1.5">
+                                        {([["no", "NO — spento"], ["si", "SÌ — acceso"]] as [string, string][]).map(([k, et]) => (
+                                            <button key={k} onClick={() => setBozza((b) => ({ ...b, [p.chiave]: k }))}
+                                                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition ${valore(p.chiave) === k
+                                                    ? (k === "si" ? "border-amber-400/60 bg-amber-400/20 text-amber-200" : "border-slate-400/40 bg-white/10 text-slate-200")
+                                                    : "border-white/10 text-slate-500 hover:bg-white/5"}`}>
+                                                {et}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {p.pericoloso && valore(p.chiave) === "si" && (
+                                        <p className="text-[10px] leading-relaxed rounded-lg border border-amber-400/30 bg-amber-400/10 px-2 py-1.5 text-amber-200">
+                                            ⚠️ {p.pericoloso}
+                                        </p>
+                                    )}
+                                </div>
                             ) : p.tipo === "numero" ? (
                                 <input type="number" min={p.min} max={p.max} value={valore(p.chiave)}
                                     onChange={(e) => setBozza((b) => ({ ...b, [p.chiave]: e.target.value }))}
