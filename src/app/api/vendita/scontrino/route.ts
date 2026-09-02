@@ -90,7 +90,7 @@ export async function POST(req: Request) {
        è quella il misuratore fiscale: non c'è modo di aggirarlo, e infatti
        Luca chiede di scegliere solo dove vanno i SOLDI (la cash machine),
        non dove esce la carta. */
-    const aziende: Record<string, { rt_url: string; negozio: string }> = {};
+    const aziende: Record<string, { rt_url: string; negozio: string; agente: string }> = {};
     /* ⚠️ LE SOCIETÀ CHE HANNO UN REGISTRATORE PROPRIO QUI, senza i gemelli.
        `aziende` non serve a questo: contiene anche le società dei negozi che
        dividono il locale (Magliana W3 accanto a Magliana Multi), perché una
@@ -101,13 +101,13 @@ export async function POST(req: Request) {
     const societaProprie: string[] = [];
     let defaultAzienda: string | null = null;
     if (negozio) {
-        const { data: tuttiRt } = await supabase.from("pos_rt").select("negozio, azienda, rt_url, is_default");
+        const { data: tuttiRt } = await supabase.from("pos_rt").select("negozio, azienda, rt_url, is_default, agente");
         const qui = (tuttiRt || []).filter((r: any) => r.negozio === negozio);
         const accanto = (tuttiRt || []).filter((r: any) => r.negozio !== negozio && stessoMagazzino(r.negozio, negozio));
         // prima il proprio, poi il gemello: se la stessa società avesse un
         // registratore da entrambe le parti, vince quello dove si sta lavorando
         [...qui, ...accanto].forEach((r: any) => {
-            if (!aziende[r.azienda]) aziende[r.azienda] = { rt_url: r.rt_url, negozio: r.negozio };
+            if (!aziende[r.azienda]) aziende[r.azienda] = { rt_url: r.rt_url, negozio: r.negozio, agente: r.agente || r.negozio };
         });
         qui.forEach((r: any) => {
             if (r.is_default) defaultAzienda = r.azienda;
@@ -578,7 +578,14 @@ export async function POST(req: Request) {
 
         const { data, error } = await supabase.from("print_jobs").insert({
             // l'agente di CHI POSSIEDE il registratore (vedi sopra: «custom»)
-            negozio: aziende[az]?.negozio || negozio,
+            /* ⚠️ IL LAVORO VA ALL'AGENTE CHE SERVE QUEL REGISTRATORE, non al
+               negozio (02/09). Ad Acilia le due casse sono collegate via USB a
+               due PC diversi: fondendo i punti vendita, «Acilia» da solo non
+               basterebbe più a dire quale delle due, e uno scontrino di una
+               società poteva uscire dalla stampante dell'altra. `pos_rt.agente`
+               porta il nome con cui quel PC si presenta, e oggi coincide col
+               negozio: niente cambia finché non si fondono i nomi. */
+            negozio: aziende[az]?.agente || aziende[az]?.negozio || negozio,
             device_url: rtFor(az) || "",
             kind,
             request_xml,

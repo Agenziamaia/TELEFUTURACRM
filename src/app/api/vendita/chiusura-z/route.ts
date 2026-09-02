@@ -30,10 +30,10 @@ export async function POST(req: Request) {
     if (b.deviceUrl) {
         targets = [{ azienda: b.azienda || null, rt_url: b.deviceUrl }];
     } else {
-        let q = supabase.from("pos_rt").select("negozio, azienda, rt_url").eq("negozio", negozio);
+        let q = supabase.from("pos_rt").select("negozio, azienda, rt_url, agente").eq("negozio", negozio);
         if (b.azienda) q = q.eq("azienda", b.azienda);
         const { data } = await q;
-        targets = (data || []).map((r: any) => ({ azienda: r.azienda, rt_url: r.rt_url, negozio: r.negozio }));
+        targets = (data || []).map((r: any) => ({ azienda: r.azienda, rt_url: r.rt_url, negozio: r.agente || r.negozio }));
         /* ⚠️ NIENTE REGISTRATORE DI RIPIEGO (revisione 02/09). Qui c'era
            `RT_DEVICE_URL || "http://192.168.1.219"`, e quella variabile
            d'ambiente non esiste: quell'indirizzo è **la cassa T1 di Donna

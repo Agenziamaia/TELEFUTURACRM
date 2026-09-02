@@ -389,9 +389,16 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         const neg = data?.negozio;
         if (!neg) return;
         // le insegne del LOCALE: quelle con un registratore hanno anche una cassa
-        supabase.from("pos_rt").select("negozio").then(({ data: tutti }) => {
-            const nel = [...new Set((tutti || []).map((r: any) => String(r.negozio)))]
-                .filter((n) => stessoMagazzino(n, neg)).sort();
+        /* ⚠️ IL CASSETTO SI SCEGLIE PER AGENTE, non per nome negozio (02/09).
+           Il comando di apertura viaggia come lavoro di stampa e lo ritira
+           l'agente che si chiama così: dopo la fusione dei punti vendita i due
+           banconi avranno lo stesso nome, ma restano due PC con due cassetti.
+           `pos_rt.agente` è il nome con cui quel PC si presenta, e oggi
+           coincide col negozio — quindi non cambia niente finora. */
+        supabase.from("pos_rt").select("negozio, agente").then(({ data: tutti }) => {
+            const nel = [...new Set((tutti || [])
+                .filter((r: any) => stessoMagazzino(String(r.negozio), neg))
+                .map((r: any) => String(r.agente || r.negozio)))].sort();
             setInsegne(nel);
             setCassaSel(nel.includes(neg) ? neg : (nel[0] || neg));
         });
