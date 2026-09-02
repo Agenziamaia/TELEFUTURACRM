@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
-import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, ChevronDown, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
+import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, ChevronDown, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2, Trash2 } from "lucide-react";
 import { seesWholeStore, seesAllStores, areaOf } from "@/lib/roles";
 import { waIstanzeVisibili, waScopeRisolto, titolariProtettiWa, vedeProtettiWa } from "@/lib/waVisibilita";
 import { usePageView } from "@/lib/pageView";
@@ -288,6 +288,34 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
             await reloadDocs();
         } catch (e: any) { alert("Caricamento non riuscito: " + (e?.message || e)); }
         finally { setUpBusy(false); }
+    };
+
+    /* ═══ TOGLIERE UN DOCUMENTO DAL FASCICOLO (Luca 02/09) ═════════════
+       «Io come admin devo poter cancellare dei documenti all'interno del
+       fascicolo documenti dentro clienti.»
+       ⚠️ Si toglie dal fascicolo, non dal mondo: la rotta copia le righe in
+       `contract_attachments_cestino` e sposta il file in «cestino/», così
+       l'indirizzo pubblico muore ma il file resta. Un contratto firmato
+       cancellato per sbaglio è un danno che non si ripara. */
+    const puoEliminareDoc = ["admin", "dev", "direttore_generale", "amministrativo"].includes(String(uAll?.role || ""));
+    const [docDaTogliere, setDocDaTogliere] = useState<{ url: string; nome: string; quante: number } | null>(null);
+    const [motivoDoc, setMotivoDoc] = useState("");
+    const [togliBusy, setTogliBusy] = useState(false);
+    const [togliKo, setTogliKo] = useState("");
+    const togliDocumento = async () => {
+        if (!docDaTogliere || togliBusy) return;
+        setTogliBusy(true); setTogliKo("");
+        try {
+            const r = await fetch("/api/clienti/documento", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clientId: cliente.id, fileUrl: docDaTogliere.url, motivo: motivoDoc }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j?.error || "non è stato tolto");
+            setDocDaTogliere(null); setMotivoDoc("");
+            await reloadDocs();
+        } catch (e) { setTogliKo((e as Error)?.message || "non è stato tolto"); }
+        finally { setTogliBusy(false); }
     };
 
     const [showStorico, setShowStorico] = useState(false);
@@ -937,6 +965,39 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                     )}
 
                     {/* ===== TAB DOCUMENTI (accordion + Smart Card) ===== */}
+                    {/* ⚠️ LA CONFERMA DICE COSA SPARISCE E COSA RESTA. «Sei sicuro?»
+                        su una carta d'identità non è una domanda: chi preme deve
+                        sapere che il file esce dal fascicolo, che il suo indirizzo
+                        smette di funzionare, e che si può rimettere a posto. */}
+                    {docDaTogliere && (
+                        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+                            onClick={() => !togliBusy && setDocDaTogliere(null)}>
+                            <div className="rvCarta rvCarta-ko max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+                                <div className="rvCarta-t">🗑️ Togliere questo documento dal fascicolo?</div>
+                                <div className="rvCarta-r rvCarta-r-ko">
+                                    <div className="text-sm font-bold text-white truncate">{docDaTogliere.nome}</div>
+                                    <div className="rvNota-s mt-1">
+                                        {docDaTogliere.quante > 1
+                                            ? `È agganciato a ${docDaTogliere.quante} pratiche di questo cliente: si tolgono tutte insieme, se no il documento resterebbe a schermo.`
+                                            : "Esce dal fascicolo di questo cliente."}
+                                        {" "}Il file <b>non viene distrutto</b>: finisce nel cestino, il suo indirizzo pubblico smette
+                                        di funzionare, e resta scritto chi l&apos;ha tolto e quando — così una cancellazione sbagliata
+                                        si può rimettere a posto.
+                                    </div>
+                                </div>
+                                <div className="mt-3">
+                                    <span className="rvLab">Perché lo togli (facoltativo)</span>
+                                    <input value={motivoDoc} onChange={(e) => setMotivoDoc(e.target.value)} maxLength={200}
+                                        placeholder="es. caricato sul cliente sbagliato" className="glass-input w-full text-sm" />
+                                </div>
+                                {togliKo && <div className="rvNota rvNota-ko mt-3"><div className="rvNota-t">Non l&apos;ho tolto</div><div className="rvNota-s">{togliKo}</div></div>}
+                                <button onClick={togliDocumento} disabled={togliBusy} className="rvCarta-ko-b">
+                                    {togliBusy ? "tolgo…" : "🗑️ Sì, toglilo dal fascicolo"}
+                                </button>
+                                <button onClick={() => setDocDaTogliere(null)} disabled={togliBusy} className="rvCarta-no rvCarta-no-ko w-full mt-2 text-xs font-bold">Annulla</button>
+                            </div>
+                        </div>
+                    )}
                     {tab === "documenti" && vedeAllegati && (<div className="space-y-4 animate-in fade-in duration-300">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                             <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
@@ -1016,11 +1077,31 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 </div>
                                             </>
                                         );
-                                        const cls = "bg-[#161722] border border-[#262836] rounded-2xl overflow-hidden group text-left w-full block transition-colors shadow-lg cursor-pointer";
+                                        /* ⚠️ IL CESTINO STA SULLA CARD, NON DENTRO IL FILE. Una card è
+                                           UN file, che a database può essere più righe (lo stesso
+                                           documento d'identità agganciato a ogni pratica della vendita):
+                                           la rotta le toglie tutte insieme, se no il documento resta a
+                                           schermo e chi ha premuto crede di averlo tolto. */
+                                        const cestino = puoEliminareDoc ? (
+                                            <button type="button" title="Togli questo documento dal fascicolo"
+                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setTogliKo(""); setMotivoDoc(""); setDocDaTogliere({ url: f.url, nome: f.nome, quante: f.pratiche.length }); }}
+                                                className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-lg bg-black/55 backdrop-blur-sm border border-white/15 text-rose-300 hover:bg-rose-600 hover:text-white hover:border-rose-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        ) : null;
+                                        const cls = "relative bg-[#161722] border border-[#262836] rounded-2xl overflow-hidden group text-left w-full block transition-colors shadow-lg cursor-pointer";
                                         const hover = { onMouseEnter: (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.borderColor = cat.color; }, onMouseLeave: (e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.borderColor = ""; } };
-                                        return isImmagine
-                                            ? <button key={f.key} type="button" className={cls} {...hover} title={f.nome} onClick={() => setLightbox({ src: f.url, alt: f.nome })}>{contenuto}</button>
-                                            : <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className={cls} {...hover} title={f.nome}>{contenuto}</a>;
+                                        /* ⚠️ il cestino NON può stare dentro un <button>: un bottone
+                                           dentro un bottone è HTML non valido e il clic finisce a quello
+                                           sbagliato. Sta fuori, nel riquadro che li contiene entrambi. */
+                                        return (
+                                            <div key={f.key} className="relative group">
+                                                {isImmagine
+                                                    ? <button type="button" className={cls} {...hover} title={f.nome} onClick={() => setLightbox({ src: f.url, alt: f.nome })}>{contenuto}</button>
+                                                    : <a href={f.url} target="_blank" rel="noreferrer" className={cls} {...hover} title={f.nome}>{contenuto}</a>}
+                                                {cestino}
+                                            </div>
+                                        );
                                     };
                                     // DOCUMENTI D'IDENTITÀ (Luca 08/08): niente livello brand né mesi —
                                     // apri la categoria e vedi i file del cliente. Il brand distingue
