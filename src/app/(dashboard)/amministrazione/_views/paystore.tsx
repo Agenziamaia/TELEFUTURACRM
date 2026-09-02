@@ -155,9 +155,14 @@ const SCONTRINO: Record<string, { testo: string; classe: string; nota: string }>
 };
 
 export function PayStoreAdminView() {
-    const [tipoP, setTipoP] = useState<"mese" | "range">("mese");
+    /* ⚠️ «MESE» NON È PIÙ UNA MODALITÀ, È UNA SCORCIATOIA. Il selettore in cima
+       aveva due grammatiche — «mese con le frecce» oppure «intervallo» — e in
+       fondo alla pagina ce n'era un terzo con le scorciatoie. Adesso il periodo
+       è sempre un intervallo, e «Mese» lo imposta come gli altri tre pulsanti.
+       Lo stato resta perché `periodo` lo legge, ma parte già su `range`. */
+    const [tipoP, setTipoP] = useState<"mese" | "range">("range");
     const [ym, setYm] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; });
-    const [range, setRange] = useState({ da: primoDelMese(), a: oggiISO() });
+    const [range, setRange] = useState({ da: primoDelMese(), a: oggiISO() });   // si apre sul mese in corso
     /* i negozi in una tendina multiselezione: null = tutti (la convenzione del
        FiltroMulti che il CRM usa già in Ricerca Vendite e nel Calendario) */
     const [negoziSel, setNegoziSel] = useState<string[] | null>(null);
@@ -338,9 +343,58 @@ export function PayStoreAdminView() {
        l'andamento dei giorni, che è la domanda normale, non si poteva vedere.
        L'unica eccezione resta il periodo di UN GIORNO SOLO («Oggi»): lì i
        giorni sono una barra sola, che non è un grafico. */
-    const unGiornoSolo = d.perGiorno.length === 1;
+    /* ═══ UN SOLO SISTEMA DI FILTRAGGIO ═══════════════════════════════════
+       Luca 02/09: «nel momento in cui vado a filtrare sotto, anche la parte di
+       sopra deve modificarsi: dev'essere un blocco unico, i filtri che applico
+       restituiscono la lista sotto e il grafico si adatta sopra».
+       Prima i quattro numeri e i grafici venivano dal server, calcolati sul
+       periodo intero: filtrare su un negozio cambiava l'elenco e lasciava i
+       totali di tutti, e la pagina lo doveva scrivere in fondo per non mentire.
+       Adesso si calcolano qui, sulle stesse righe che si vedono.
+
+       ⚠️ TRANNE IL NASCONDIMENTO DELLE COMPLETATE, che non è un filtro sulla
+       realtà ma un modo di leggere l'elenco: se togliesse anche i soldi,
+       l'incassato CALEREBBE man mano che le ricariche vengono fatte — cioè
+       l'esatto contrario di quello che è successo. */
+    const perTotali = tutte.filter((r) => F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r));
+    const somma = (g: Riga[]) => g.reduce((x, r) => x + Number(r.importo || 0), 0);
+    const raggruppa = <K extends string | number>(g: Riga[], chiave: (r: Riga) => K) => {
+        const m = new Map<K, { quante: number; euro: number }>();
+        for (const r of g) {
+            const k = chiave(r); const v = m.get(k) || { quante: 0, euro: 0 };
+            v.quante++; v.euro += Number(r.importo || 0); m.set(k, v);
+        }
+        return m;
+    };
+    const totaleV = { quante: perTotali.length, euro: somma(perTotali) };
+    /* i giorni del periodo restano quelli del server: servono a dire «media al
+       giorno» anche sui giorni in cui non si è venduto niente */
+    const giorniPeriodo = d.perGiorno.map((g) => g.giorno);
+    const perGiornoMap = raggruppa(perTotali, (r) => r.creata_il.slice(0, 10));
+    const perGiornoV = giorniPeriodo.map((giorno) => {
+        const v = perGiornoMap.get(giorno) || { quante: 0, euro: 0 };
+        const dentro = perTotali.filter((r) => r.creata_il.slice(0, 10) === giorno);
+        const ops = raggruppa(dentro, (r) => r.operatore);
+        return {
+            giorno, quante: v.quante, euro: v.euro,
+            parti: [...ops.entries()].map(([operatore, o]) => ({ operatore, nome: nomeOp(operatore), quante: o.quante, euro: o.euro })).sort((a, b) => b.euro - a.euro),
+        };
+    });
+    const perOperatoreV = [...raggruppa(perTotali, (r) => r.operatore).entries()]
+        .map(([operatore, v]) => ({ operatore, nome: nomeOp(operatore), quante: v.quante, euro: v.euro }))
+        .sort((a, b) => b.euro - a.euro);
+    const perNegozioV = [...raggruppa(perTotali, (r) => String(r.negozio || "—")).entries()]
+        .map(([negozio, v]) => ({ negozio, quante: v.quante, euro: v.euro }))
+        .sort((a, b) => b.euro - a.euro);
+    /* ⚠️ IL CONFRONTO COL PERIODO PRIMA VALE SOLO SENZA FILTRI. Il server lo
+       calcola sul periodo intero, e le righe di prima non ce le abbiamo:
+       confrontare «solo Magliana, oggi» con «tutti i negozi, ieri» sarebbe un
+       numero che sembra un paragone e non lo è. */
+    const filtriAccesi = !!(negoziSel || stato || origine || allarme);
+
+    const unGiornoSolo = perGiornoV.length === 1;
     const aOre = unGiornoSolo || giornoAperto != null;
-    const giornoDelleOre = unGiornoSolo ? d.perGiorno[0].giorno : giornoAperto;
+    const giornoDelleOre = unGiornoSolo ? perGiornoV[0].giorno : giornoAperto;
     /* ⚠️ NIENTE `useMemo` QUI: siamo dopo i `return` anticipati (errore, dati
        non ancora arrivati), e un hook dopo un ritorno condizionale cambia
        l'ordine degli hook fra un render e l'altro — React se ne accorge e la
@@ -348,7 +402,7 @@ export function PayStoreAdminView() {
     const perOra = (() => {
         if (!aOre || !giornoDelleOre) return [];
         const m = new Map<number, { euro: number; ops: Map<string, { euro: number; quante: number }> }>();
-        for (const r of d.ultime.filter((x) => x.creata_il.slice(0, 10) === giornoDelleOre)) {
+        for (const r of perTotali.filter((x) => x.creata_il.slice(0, 10) === giornoDelleOre)) {
             /* ⚠️ L'ORA È QUELLA DI ROMA. `getHours()` è l'ora del computer di
                chi guarda: da un portatile con il fuso sbagliato l'istogramma
                delle ore raccontava un'altra giornata. */
@@ -370,8 +424,8 @@ export function PayStoreAdminView() {
             };
         });
     })();
-    const media = d.perGiorno.length ? d.totale.euro / d.perGiorno.length : 0;
-    const dettaglio = giornoAperto ? d.perGiorno.find((g) => g.giorno === giornoAperto) : null;
+    const media = perGiornoV.length ? totaleV.euro / perGiornoV.length : 0;
+    const dettaglio = giornoAperto ? perGiornoV.find((g) => g.giorno === giornoAperto) : null;
 
     return (
         <div className="space-y-5 an-in">
@@ -393,38 +447,38 @@ export function PayStoreAdminView() {
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 justify-end">
-                        <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
+                        {/* ⚠️ UN PERIODO SOLO, E STA QUI (Luca 02/09): «i campi di data e
+                            range sono due — sopra e sotto — e quelli sotto mi piacciono di
+                            più: hanno quattro pulsanti veloci e poi il range. Portami questa
+                            impostazione ma mettila sopra».
+                            Prima erano due controlli sullo stesso stato, scritti in due
+                            grammatiche diverse: quello in cima ragionava per «mese o
+                            intervallo», quello in fondo per scorciatoie. Due modi di dire la
+                            stessa cosa nella stessa pagina sono uno di troppo. */}
+                        <div className="flex flex-wrap items-center gap-1.5">
                             {[
-                                { id: "mese", label: "Mese", vai: () => setTipoP("mese") },
-                                { id: "range", label: "Periodo", vai: () => setTipoP("range") },
-                                { id: "oggi", label: "Oggi", vai: () => { setTipoP("range"); setRange({ da: oggiISO(), a: oggiISO() }); } },
+                                { id: "oggi", et: "Oggi", da: oggiISO(), a: oggiISO() },
+                                { id: "ieri", et: "Ieri", da: giornoMeno(1), a: giornoMeno(1) },
+                                { id: "7gg", et: "7 giorni", da: giornoMeno(6), a: oggiISO() },
+                                { id: "mese", et: "Mese", da: primoDelMese(), a: oggiISO() },
                             ].map((v) => {
-                                const oggiSecco = tipoP === "range" && range.da === oggiISO() && range.a === oggiISO();
-                                const attivo = v.id === "oggi" ? oggiSecco : v.id === "mese" ? tipoP === "mese" : tipoP === "range" && !oggiSecco;
-                                return <button key={v.id} onClick={v.vai}
-                                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", attivo ? "bg-amber-500/80 text-black shadow" : "text-slate-400 hover:text-white")}>{v.label}</button>;
+                                const on = periodo.da === v.da && periodo.a === v.a;
+                                return (
+                                    <button key={v.id} aria-pressed={on}
+                                        onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); }}
+                                        className={cn("rvPill rvPill-tinta rvT-ambra", on && "rvPill-on")}>
+                                        {v.et}{on ? " ✓" : ""}
+                                    </button>
+                                );
                             })}
+                            <input type="date" value={periodo.da} max={oggiISO()} title="dal"
+                                onChange={(e) => { setTipoP("range"); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
+                                className="an-data glass-input px-2.5 py-1.5 rounded-lg text-xs" />
+                            <span className="text-[11px] text-slate-500">→</span>
+                            <input type="date" value={periodo.a} min={periodo.da} max={oggiISO()} title="al"
+                                onChange={(e) => { setTipoP("range"); setRange({ da: periodo.da, a: e.target.value }); }}
+                                className="an-data glass-input px-2.5 py-1.5 rounded-lg text-xs" />
                         </div>
-                        {tipoP === "mese" ? (
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => setYm((v) => v.m === 1 ? { y: v.y - 1, m: 12 } : { y: v.y, m: v.m - 1 })}
-                                    className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10"><ChevronLeft className="w-4 h-4" /></button>
-                                <span className="min-w-[130px] text-center text-sm font-bold text-white">{MESI[ym.m - 1]} {ym.y}</span>
-                                <button onClick={() => setYm((v) => {
-                                    const n = v.m === 12 ? { y: v.y + 1, m: 1 } : { y: v.y, m: v.m + 1 };
-                                    const o = new Date(); return (n.y > o.getFullYear() || (n.y === o.getFullYear() && n.m > o.getMonth() + 1)) ? v : n;
-                                })} className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10"><ChevronRight className="w-4 h-4" /></button>
-                            </div>
-                        ) : (
-                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                                <span className="text-slate-500">dal</span>
-                                <input type="date" value={range.da} max={oggiISO()} onChange={(e) => setRange((r) => ({ ...r, da: e.target.value }))}
-                                    className="an-data glass-input px-2 py-1.5 rounded-lg text-xs" />
-                                <span className="text-slate-500">al</span>
-                                <input type="date" value={range.a} min={range.da} max={oggiISO()} onChange={(e) => setRange((r) => ({ ...r, a: e.target.value }))}
-                                    className="an-data glass-input px-2 py-1.5 rounded-lg text-xs" />
-                            </div>
-                        )}
                         <div className="flex gap-0.5 p-0.5 rounded-xl bg-white/5 border border-white/10">
                             {[{ id: "registro", label: "Registro" }, { id: "tagli", label: "Listino tagli" }, { id: "chiavi", label: "Credenziali" }].map((v) => (
                                 <button key={v.id} onClick={() => setVista(v.id as "registro" | "tagli" | "chiavi")}
@@ -450,7 +504,7 @@ export function PayStoreAdminView() {
                 <div className="relative mt-4">
                     <div className="psFiltroGriglia">
                         {d.operatori.map((o) => {
-                            const q = d.perOperatore.find((x) => x.operatore === o);
+                            const q = perOperatoreV.find((x) => x.operatore === o);
                             const solo = operatore === o;
                             const spento = !!operatore && !solo;
                             const logo = OPERATORI_PAYSTORE.find((x) => x.id === o)?.logo;
@@ -503,11 +557,11 @@ export function PayStoreAdminView() {
                                     </div>
                                     <span className="text-[10px] text-slate-500">{destra === "negozi" ? "aperto ▸" : "clicca"}</span>
                                 </div>
-                                {(torta === "negozi" ? d.perNegozio.length : d.perOperatore.length) ? (
-                                    <Donut size={186} unit="€" centro={eur(d.totale.euro)}
+                                {(torta === "negozi" ? perNegozioV.length : perOperatoreV.length) ? (
+                                    <Donut size={186} unit="€" centro={eur(totaleV.euro)}
                                         slices={torta === "negozi"
-                                            ? d.perNegozio.map((n, i) => ({ label: n.negozio, val: n.euro, colore: TINTE_NEG[i % TINTE_NEG.length], sub: `${n.quante} ricarich${n.quante === 1 ? "a" : "e"}` }))
-                                            : d.perOperatore.map((o) => ({ label: nomeOp(o.operatore), val: o.euro, colore: tintaOp(o.operatore), sub: `${o.quante} ricarich${o.quante === 1 ? "a" : "e"}` }))} />
+                                            ? perNegozioV.map((n, i) => ({ label: n.negozio, val: n.euro, colore: TINTE_NEG[i % TINTE_NEG.length], sub: `${n.quante} ricarich${n.quante === 1 ? "a" : "e"}` }))
+                                            : perOperatoreV.map((o) => ({ label: nomeOp(o.operatore), val: o.euro, colore: tintaOp(o.operatore), sub: `${o.quante} ricarich${o.quante === 1 ? "a" : "e"}` }))} />
                                 ) : <p className="text-xs text-slate-500 py-6 text-center">Nessuna ricarica nel periodo.</p>}
                             </div>
                         </div>
@@ -516,17 +570,22 @@ export function PayStoreAdminView() {
                             {/* i quattro numeri, tutti interrogabili */}
                             <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
                                 {[
-                                    { t: "Ricariche", v: String(d.totale.quante), c: "#f8b516", n: "Quante ne sono state vendute nel periodo scelto." },
-                                    { t: "Incassato", v: eur(d.totale.euro), c: "#34d399", n: "La somma dei tagli. È esente IVA: sullo scontrino è tutto imponibile zero." },
-                                    { t: "Media al giorno", v: eur(media), c: "#818cf8", n: `Su ${d.perGiorno.length} giorni del periodo, compresi quelli senza vendite.` },
-                                    { t: "Periodo prima", v: eur(d.totale.euroPrima), c: "#64748b", n: "Lo stesso numero di giorni, subito prima. Serve a capire se stiamo crescendo." },
+                                    { t: "Ricariche", v: String(totaleV.quante), c: "#f8b516", n: "Quante ne sono state vendute nel periodo scelto." },
+                                    { t: "Incassato", v: eur(totaleV.euro), c: "#34d399", n: "La somma dei tagli. È esente IVA: sullo scontrino è tutto imponibile zero." },
+                                    { t: "Media al giorno", v: eur(media), c: "#818cf8", n: `Su ${perGiornoV.length} giorni del periodo, compresi quelli senza vendite.` },
+                                    /* ⚠️ NON SI CONFRONTA UN PEZZO CON UN TUTTO. Il periodo prima lo calcola il
+   server sull'intero, e le sue righe non ce le abbiamo: con un filtro acceso
+   accostare «solo Magliana, oggi» a «tutti i negozi, ieri» darebbe un numero
+   che sembra un paragone e non lo è. */
+{ t: "Periodo prima", v: filtriAccesi ? "—" : eur(d.totale.euroPrima), c: "#64748b",
+  n: filtriAccesi ? "Con un filtro acceso non si confronta: il periodo prima è calcolato su tutto." : "Lo stesso numero di giorni, subito prima. Serve a capire se stiamo crescendo." },
                                 ].map((k) => (
                                     <Tip key={k.t} content={<><TipTitolo>{k.t}</TipTitolo><TipRiga l="" r={k.n} /></>}>
                                         <div className="rounded-2xl border border-white/10 bg-black/20 px-3.5 py-3 cursor-help">
                                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{k.t}</p>
                                             <p className="text-2xl font-black tabular-nums mt-0.5" style={{ color: k.c }}>{k.v}</p>
-                                            {k.t === "Incassato" && d.totale.euroPrima > 0 && (
-                                                <Delta v={d.totale.euro - d.totale.euroPrima} euro />
+                                            {k.t === "Incassato" && !filtriAccesi && d.totale.euroPrima > 0 && (
+                                                <Delta v={totaleV.euro - d.totale.euroPrima} euro />
                                             )}
                                         </div>
                                     </Tip>
@@ -543,8 +602,8 @@ export function PayStoreAdminView() {
                                         <button onClick={() => setDestra("giorni")} className="text-[11px] text-slate-400 hover:text-white">← torna al giorno per giorno</button>
                                     </div>
                                     <RaceBars unit="€" righe={(torta === "negozi"
-                                        ? d.perNegozio.map((n, i) => ({ label: n.negozio, val: n.euro, colore: TINTE_NEG[i % TINTE_NEG.length], sub: `${n.quante} ricarich${n.quante === 1 ? "a" : "e"}` }))
-                                        : d.perOperatore.map((o) => ({ label: nomeOp(o.operatore), val: o.euro, colore: tintaOp(o.operatore), sub: `${o.quante} ricarich${o.quante === 1 ? "a" : "e"}` })))} />
+                                        ? perNegozioV.map((n, i) => ({ label: n.negozio, val: n.euro, colore: TINTE_NEG[i % TINTE_NEG.length], sub: `${n.quante} ricarich${n.quante === 1 ? "a" : "e"}` }))
+                                        : perOperatoreV.map((o) => ({ label: nomeOp(o.operatore), val: o.euro, colore: tintaOp(o.operatore), sub: `${o.quante} ricarich${o.quante === 1 ? "a" : "e"}` })))} />
                                     <p className="text-[11px] text-slate-500 mt-2">
                                         Le ricariche non hanno margine di listino: PayStore le addebita al valore pieno
                                         {" "}(verificato sui 108 tagli del loro catalogo).
@@ -574,7 +633,7 @@ export function PayStoreAdminView() {
                                                 tot: h.euro,
                                                 parti: h.parti.map((x) => ({ label: nomeOp(x.operatore), val: x.euro, colore: tintaOp(x.operatore), sub: `${x.quante} ricarich${x.quante === 1 ? "a" : "e"}` })),
                                             }))} />
-                                    ) : d.perGiorno.some((g) => g.euro > 0) ? (
+                                    ) : perGiornoV.some((g) => g.euro > 0) ? (
                                         /* ⚠️ `BarStack` non conosce il clic: si intercetta la
                                            posizione orizzontale e si risale al giorno. Meno
                                            elegante di una prop, ma non tocca un componente che
@@ -582,8 +641,8 @@ export function PayStoreAdminView() {
                                            sezione AI. */
                                         <div onClick={(e) => {
                                             const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                            const i = Math.floor(((e.clientX - box.left) / box.width) * d.perGiorno.length);
-                                            const g = d.perGiorno[Math.max(0, Math.min(d.perGiorno.length - 1, i))];
+                                            const i = Math.floor(((e.clientX - box.left) / box.width) * perGiornoV.length);
+                                            const g = perGiornoV[Math.max(0, Math.min(perGiornoV.length - 1, i))];
                                             if (g) setGiornoAperto(giornoAperto === g.giorno ? null : g.giorno);
                                         }} className="cursor-pointer"
 >
@@ -591,13 +650,13 @@ export function PayStoreAdminView() {
                                             inizio mese i giorni sono due, e con `flex-1` diventavano
                                             due lastroni di colore che non somigliano a un grafico */}
                                         <BarStack h={200} unit="€" barraMax={110}
-                                            giorni={d.perGiorno.map((g) => ({
+                                            giorni={perGiornoV.map((g) => ({
                                                 n: Number(g.giorno.slice(8, 10)),
                                                 label: g.giorno.slice(8, 10) + "/" + g.giorno.slice(5, 7),
                                                 tot: g.euro,
                                                 parti: g.parti.map((p) => ({ label: nomeOp(p.operatore), val: p.euro, colore: tintaOp(p.operatore), sub: `${p.quante} ricarich${p.quante === 1 ? "a" : "e"}` })),
                                             }))}
-                                            oggi={d.perGiorno.findIndex((g) => g.giorno === oggiISO())} media={media || null} />
+                                            oggi={perGiornoV.findIndex((g) => g.giorno === oggiISO())} media={media || null} />
                                         </div>
                                     ) : (
                                         <p className="text-xs text-slate-500 py-12 text-center">Nessuna ricarica in questo periodo.</p>
@@ -661,50 +720,13 @@ export function PayStoreAdminView() {
                         compariva «togli i filtri» e la riga non ci stava più. */}
                     <div className="glass-card an-card rounded-2xl p-4 psFascia">
                         <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-                            {/* ⚠️ IL PERIODO STA ANCHE QUI (Luca 02/09): «tra i filtri il
-                                range per filtrare per data, così posso tornare indietro e a
-                                quel punto posso vedere tutti i dati». È lo STESSO stato del
-                                selettore in cima — un controllo solo, due posti dove si
-                                prende — perché due periodi diversi che si contraddicono
-                                sarebbero peggio di nessun periodo. Tornare indietro rimette
-                                in elenco anche le già fatte, che di oggi sono nascoste. */}
-                            <div className="rvCampo">
-                                <span className="rvLab">Quando</span>
-                                <div className="rvPillRow items-center">
-                                    {[
-                                        { id: "oggi", et: "Oggi", da: oggiISO(), a: oggiISO() },
-                                        { id: "ieri", et: "Ieri", da: giornoMeno(1), a: giornoMeno(1) },
-                                        { id: "7gg", et: "7 giorni", da: giornoMeno(6), a: oggiISO() },
-                                        { id: "mese", et: "Mese", da: primoDelMese(), a: oggiISO() },
-                                    ].map((v) => {
-                                        /* ⚠️ SI CONFRONTA CON `periodo`, NON CON `range`: all'apertura
-                                           il periodo È il mese corrente, cioè esattamente quello che
-                                           imposta la pastiglia «Mese» — ma con `tipoP === "range"` non
-                                           si accendeva nessuna pastiglia. */
-                                        const on = periodo.da === v.da && periodo.a === v.a;
-                                        return (
-                                            <button key={v.id} aria-pressed={on}
-                                                /* ⚠️ SCEGLIERE UN PERIODO NON RIAPRE LE COMPLETATE. Prima
-                                                    sì, ed era il gesto più comune: premere «Mese» — che
-                                                    spesso non sposta il periodo di un giorno — rimetteva
-                                                    in elenco tutte e 89, cioè l'opposto di quello che
-                                                    serve andando sullo storico. Lo decide l'interruttore,
-                                                    che è lì apposta. */
-                                                onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); }}
-                                                className={cn("rvPill rvPill-tinta rvT-ambra", on && "rvPill-on")}>
-                                                {v.et}{on ? " ✓" : ""}
-                                            </button>
-                                        );
-                                    })}
-                                    <input type="date" value={periodo.da} max={oggiISO()} title="dal"
-                                        onChange={(e) => { setTipoP("range"); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
-                                        className="an-data glass-input px-3 py-2 rounded-lg text-[13px]" />
-                                    <span className="text-[11px] text-slate-500">→</span>
-                                    <input type="date" value={periodo.a} min={periodo.da} max={oggiISO()} title="al"
-                                        onChange={(e) => { setTipoP("range"); setRange({ da: periodo.da, a: e.target.value }); }}
-                                        className="an-data glass-input px-3 py-2 rounded-lg text-[13px]" />
-                                </div>
-                            </div>
+                            {/* ⚠️ IL PERIODO NON STA PIÙ QUI. Era in questa fascia con
+                                quattro scorciatoie e il range, e in cima con un altro
+                                selettore: due controlli sullo stesso stato, scritti in due
+                                grammatiche diverse. Luca 02/09 ha scelto questo — «mi piace
+                                di più per come è statica» — e l'ha voluto SOPRA. Qui restano
+                                solo i filtri che tagliano l'elenco: dove, com'è andata, da
+                                dove arriva, e i due allarmi. */}
                             <div className="rvCampo">
                                 <span className="rvLab">Dove</span>
                                 {/* i negozi sono quattordici: una tendina, non quattordici
@@ -822,9 +844,11 @@ export function PayStoreAdminView() {
 
                         <div className="rvHint psFascia-hint">
                             Premi un riquadro o una pastiglia per vedere solo quelle: il numero dice quante righe
-                            vedrai. ⚠️ Questi filtri agiscono <b>solo sulla lista</b>: i quattro numeri in cima e i
-                            grafici restano quelli del periodo intero, se no filtrare sembrerebbe aver incassato di
-                            meno. <b>Il marchio no</b>: quello in cima cambia anche i totali e i grafici.
+                            vedrai. Questi filtri valgono per <b>tutta la pagina</b> — i quattro numeri, i grafici e
+                            l'elenco raccontano sempre la stessa cosa.
+                            {" "}L'unica eccezione è <b>nascondere le completate</b>, che tiene fuori dall'elenco quelle
+                            già a posto ma non dai totali: se le togliesse anche da lì, l'incassato calerebbe man mano
+                            che le ricariche vengono fatte.
                         </div>
                     </div>
 
