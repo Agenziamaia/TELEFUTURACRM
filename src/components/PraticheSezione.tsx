@@ -11,6 +11,7 @@
    i 90. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fileUrlDa } from "@/lib/fileUrl";
 import { Loader2, Search, Plus, ArrowLeft, ArrowRight, Check, X, Printer, Paperclip, Clock } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
@@ -1644,12 +1645,15 @@ function Dettaglio({ pratica, ruolo, eAdmin, operatore, onChiudi, onFatto }: {
     const ggAperta = giorniLavorativi(pratica.created_at, oggiIso());
     const ggAvviso = pratica.avviso_pronto_il ? giorniLavorativi(pratica.avviso_pronto_il, oggiIso()) : null;
 
-    /* il secchio è privato: si apre con un indirizzo firmato che vale un'ora,
-       non con un link pubblico — questi sono documenti d'identità */
-    const apriAllegato = async (path: string) => {
-        const { data, error } = await supabase.storage.from("pratiche-allegati").createSignedUrl(path, 3600);
-        if (error || !data?.signedUrl) { window.alert("Non riesco ad aprire il documento: " + (error?.message || "riprova")); return; }
-        window.open(data.signedUrl, "_blank", "noopener");
+    /* ⚠️ SI APRE DAL CUSTODE, non firmandosi l'indirizzo da soli. Il deposito
+       dei moduli firmati era l'unico con una regola che comprendeva anche la
+       LETTURA: da lì chiunque avesse una sessione poteva elencare e aprire
+       ogni contratto di ordini e assistenze, coi dati del cliente dentro,
+       saltando il controllo. Ora la regola copre solo la scrittura — come su
+       tutti gli altri depositi — e per leggere si passa da `/api/file/…`, che
+       prima di consegnare guarda chi sei. */
+    const apriAllegato = (path: string) => {
+        window.open(fileUrlDa("pratiche-allegati", path), "_blank", "noopener");
     };
 
     /* ═══ CANCELLARE UNA PRATICA (Luca 01/09) ══════════════════════════════
