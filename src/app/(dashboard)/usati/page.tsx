@@ -285,6 +285,26 @@ function parseDate(s: string | null): Date {
   return isNaN(d.getTime()) ? new Date(0) : d;
 }
 
+/** Il nome del telefono come si legge in elenco: marca + modello, MA senza
+ *  ripetere la marca se il modello la porta già dentro.
+ *  ⚠️ Luca 02/09, con la fotografia di «ZTE ZTE Blade A34»: pensava che i
+ *  negozi scrivessero male il modello. Misurato: non lo scrivono affatto — lo
+ *  scelgono da una tendina, ed è il CATALOGO a contenerlo già («ZTE Blade
+ *  A34» sotto la marca ZTE). Sono 4.335 voci su 40.133.
+ *  Perciò la ripetizione si toglie QUI, dove il nome si compone: chiedere ai
+ *  negozi di stare attenti a una cosa che non fanno loro non l'avrebbe tolta.
+ *  ⚠️ E si guardano le PAROLE INTERE: «Apple» + «Apple Watch (38mm)» deve
+ *  restare «Apple Watch (38mm)», ma «Honor» + «Honor 200 Lite» non può
+ *  diventare «Hon...» — il confronto è su parola, non su lettere. */
+function nomeDispositivo(brand: string | null | undefined, modello: string | null | undefined): string {
+    const b = (brand || "").trim(), m = (modello || "").trim();
+    if (!b) return m || "Modello non specificato";
+    if (!m) return b;
+    const primaParola = m.split(/\s+/)[0];
+    if (primaParola.toLowerCase() === b.toLowerCase()) return m;
+    return `${b} ${m}`;
+}
+
 function parseHistory(h: unknown): Record<string, { date: Date; operatore: string }> {
   if (!h || typeof h !== "object") return {};
   const out: Record<string, { date: Date; operatore: string }> = {};
@@ -1778,6 +1798,17 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
             </div>
             <div><label className={lbl}>Modello *</label>
               <SelectOpzioni value={model} onChange={setModel} disabled={!brand} opzioni={brand ? modelOptions : []} maxVoci={1000} placeholder="Scrivi per filtrare i modelli…" className={inp} />
+              {/* ⚠️ L'AVVISO SERVE SOLO A SPIEGARE, non a rimediare: la
+                  ripetizione la toglie `nomeDispositivo` quando compone il
+                  nome, perché nasce dal catalogo e non da chi scrive. Qui si
+                  dice come si leggerà, così nessuno cerca il modello «col
+                  brand davanti» convinto di doverlo trovare. */}
+              {brand && (
+                <p className="mt-1 text-[10.5px] text-slate-500 leading-snug">
+                  Solo il modello: il brand <b className="text-slate-400">{brand}</b> viene messo davanti da solo
+                  {model ? <> — si leggerà «<span className="text-slate-300">{nomeDispositivo(brand, model)}</span>»</> : null}.
+                </p>
+              )}
             </div>
             <div><label className={lbl}>Capacit� *</label>
               <SelectOpzioni value={capacita} onChange={setCapacita} opzioni={CAPACITA_OPTIONS} placeholder="Scrivi o scegli…" className={inp} />
@@ -2466,7 +2497,7 @@ function GestioneUsatiInner() {
     allegato_registro?: string | null;
     firma?: { via: string; canale?: string; submissionId?: number | null; firmata_il?: string | null; registro?: string | null } | null;
   }) => {
-    const modelName = [data.brand, data.model].filter(Boolean).join(" ") || "Modello non specificato";
+    const modelName = nomeDispositivo(data.brand, data.model);
     const now = new Date();
     // ── CLIENTE: find-or-create (mig. 113) — prima l'anagrafica raccolta al
     // passo 2 veniva BUTTATA VIA. Il cliente scelto in ricerca arriva con l'id;
