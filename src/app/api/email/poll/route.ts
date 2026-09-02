@@ -159,6 +159,18 @@ async function pollAccountRaw(accId: string) {
                 convId = created?.id;
             }
             if (!convId) continue;
+            /* ⚠️ PRIMA SI GUARDA SE CE L'ABBIAMO GIÀ (revisore 02/09). Ogni
+               mail spedita dal CRM viene ricopiata sulla Sent IMAP, e da lì
+               torna indietro a questo giro: l'`upsert` la scarta come
+               doppione, ma `caricaAllegati` era già passato e aveva ricaricato
+               una SECONDA copia di ogni allegato nel deposito — orfana, che
+               nessuno cancella e nessuno vede. Finora non si notava perché
+               dal CRM non partiva niente con allegati: da oggi sì. */
+            if (m.messageId) {
+                const { data: gia } = await supabase.from("email_messages")
+                    .select("id").eq("account_id", accId).eq("message_id", m.messageId).limit(1);
+                if (gia && gia.length) continue;
+            }
             const atts = await caricaAllegati(convId, m.attachments);
             const { data: inseriti, error: msgErr } = await supabase.from("email_messages").upsert({
                 conversation_id: convId, account_id: accId, direction: "out",

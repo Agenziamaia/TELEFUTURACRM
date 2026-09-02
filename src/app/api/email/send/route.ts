@@ -19,7 +19,18 @@ export async function POST(request: Request) {
         const _s = _g.sess;
 
     try {
-        const { conversationId, accountId, to, subject, text } = await request.json();
+        const { conversationId, accountId, to, subject, text, allegati } = await request.json() as {
+            conversationId?: string; accountId?: string; to?: string; subject?: string; text?: string;
+            /* ⚠️ ARRIVANO I PERCORSI, NON I FILE (Luca 02/09: «l'email non ci
+               permette di mettere allegati»).
+               Il file lo carica il BROWSER dritto sul deposito, come fa già
+               WhatsApp, e qui arriva solo dove sta. Mandarlo dentro il JSON
+               sarebbe morto sul muro di nginx: `client_max_body_size` è 1 MB,
+               il base64 gonfia di un terzo, e l'errore che si vede in negozio
+               è «Unexpected token '<'» — la pagina d'errore del proxy letta
+               come se fosse una risposta. È già successo coi report. */
+            allegati?: { path: string; nome: string; mime?: string; size?: number }[];
+        };
         // 🔒 chi invia è chi ha la sessione, non chi lo dichiara
         const userId = _s.id;
         let convId = conversationId, accId = accountId, dest = to, subj = subject, inReplyTo: string | null = null;
@@ -55,16 +66,56 @@ export async function POST(request: Request) {
             convId = created?.id;
         }
 
+        /* Gli allegati si riprendono dal deposito con la chiave di servizio:
+           il browser li ha messi lì e non li rimanda. Se uno non si scarica
+           NON si spedisce una mail monca: chi allega un preventivo e riceve
+           «inviata» si aspetta che il preventivo ci sia. */
+        const files: { filename: string; content: Buffer; contentType?: string }[] = [];
+        const lista = Array.isArray(allegati) ? allegati.slice(0, 12) : [];
+        let peso = 0;
+        for (const a of lista) {
+            const path = String(a?.path || "");
+            if (!path) continue;
+            const { data: blob, error: eDl } = await supabase.storage.from("email-attachments").download(path);
+            if (eDl || !blob) return NextResponse.json({ error: `l'allegato «${a?.nome || path}» non si è potuto rileggere: riprova a caricarlo.` }, { status: 502 });
+            const buf = Buffer.from(await blob.arrayBuffer());
+            peso += buf.length;
+            files.push({ filename: String(a?.nome || "allegato"), content: buf, contentType: a?.mime || undefined });
+        }
+        /* Il tetto è del server di posta, non nostro: oltre una certa taglia il
+           messaggio lo rifiuta lui, e il rifiuto arriva DOPO — quando la mail
+           risulta già «inviata» a schermo. Meglio dirlo prima. */
+        if (peso > 20 * 1024 * 1024) {
+            return NextResponse.json({ error: `gli allegati pesano ${(peso / 1048576).toFixed(1)} MB: il limite è 20 MB. Mandane meno per volta, o usa un link.` }, { status: 400 });
+        }
+
         let mid = "";
         let raw: Buffer | null = null;
         try {
-            const r = await inviaEmail(acc as any, { to: dest, subject: subj, text: text.trim(), html: text.trim().replace(/\n/g, "<br>"), inReplyTo });
+            const r = await inviaEmail(acc as any, { to: dest, subject: subj, text: text.trim(), html: text.trim().replace(/\n/g, "<br>"), inReplyTo, attachments: files.length ? files : undefined });
             mid = r.messageId; raw = r.raw;
         } catch (e) {
             await supabase.from("email_messages").insert({ conversation_id: convId, account_id: accId, direction: "out", subject: subj, body_text: text.trim(), status: "failed", sent_by_user_id: userId || null, from_addr: acc.email_address, to_addrs: dest, email_date: new Date().toISOString() });
             return NextResponse.json({ error: e instanceof Error ? e.message : "invio fallito" }, { status: 502 });
         }
-        await supabase.from("email_messages").insert({ conversation_id: convId, account_id: accId, direction: "out", message_id: mid || null, subject: subj, body_text: text.trim(), status: "sent", sent_by_user_id: userId || null, from_addr: acc.email_address, to_addrs: dest, email_date: new Date().toISOString() });
+        /* ⚠️ E SI SPOSTANO SOTTO LA CONVERSAZIONE. Il permesso di aprire un
+           file lo decide la CARTELLA: `tf_puo_vedere_file` legge la prima
+           cartella del percorso come conversazione (o la seconda, dopo
+           «out/»). In composizione nuova la conversazione non esiste ancora
+           quando si sceglie il file, quindi il browser lo parcheggia sotto
+           «bozze/<utente>/» — e da lì non lo aprirebbe più nessuno. Adesso
+           che la conversazione c'è, si sposta dove va. */
+        const salvati: { name: string; url: string; mime?: string; size?: number }[] = [];
+        for (let i = 0; i < lista.length; i++) {
+            const a = lista[i];
+            const nome = String(a?.nome || "allegato").replace(/[^a-zA-Z0-9._-]+/g, "_");
+            const dentro = `out/${convId}/${Date.now()}-${i}-${nome}`;
+            let finale = String(a.path);
+            const { error: eMv } = await supabase.storage.from("email-attachments").move(a.path, dentro);
+            if (!eMv) finale = dentro;
+            salvati.push({ name: String(a?.nome || "allegato"), url: `/api/file/email-attachments/${finale}`, mime: a?.mime, size: a?.size });
+        }
+        await supabase.from("email_messages").insert({ conversation_id: convId, account_id: accId, direction: "out", message_id: mid || null, subject: subj, body_text: text.trim(), status: "sent", sent_by_user_id: userId || null, from_addr: acc.email_address, to_addrs: dest, email_date: new Date().toISOString(), attachments: salvati.length ? salvati : null });
         await supabase.from("email_conversations").update({ last_message_at: new Date().toISOString(), last_preview: text.trim().slice(0, 140), subject: subj }).eq("id", convId);
         // copia su "Posta inviata" IMAP: stesso Message-ID della spedita, quindi il
         // sync della Sent la ritrovera' e la scartera' come duplicato (upsert).

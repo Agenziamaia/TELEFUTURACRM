@@ -492,19 +492,90 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
         try { setTimeout(() => window.dispatchEvent(new Event("tf-omni-refresh")), 1500); } catch { /* lista omni non montata */ }
         if (!cTo.trim() || !cBody.trim() || !selAcc || sending) return;
         setSending(true);
-        const res = await api("/api/email/send", { accountId: selAcc, to: cTo.trim(), subject: cSubject.trim(), text: cBody.trim(), userId: user?.id });
+        const res = await api("/api/email/send", { accountId: selAcc, to: cTo.trim(), subject: cSubject.trim(), text: cBody.trim(), userId: user?.id, allegati: allegCompose.map(({ path, nome, mime, size }) => ({ path, nome, mime, size })) });
         setSending(false);
         if (res?.error) { alert("Invio non riuscito: " + res.error); return; }
         if (cDraftId) await supabase.from("email_drafts").delete().eq("id", cDraftId);
-        setComposeOpen(false); setCTo(""); setCSubject(""); setCBody(""); setCDraftId(null);
+        setComposeOpen(false); setCTo(""); setCSubject(""); setCBody(""); setCDraftId(null); setAllegCompose([]);
         loadDrafts();
     };
+
+    /* ═══ GLI ALLEGATI ════════════════════════════════════════════════════
+       Il file NON viaggia dentro il JSON della rotta: lo carica il browser
+       dritto sul deposito e alla rotta va solo il percorso. È il modello che
+       già usa WhatsApp, e il motivo è misurato: nginx davanti al CRM accetta
+       richieste da 1 MB, il base64 gonfia di un terzo, e quello che vede il
+       negozio è «Unexpected token '<'» — la pagina d'errore del proxy letta
+       come risposta.
+
+       ⚠️ E si parcheggiano sotto «bozze/<utente>/»: il permesso di aprire un
+       file lo decide la CARTELLA, che deve essere la conversazione — e in
+       composizione nuova la conversazione non esiste ancora quando si sceglie
+       il file. Al momento dell'invio è il server a spostarli al posto giusto. */
+    type Alleg = { path: string; nome: string; mime?: string; size?: number; su?: boolean };
+    const [allegRisposta, setAllegRisposta] = useState<Alleg[]>([]);
+    const [allegCompose, setAllegCompose] = useState<Alleg[]>([]);
+    const [caricandoAlleg, setCaricandoAlleg] = useState(false);
+    const MAX_ALLEG = 20 * 1024 * 1024;
+
+    const caricaAllegati = async (files: FileList | null, dove: "risposta" | "compose") => {
+        if (!files || !files.length || !user?.id) return;
+        const attuali = dove === "risposta" ? allegRisposta : allegCompose;
+        const gia = attuali.reduce((n, a) => n + (a.size || 0), 0);
+        const nuovi = [...files].reduce((n, f) => n + f.size, 0);
+        if (gia + nuovi > MAX_ALLEG) {
+            alert(`Gli allegati non possono superare i 20 MB in tutto: questi arriverebbero a ${((gia + nuovi) / 1048576).toFixed(1)} MB.\n\nMandane meno per volta, oppure manda un link.`);
+            return;
+        }
+        setCaricandoAlleg(true);
+        const messi: Alleg[] = [];
+        for (const f of [...files]) {
+            const nome = f.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+            const path = `bozze/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${nome}`;
+            /* ⚠️ NIENTE `upsert: true`. Dal 31/08 i depositi sono chiusi: per
+               fare «se c'è già aggiorna» il deposito deve LEGGERE la riga, e
+               la lettura diretta non esiste più — è l'errore che Veronica ha
+               visto su WhatsApp il 02/09. Il percorso ha già l'istante dentro:
+               un doppione non può esistere. */
+            const { error } = await supabase.storage.from("email-attachments").upload(path, f, { contentType: f.type || undefined });
+            if (error) { alert(`«${f.name}» non è stato caricato: ${error.message}`); continue; }
+            messi.push({ path, nome: f.name, mime: f.type || undefined, size: f.size });
+        }
+        if (dove === "risposta") setAllegRisposta((p) => [...p, ...messi]);
+        else setAllegCompose((p) => [...p, ...messi]);
+        setCaricandoAlleg(false);
+    };
+
+    const togliAllegato = async (a: Alleg, dove: "risposta" | "compose") => {
+        try { await supabase.storage.from("email-attachments").remove([a.path]); } catch { }
+        if (dove === "risposta") setAllegRisposta((p) => p.filter((x) => x.path !== a.path));
+        else setAllegCompose((p) => p.filter((x) => x.path !== a.path));
+    };
+
+
+    /* la striscia sotto al testo: quello che sto per mandare, con la x per
+       toglierlo. Il nome per intero, non troncato: chi allega tre PDF simili
+       deve poter capire quale ha sbagliato. */
+    const StrisciaAllegati = ({ lista, dove }: { lista: Alleg[]; dove: "risposta" | "compose" }) => (
+        lista.length ? (
+            <div className="flex flex-wrap gap-1.5 px-1 pb-1.5">
+                {lista.map((a) => (
+                    <span key={a.path} className="inline-flex items-center gap-1.5 max-w-full px-2 py-1 rounded-lg bg-sky-500/10 border border-sky-500/25 text-[11px] text-sky-200">
+                        <Paperclip className="w-3 h-3 shrink-0" />
+                        <span className="truncate max-w-[220px]" title={a.nome}>{a.nome}</span>
+                        <span className="text-slate-500 shrink-0">{a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.size / 1024)) + " KB") : ""}</span>
+                        <button type="button" onClick={() => togliAllegato(a, dove)} className="text-slate-400 hover:text-rose-300 shrink-0" title="Togli">✕</button>
+                    </span>
+                ))}
+            </div>
+        ) : null
+    );
 
     const rispondi = async () => {
         if (!selConv || !text.trim() || sending) return;
         setSending(true);
-        const res = await api("/api/email/send", { conversationId: selConv.id, text: text.trim(), userId: user?.id });
-        if (res?.error) alert("Invio non riuscito: " + res.error); else setText("");
+        const res = await api("/api/email/send", { conversationId: selConv.id, text: text.trim(), userId: user?.id, allegati: allegRisposta.map(({ path, nome, mime, size }) => ({ path, nome, mime, size })) });
+        if (res?.error) alert("Invio non riuscito: " + res.error); else { setText(""); setAllegRisposta([]); }
         setSending(false);
     };
 
@@ -872,11 +943,17 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                                         <div className="flex gap-2 items-end">
                                             <textarea value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) rispondi(); }}
                                                 rows={2} placeholder="Scrivi la risposta…  (Ctrl+Invio per inviare)" className="flex-1 bg-transparent border-0 outline-none text-sm text-slate-100 placeholder:text-slate-500 resize-none max-h-40 px-1 py-1" />
+                                            <label title="Allega un file" className="p-2.5 rounded-full shrink-0 cursor-pointer text-slate-400 hover:text-sky-300 hover:bg-white/5 transition-colors">
+                                                {caricandoAlleg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+                                                <input type="file" multiple className="hidden"
+                                                    onChange={(e) => { void caricaAllegati(e.target.files, "risposta"); e.currentTarget.value = ""; }} />
+                                            </label>
                                             <button onClick={rispondi} disabled={sending || !text.trim()} title="Invia la risposta"
                                                 className={cn("p-2.5 rounded-full text-white shrink-0 transition-all duration-200", sending || !text.trim() ? "bg-white/10 text-slate-500" : "bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-lg shadow-sky-500/30 hover:scale-105 active:scale-95")}>
                                                 {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                                             </button>
                                         </div>
+                                        <StrisciaAllegati lista={allegRisposta} dove="risposta" />
                                     </div>
                                 </div>
                             )}
@@ -912,11 +989,17 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
                             <input value={cSubject} onChange={e => setCSubject(e.target.value)} className="bg-transparent border-b border-white/5 focus:border-sky-400/50 outline-none py-2 text-sm font-medium text-white placeholder:text-slate-500 transition-colors" placeholder="Oggetto" />
                             <textarea value={cBody} onChange={e => setCBody(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendCompose(); }} rows={9} className="bg-transparent outline-none py-2.5 text-sm text-slate-100 leading-relaxed resize-none min-h-[150px] placeholder:text-slate-500" placeholder="Scrivi il messaggio…" />
                         </div>
+                        <div className="px-4"><StrisciaAllegati lista={allegCompose} dove="compose" /></div>
                         <div className="px-4 py-3 border-t border-white/10 bg-white/[0.02] flex items-center gap-2">
                             <button onClick={sendCompose} disabled={sending || !cTo.trim() || !cBody.trim()}
                                 className={cn("px-5 py-2 rounded-full text-white text-sm font-bold flex items-center gap-2 transition-all duration-200", sending || !cTo.trim() || !cBody.trim() ? "bg-white/10 text-slate-500" : "bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-lg shadow-sky-500/30 hover:-translate-y-0.5 active:scale-95")}>
                                 {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Invia
                             </button>
+                            <label title="Allega un file" className="px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5">
+                                {caricandoAlleg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />} Allega
+                                <input type="file" multiple className="hidden"
+                                    onChange={(e) => { void caricaAllegati(e.target.files, "compose"); e.currentTarget.value = ""; }} />
+                            </label>
                             <button onClick={() => saveDraft(false)} className="px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-semibold transition-colors">Salva bozza</button>
                             <span className="ml-auto text-[10px] text-slate-600">Ctrl+Invio per inviare</span>
                         </div>
