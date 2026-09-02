@@ -249,3 +249,13 @@ export function eRicaricaSenzaNumero(prodotto: string | null | undefined): strin
  *  solo il codice. */
 export const nomeOperatoreCorto = (id: string) =>
     (NOMI_OPERATORE.find(([, k]) => k === id) || [])[0] || id;
+
+/* ═══ GLI STATI DI UNA RICARICA, IN UN POSTO SOLO ═══════════════════════════
+   ⚠️ Stavano scritti due volte — nella schermata e nella rotta che li
+   salva — e il 02/09 ho cambiato i nomi in una sola: la rotta rispondeva
+   «stato non valido» a ogni clic, e la schermata non lo diceva nemmeno.
+   Da qui in poi la lista è questa, e la usano entrambe. */
+export const STATI_RICARICA = ["sospeso", "ok_automatico", "ok_manuale", "fallita", "annullata"] as const;
+export type StatoRicarica = typeof STATI_RICARICA[number];
+export const eStatoValido = (s: unknown): s is StatoRicarica =>
+    typeof s === "string" && (STATI_RICARICA as readonly string[]).includes(s);

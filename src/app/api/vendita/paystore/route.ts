@@ -33,10 +33,13 @@ type Voce = {
     taglio?: string; importo?: number; contractId?: string | null; conAttivazione?: boolean;
 };
 
-/* Ogni ricarica nasce DA FARE: scontrinata e incassata, credito non ancora
-   caricato. Lo diventa «fatta» quando qualcuno lo dice — oggi una persona dal
-   pannello, domani il motore che chiama l'API. */
-const STATO_INIZIALE = "da_fare";
+/* Ogni ricarica nasce IN SOSPESO: scontrinata e incassata, credito non ancora
+   caricato. Diventa «ok automatico» quando l'API la esegue, «ok manuale»
+   quando la carica una persona.
+   ⚠️ Questo valore deve stare nella lista di `STATI_RICARICA`: il database ha
+   un CHECK, e uno stato fuori lista fa fallire l'inserimento — cioè fa
+   sparire la ricarica dal registro, in silenzio. */
+const STATO_INIZIALE = "sospeso";
 
 export async function POST(request: Request) {
     const g = await accesso(request, "vendita/paystore");

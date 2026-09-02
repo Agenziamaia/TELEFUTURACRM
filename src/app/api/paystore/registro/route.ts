@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto, NOMI_OPERATORE } from "@/lib/paystore";
+import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto, NOMI_OPERATORE, eStatoValido } from "@/lib/paystore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -109,7 +109,7 @@ async function recuperaScontrinate(da: string, a: string) {
             nuove.push({
                 creata_il: v.created_at, negozio: v.negozio, venditore: v.venditore,
                 operatore: d?.operatore || senzaNum, operatore_nome: d?.operatoreNome || nomeOperatoreCorto(senzaNum || ""),
-                numero: d?.numero || "", importo, stato: "da_fare", contract_id: v.id,
+                numero: d?.numero || "", importo, stato: "sospeso", contract_id: v.id,
                 nota: d ? "ripresa dalla vendita scontrinata" : "venduta senza numero: da completare a mano",
             });
         }
@@ -325,7 +325,7 @@ export async function GET(request: Request) {
         /* ⚠️ QUELLE DA GUARDARE, in cima e contate a parte: una ricarica
            incassata e non erogata è l'unica ragione per cui uno apre questa
            schermata di fretta. */
-        daGuardare: R.filter((r) => r.stato === "da_fare" || r.stato === "fallita"),
+        daGuardare: R.filter((r) => r.stato === "sospeso" || r.stato === "fallita"),
         perStato: [...new Set(R.map((r) => r.stato))].map((s) => ({ stato: s, quante: R.filter((r) => r.stato === s).length })),
         perGiorno, perOperatore, perNegozio,
         /* quante nascono da un'attivazione e quante si vendono da sole: dice
@@ -382,7 +382,7 @@ export async function POST(request: Request) {
        collegata lo scriverà il motore, e questi pulsanti resteranno per i
        casi che l'API non copre. */
     if (b.azione === "stato") {
-        if (!b.id || !["da_fare", "fatta", "fallita", "annullata"].includes(String(b.stato)))
+        if (!b.id || !eStatoValido(b.stato))
             return NextResponse.json({ error: "stato non valido" }, { status: 400 });
         const { data: chi } = await supabase.from("app_users").select("full_name").eq("id", g.sess.id).maybeSingle();
         const { error } = await supabase.from("paystore_ricariche").update({

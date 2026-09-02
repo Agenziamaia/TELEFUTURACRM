@@ -29,6 +29,7 @@ import { RefreshCw, ChevronLeft, ChevronRight, AlertTriangle, Plus, Power, Trash
 import { cn } from "@/utils";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { OPERATORI_PAYSTORE } from "../../registra-vendita/PayStore";
+import { STATI_RICARICA } from "@/lib/paystore";
 /* ⚠️ `_charts` è JS con i default nei parametri: TypeScript ne deduce tipi
    sbagliati. Si importano così, come dice lo standard. */
 import * as G from "../../analisi/_charts";
@@ -108,7 +109,7 @@ const STATI: Record<string, { testo: string; colore: string; sfondo: string }> =
     fallita: { testo: "NON partita", colore: "text-rose-300", sfondo: "bg-rose-500/15 border-rose-400/40" },
     annullata: { testo: "annullata", colore: "text-slate-500", sfondo: "bg-white/5 border-white/15" },
 };
-const ORDINE_STATI = ["sospeso", "ok_automatico", "ok_manuale", "fallita", "annullata"];
+const ORDINE_STATI = [...STATI_RICARICA];
 
 /* Lo stato dello SCONTRINO, che è una cosa diversa dallo stato della ricarica:
    il primo dice se il documento è uscito, il secondo se il credito è partito.
@@ -327,7 +328,7 @@ export function PayStoreAdminView() {
                         <button onClick={() => setStato("")} className={cn("rvPill rvPill-sm", !stato && "rvPill-on")}>Tutti gli stati</button>
                         {ORDINE_STATI.map((x) => {
                             const n = d.ultime.filter((r) => r.stato === x).length;
-                            if (!n && x !== "da_fare") return null;
+                            if (!n && x !== "sospeso") return null;
                             return (
                                 <button key={x} onClick={() => setStato(stato === x ? "" : x)}
                                     className={cn("rvPill rvPill-sm", stato === x && "rvPill-on")}>
@@ -740,7 +741,17 @@ function StatoRicarica({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
         setLavoro(true);
         try {
             const x = await fetch("/api/paystore/registro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ azione: "stato", id: r.id, stato }) });
-            if (x.ok) onCambiato();
+            const j = await x.json().catch(() => ({}));
+            /* ⚠️ UN RIFIUTO SI DEVE VEDERE. Prima il codice era `if (x.ok)
+               onCambiato()`: quando la rotta rispondeva «stato non valido»
+               non succedeva NIENTE — nessun errore, nessun cambiamento, e
+               dall'altra parte sembrava che il pannello non si aggiornasse.
+               Un'azione che fallisce in silenzio è peggio di una che fallisce
+               e lo dice. */
+            if (x.ok && j?.ok) onCambiato();
+            else alert("Non sono riuscito a cambiare lo stato: " + (j?.error || `errore ${x.status}`));
+        } catch (e) {
+            alert("Non sono riuscito a cambiare lo stato: " + String((e as Error)?.message || e));
         } finally { setLavoro(false); setPos(null); }
     };
 
