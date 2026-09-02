@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { RefreshCw, ChevronLeft, ChevronRight, AlertTriangle, Plus, Power, Trash2, Check } from "lucide-react";
+import { RefreshCw, ChevronLeft, ChevronRight, Plus, Power, Trash2, Check } from "lucide-react";
 import { cn } from "@/utils";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { OPERATORI_PAYSTORE } from "../../registra-vendita/PayStore";
@@ -43,7 +43,11 @@ const TipRiga = G.TipRiga as unknown as (p: Record<string, unknown>) => React.Re
 const TipTitolo = G.TipTitolo as unknown as (p: Record<string, unknown>) => React.ReactElement;
 
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
-const oggiISO = () => new Date().toISOString().slice(0, 10);
+/* ⚠️ IL GIORNO È QUELLO DI ROMA. `toISOString()` è UTC: fra mezzanotte e le
+   due del mattino d'estate «oggi» sarebbe ancora ieri, e le ricariche
+   incassate nella giornata appena chiusa non risulterebbero «rimaste
+   indietro» proprio nelle ore in cui uno le va a guardare. */
+const oggiISO = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 const primoDelMese = () => oggiISO().slice(0, 8) + "01";
 const eur = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const eurC = (n: number) => (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 2 });
@@ -81,6 +85,7 @@ type Dati = {
     da: string; a: string;
     totale: { quante: number; euro: number; euroPrima: number };
     daGuardare: Riga[];
+    senzaScontrino: number;
     perStato: { stato: string; quante: number }[];
     perGiorno: { giorno: string; quante: number; euro: number; parti: { operatore: string; nome: string; quante: number; euro: number }[] }[];
     perOperatore: { operatore: string; nome: string; quante: number; euro: number }[];
@@ -100,16 +105,15 @@ const SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" }
    buon fine, piuttosto che fallita, piuttosto che da fare».
    Non descrivono COME è stata fatta, ma se il credito è partito — che è la
    sola domanda che conta quando il cliente ha già pagato. */
-/* ⚠️ IL COLORE IN ESADECIMALE, oltre alle classi. I pulsanti del filtro lo
-   applicano con lo stile in linea: `.psFiltro` sta in globals.css, che vince
-   sulle utility di Tailwind, e un `bg-amber-500/15` scritto lì accanto non si
-   vedrebbe — è esattamente com'è andata al primo giro. */
-const TINTA_STATO: Record<string, { fondo: string; bordo: string; testo: string }> = {
-    sospeso:       { fondo: "rgba(245,158,11,.16)", bordo: "rgba(251,191,36,.45)", testo: "#fcd34d" },
-    ok_automatico: { fondo: "rgba(16,185,129,.16)", bordo: "rgba(52,211,153,.45)", testo: "#6ee7b7" },
-    ok_manuale:    { fondo: "rgba(20,184,166,.14)", bordo: "rgba(45,212,191,.40)", testo: "#5eead4" },
-    fallita:       { fondo: "rgba(244,63,94,.16)",  bordo: "rgba(251,113,133,.45)", testo: "#fda4af" },
-    annullata:     { fondo: "rgba(255,255,255,.05)", bordo: "rgba(255,255,255,.16)", testo: "#94a3b8" },
+/* ⚠️ LA TINTA È UNA CLASSE, non un colore scritto in linea. `--rv-acc` ha già
+   la sua variante per il tema chiaro: i colori esadecimali che avevo messo qui
+   davano, con l'interruttore ☀️, un contrasto misurato fra 1,2 e 1,6 dove ne
+   servono 4,5 — cioè filtri invisibili su una pagina di scontrini.
+   `ok_manuale` va sul ciano e non su un secondo verde: automatico e manuale
+   sono i due che Luca ha chiesto di poter distinguere. */
+const TINTA_STATO: Record<string, string> = {
+    sospeso: "rvT-ambra", ok_automatico: "rvT-verde", ok_manuale: "rvT-ciano",
+    fallita: "rvT-rosso", annullata: "rvT-grigio",
 };
 
 const STATI: Record<string, { testo: string; colore: string; sfondo: string }> = {
@@ -144,6 +148,11 @@ export function PayStoreAdminView() {
     /* «senza scontrino» e «rimaste indietro»: due pulsanti che filtrano la
        lista, non due elenchi da leggere */
     const [allarme, setAllarme] = useState("");
+    /* ⚠️ QUANTE SE NE DISEGNANO, non quante ne arrivano. Il server manda tutte
+       le righe del periodo — a trenta giorni sono un paio di migliaia — e la
+       pagina ne disegna un blocco per volta, dicendo sempre quante ne restano.
+       Il tetto è una scelta di disegno, non un pezzo di verità che sparisce. */
+    const [quante, setQuante] = useState(200);
     const [operatore, setOperatore] = useState("");
     /* ⚠️ LO STATO SI FILTRA QUI, non nella rotta: il server manda comunque
        tutto il periodo perché i totali e il giorno-per-giorno devono restare
@@ -194,36 +203,63 @@ export function PayStoreAdminView() {
        lo stato no — «solo le da fare» non deve far sembrare che si sia
        incassato meno di quanto si è incassato. */
     const oggiS = oggiISO();
-    /* ⚠️ I FILTRI VALGONO SULL'ELENCO, non sui totali. «Solo le rimaste
-       indietro» non deve far sembrare che si sia incassato meno di quanto si è
-       incassato: la testata parla del periodo, la lista di quello che si sta
-       guardando. */
-    const righe = d.ultime
-        .filter((r) => !negoziSel || negoziSel.includes(String(r.negozio || "")))
-        .filter((r) => !stato || r.stato === stato)
-        .filter((r) => !origine || String(r.con_attivazione) === origine)
-        .filter((r) => !allarme
+    /* ⚠️ I FILTRI VALGONO SULL'ELENCO, non sui totali della testata: «solo le
+       rimaste indietro» non deve far sembrare che si sia incassato meno di
+       quanto si è incassato. Il periodo lo dicono i quattro numeroni in alto,
+       la lista dice quello che si sta guardando adesso — e sotto la lista c'è
+       scritto quante sono e quanto valgono. */
+    const rimastaIndietro = (r: Riga) => r.stato === "fallita" || (r.stato === "sospeso" && r.creata_il.slice(0, 10) < oggiS);
+    /* Ogni filtro è una funzione a sé, così il contatore di un pulsante si può
+       calcolare CON GLI ALTRI FILTRI ATTIVI e senza il proprio.
+       ⚠️ È la differenza fra un numero e una bugia: contando ogni pulsante
+       sull'insieme intero, «Donna» + «senza scontrino» mostrava 7 sul quadrato
+       e ZERO righe sotto. Il numero su un pulsante deve dire quante righe si
+       vedranno premendolo. */
+    const F = {
+        negozio: (r: Riga) => !negoziSel || negoziSel.includes(String(r.negozio || "")),
+        stato: (r: Riga) => !stato || r.stato === stato,
+        origine: (r: Riga) => !origine || String(r.con_attivazione === true) === origine,
+        allarme: (r: Riga) => !allarme
             || (allarme === "scontrino" && r.scontrino_stato === "errore")
-            || (allarme === "indietro" && (r.stato === "fallita" || (r.stato === "sospeso" && r.creata_il.slice(0, 10) < oggiS))));
-    const daGuardareDavvero = d.daGuardare.filter((r) => r.stato === "fallita" || r.creata_il.slice(0, 10) < oggiS);
-    /* ⚠️ DUE COSE CHE VANNO VISTE SUBITO, e non c'entrano con lo stato della
-       ricarica: lo scontrino che non è uscito (il cliente ha pagato e non ha
-       il documento) e la riga finita su un reparto che non è l'1 (una
-       ricarica assoggettata a IVA per sbaglio). */
-    const senzaScontrino = d.ultime.filter((r) => r.scontrino_stato === "errore");
-    const repartoStorto = d.ultime.filter((r) => r.reparto_usato != null && r.reparto_usato !== 1);
-    /* le ricariche per ora della giornata, dalla prima all'ultima: si usa
-       quando i giorni con vendite sono uno o due */
-    const giorniPieni = d.perGiorno.filter((g) => g.quante > 0).length;
-    const aOre = giorniPieni > 0 && giorniPieni <= 2;
+            || (allarme === "indietro" && rimastaIndietro(r)),
+    };
+    const tutte = d.ultime;
+    const righe = tutte.filter((r) => F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r));
+    /** quante righe resterebbero premendo questo pulsante, con quello che è
+     *  già premuto adesso */
+    const quanteCon = (tranne: keyof typeof F, cond: (r: Riga) => boolean) =>
+        tutte.filter((r) => cond(r) && (Object.keys(F) as (keyof typeof F)[])
+            .every((k) => k === tranne || F[k](r))).length;
+    /* ⚠️ I DUE ALLARMI SI CONTANO SUL PERIODO INTERO, dal server, quando non
+       c'è nessun altro filtro attivo: sono l'unica ragione per cui uno apre
+       questa schermata di fretta, e devono dire il numero vero anche se la
+       lista ne disegna un pezzo per volta. Con un filtro attivo, invece,
+       contano quello che il filtro lascia — se no promettono righe che non si
+       vedranno. */
+    const senzaAltri = !negoziSel && !stato && !origine;
+    const senzaScontrino = senzaAltri ? d.senzaScontrino : quanteCon("allarme", (r) => r.scontrino_stato === "errore");
+    const daGuardareDavvero = senzaAltri
+        ? d.daGuardare.filter(rimastaIndietro).length
+        : quanteCon("allarme", rimastaIndietro);
+    /* ⚠️ IL GRAFICO PARLA DI GIORNI, e le ore le mostra solo se gliele chiedi
+       (Luca 02/09): «questo grafico deve darmi l'andamento giorno per giorno,
+       poi nel momento in cui io clicco su un giorno a quel punto mi esplode
+       l'andamento orario». Prima passava da solo alle ore quando i giorni con
+       vendite erano uno o due — comodo la prima settimana, ma vuol dire che
+       l'andamento dei giorni, che è la domanda normale, non si poteva vedere.
+       L'unica eccezione resta il periodo di UN GIORNO SOLO («Oggi»): lì i
+       giorni sono una barra sola, che non è un grafico. */
+    const unGiornoSolo = d.perGiorno.length === 1;
+    const aOre = unGiornoSolo || giornoAperto != null;
+    const giornoDelleOre = unGiornoSolo ? d.perGiorno[0].giorno : giornoAperto;
     /* ⚠️ NIENTE `useMemo` QUI: siamo dopo i `return` anticipati (errore, dati
        non ancora arrivati), e un hook dopo un ritorno condizionale cambia
        l'ordine degli hook fra un render e l'altro — React se ne accorge e la
        pagina non si apre più. Il calcolo è su duecento righe: costa niente. */
     const perOra = (() => {
-        if (!aOre) return [];
+        if (!aOre || !giornoDelleOre) return [];
         const m = new Map<number, { euro: number; ops: Map<string, { euro: number; quante: number }> }>();
-        for (const r of d.ultime) {
+        for (const r of d.ultime.filter((x) => x.creata_il.slice(0, 10) === giornoDelleOre)) {
             const h = new Date(r.creata_il).getHours();
             const c = m.get(h) || { euro: 0, ops: new Map() };
             c.euro += Number(r.importo || 0);
@@ -422,8 +458,13 @@ export function PayStoreAdminView() {
                             ) : (
                             <div className="rounded-2xl border border-white/10 bg-black/20 p-3.5">
                                 <div className="flex items-baseline justify-between mb-1">
-                                    <h3 className="text-sm font-bold text-white">{aOre ? "Ora per ora" : "Giorno per giorno"}</h3>
-                                    <span className="text-[11px] text-slate-500">{aOre ? "quando si ricarica, nella giornata" : "clicca una barra per vedere quel giorno"}</span>
+                                    <h3 className="text-sm font-bold text-white">
+                                        {aOre ? "Ora per ora" : "Giorno per giorno"}
+                                        {aOre && giornoDelleOre && <span className="text-amber-300 font-semibold"> · {new Date(giornoDelleOre + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}</span>}
+                                    </h3>
+                                    {aOre && !unGiornoSolo
+                                        ? <button onClick={() => setGiornoAperto(null)} className="text-[11px] text-amber-300 hover:text-white font-semibold">← torna ai giorni</button>
+                                        : <span className="text-[11px] text-slate-500">{aOre ? "quando si ricarica, nella giornata" : "clicca una barra per aprire quel giorno"}</span>}
                                 </div>
                                 <div className="min-h-[190px]">
                                     {/* ⚠️ UN GIORNO SOLO NON FA UNA SERIE. Con un giorno il
@@ -504,70 +545,110 @@ export function PayStoreAdminView() {
                         cosa si parla, il grafico dice come sta andando, i filtri
                         servono dopo — quando si è visto l'insieme e si vuole
                         guardare un pezzo. */}
-                    <div className="glass-card an-card rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-3">
-                        {/* i negozi sono dodici: una tendina, non dodici pastiglie.
-                            È la stessa di Ricerca Vendite e del Calendario. */}
-                        <FiltroMulti values={negoziSel} onChange={setNegoziSel} opzioni={d.negozi}
-                            etichettaTutti="Tutti i negozi" className="min-w-[186px]"
-                            etichette={Object.fromEntries(d.negozi.map((n) => [n, `${n} · ${d.perNegozio.find((x) => x.negozio === n)?.quante ?? 0}`]))} />
+                    {/* ══ I FILTRI, SOTTO IL GRAFICO ═══════════════════════════
+                        ⚠️ LA GRAMMATICA È QUELLA DEL MAGAZZINO, non una nuova.
+                        Le tre regole scritte lì (`magazzino/page.tsx`) valgono
+                        anche qui, ed erano state riscritte da capo al primo giro:
+                          1. ogni fila di pastiglie ha sopra la sua etichetta;
+                          2. ogni riquadro dice QUANTE RIGHE VEDRAI premendolo;
+                          3. i riquadri a zero restano a schermo, spenti — «zero
+                             scontrini persi» è la notizia buona della giornata, e
+                             non vederla non è la stessa cosa che leggerla.
+                        In più: due colonne dichiarate invece di `ml-auto`. Con
+                        `flex-wrap`, quando la riga trabocca l'ultimo elemento va a
+                        capo e il margine automatico lo incolla a destra di una
+                        riga vuota: su un portatile da 1280 con la barra laterale
+                        aperta i due quadrati cadevano da soli sotto 698 px di
+                        niente — e bastava premere un filtro per provocarlo, perché
+                        compariva «togli i filtri» e la riga non ci stava più. */}
+                    <div className="glass-card an-card rounded-2xl p-4 psFascia">
+                        <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+                            <div className="rvCampo">
+                                <span className="rvLab">Dove</span>
+                                {/* i negozi sono quattordici: una tendina, non quattordici
+                                    pastiglie. ⚠️ `className` in FiltroMulti SOSTITUIVA lo
+                                    stile invece di aggiungersi: passando solo la larghezza
+                                    la casella restava nuda, senza cornice e con il testo
+                                    più grande di tutta la fascia. */}
+                                <FiltroMulti values={negoziSel} onChange={setNegoziSel} opzioni={d.negozi}
+                                    etichettaTutti="Tutti i negozi" className="min-w-[200px] max-w-[240px]"
+                                    etichette={Object.fromEntries(d.negozi.map((n) => [n, `${n} · ${quanteCon("negozio", (r) => String(r.negozio || "") === n)}`]))} />
+                            </div>
 
-                        {/* gli stati restano pulsanti, ma col colore del loro stato:
-                            così il filtro somiglia a quello che seleziona */}
-                        <div className="flex flex-wrap items-center gap-1.5">
-                            {ORDINE_STATI.map((x) => {
-                                const n = d.ultime.filter((r) => r.stato === x).length;
-                                if (!n && x !== "sospeso") return null;
-                                const t = TINTA_STATO[x];
-                                const on = stato === x;
-                                return (
-                                    <button key={x} onClick={() => setStato(on ? "" : x)}
-                                        className={cn("psFiltro", on && "psFiltro-on")}
-                                        style={{ background: t.fondo, borderColor: t.bordo, color: t.testo }}>
-                                        <span>{STATI[x].testo}</span>
-                                        <span className="psFiltroN">{n}</span>
-                                    </button>
-                                );
-                            })}
+                            <div className="rvCampo">
+                                <span className="rvLab">Com&apos;è andata</span>
+                                <div className="rvPillRow">
+                                    {ORDINE_STATI.map((x) => {
+                                        const n = quanteCon("stato", (r) => r.stato === x);
+                                        if (!n && x !== "sospeso") return null;
+                                        const on = stato === x;
+                                        return (
+                                            <button key={x} onClick={() => setStato(on ? "" : x)} aria-pressed={on}
+                                                title={`${n} ricarich${n === 1 ? "a" : "e"} in questo stato`}
+                                                className={cn("rvPill rvPill-sm rvPill-tinta", TINTA_STATO[x], on && "rvPill-on")}>
+                                                {STATI[x].testo}{on ? " ✓" : ""}<span className="rvPillN">{n}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="rvCampo">
+                                <span className="rvLab">Da dove arriva</span>
+                                <div className="rvPillRow">
+                                    {(d.perOrigine || []).filter((o) => o.quante > 0).map((o) => {
+                                        const on = origine === String(o.conAttivazione);
+                                        return (
+                                            <button key={String(o.conAttivazione)} onClick={() => setOrigine(on ? "" : String(o.conAttivazione))}
+                                                aria-pressed={on} className={cn("rvPill rvPill-sm rvPill-tinta rvT-indaco", on && "rvPill-on")}
+                                                title={o.conAttivazione ? "vendute insieme a un'attivazione" : "ricariche vendute da sole"}>
+                                                {o.conAttivazione ? "con attivazione" : "sciolte"}{on ? " ✓" : ""}
+                                                <span className="rvPillN">{quanteCon("origine", (r) => (r.con_attivazione === true) === o.conAttivazione)}</span>
+                                            </button>
+                                        );
+                                    })}
+                                    {(negoziSel || stato || origine || allarme || operatore) && (
+                                        <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
+                                            className="rvPill rvPill-sm rvPill-via">✕ togli i filtri</button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-1.5">
-                            {(d.perOrigine || []).filter((o) => o.quante > 0).map((o) => (
-                                <button key={String(o.conAttivazione)} onClick={() => setOrigine(origine === String(o.conAttivazione) ? "" : String(o.conAttivazione))}
-                                    className={cn("psFiltro", origine === String(o.conAttivazione) && "psFiltro-on")}
-                                    title={o.conAttivazione ? "vendute insieme a un'attivazione" : "ricariche vendute da sole"}>
-                                    <span>{o.conAttivazione ? "con attivazione" : "sciolte"}</span>
-                                    <span className="psFiltroN">{o.quante}</span>
-                                </button>
-                            ))}
-                            {(negoziSel || stato || origine || allarme || operatore) && (
-                                <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
-                                    className="psFiltro psFiltroVia">✕ togli i filtri</button>
-                            )}
+                        {/* ⚠️ I DUE ALLARMI SONO DIVENTATI FILTRI (Luca 02/09): «me li
+                            rendi due quadrati che sono due filtri che posso cliccare,
+                            a quel punto la lista sotto si regola in virtù dei filtri
+                            che clicco sopra». Elencare le righe dentro un riquadro
+                            rosso era un doppione della lista che sta già sotto — e su
+                            62 ricariche diventava un muro. */}
+                        <div className="rvCampo">
+                            <span className="rvLab psLab-ko">Da sistemare</span>
+                            <div className="rvRapidoG rvRapidoG-kpi psQuadri">
+                                {[
+                                    { id: "scontrino", n: senzaScontrino, et: "🧾 Senza scontrino", sub: "senza documento",
+                                        tip: "il registratore non ha stampato: il cliente ha pagato e non ha il documento fiscale" },
+                                    { id: "indietro", n: daGuardareDavvero, et: "⏳ Rimaste indietro", sub: "credito non partito",
+                                        tip: "incassate in un giorno già chiuso, o non partite: il credito non risulta caricato" },
+                                ].map((q) => {
+                                    const on = allarme === q.id;
+                                    return (
+                                        <button key={q.id} type="button" title={q.tip} aria-pressed={on}
+                                            disabled={!q.n && !on}
+                                            onClick={() => setAllarme(on ? "" : q.id)}
+                                            className={cn("rvRapido rvT-rosso", on && "rvRapido-on", q.n > 0 && !on && "rvRapido-sveglia", !q.n && "rvRapido-off")}>
+                                            <em className={cn(q.n > 0 && "psNum-sveglia")}>{q.n.toLocaleString("it-IT")}</em>
+                                            <b>{q.et}{on ? " ✓" : ""}</b>
+                                            <small>{q.n ? q.sub : "tutto a posto"}</small>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
 
-                        {/* ⚠️ I DUE ALLARMI SONO DIVENTATI FILTRI (Luca 02/09):
-                            «me li rendi due quadrati che sono due filtri che posso
-                            cliccare, a quel punto la lista sotto si regola in virtù
-                            dei filtri che clicco sopra». Elencare le righe dentro un
-                            riquadro rosso era un doppione della lista che sta già
-                            sotto — e su 62 ricariche diventava un muro. */}
-                        <div className="flex items-center gap-2 ml-auto">
-                            {senzaScontrino.length > 0 && (
-                                <button onClick={() => setAllarme(allarme === "scontrino" ? "" : "scontrino")}
-                                    className={cn("psQuadro", allarme === "scontrino" && "psQuadro-on")}
-                                    title="il registratore non ha stampato: il cliente ha pagato e non ha il documento">
-                                    <span className="psQuadroN">{senzaScontrino.length}</span>
-                                    <span className="psQuadroT">senza<br />scontrino</span>
-                                </button>
-                            )}
-                            {daGuardareDavvero.length > 0 && (
-                                <button onClick={() => setAllarme(allarme === "indietro" ? "" : "indietro")}
-                                    className={cn("psQuadro", allarme === "indietro" && "psQuadro-on")}
-                                    title="incassate in un giorno già chiuso, o non partite: il credito non risulta caricato">
-                                    <span className="psQuadroN">{daGuardareDavvero.length}</span>
-                                    <span className="psQuadroT">rimaste<br />indietro</span>
-                                </button>
-                            )}
+                        <div className="rvHint psFascia-hint">
+                            Premi un riquadro o una pastiglia per vedere solo quelle: il numero dice quante righe
+                            vedrai. I quattro numeri in cima restano quelli del periodo intero — se cambiassero
+                            anche loro, filtrare sembrerebbe aver incassato di meno.
                         </div>
                     </div>
 
@@ -575,18 +656,39 @@ export function PayStoreAdminView() {
                     <div className="glass-card an-card rounded-2xl p-4">
                         <div className="flex items-baseline justify-between mb-3">
                             <h3 className="text-sm font-bold text-white">
-                                {stato ? `Le ${STATI[stato].testo}` : "Le ultime"} {righe.length}
-                                {righe.length !== d.ultime.length && <span className="text-slate-500 font-normal"> di {d.ultime.length}</span>}
+                                Ricariche {righe.length.toLocaleString("it-IT")}
+                                {righe.length !== d.ultime.length && <span className="text-slate-500 font-normal"> di {d.ultime.length.toLocaleString("it-IT")} del periodo</span>}
+                                {/* QUALI, non solo quante: premendo «senza scontrino» la
+                                    testata diceva ancora «le ultime 4», che è il numero
+                                    giusto sotto l'etichetta sbagliata */}
+                                {(allarme || stato || origine || negoziSel) && (
+                                    <span className="text-[11px] font-semibold text-amber-300/90">
+                                        {" · "}{[
+                                            allarme === "scontrino" ? "senza scontrino" : allarme === "indietro" ? "rimaste indietro" : null,
+                                            stato ? STATI[stato].testo : null,
+                                            origine ? (origine === "true" ? "con attivazione" : "sciolte") : null,
+                                            negoziSel ? (negoziSel.length === 1 ? negoziSel[0] : `${negoziSel.length} negozi`) : null,
+                                        ].filter(Boolean).join(" · ")}
+                                    </span>
+                                )}
                             </h3>
                             <span className="text-[11px] text-slate-500 tabular-nums">{eurC(righe.reduce((t, r) => t + Number(r.importo || 0), 0))}</span>
                         </div>
                         {righe.length === 0 ? (
-                            <p className="text-xs text-slate-500 py-6 text-center">
-                                {d.ultime.length ? "Nessuna ricarica con questi filtri." : "Ancora nessuna ricarica registrata in questo periodo."}
-                            </p>
+                            <div className="py-8 text-center">
+                                <p className="text-xs text-slate-500">
+                                    {d.ultime.length ? "Nessuna ricarica con questi filtri." : "Ancora nessuna ricarica registrata in questo periodo."}
+                                </p>
+                                {/* la via d'uscita sta dentro il vuoto, non venti righe più
+                                    su: chi ci arriva sta cercando proprio quella */}
+                                {d.ultime.length > 0 && (
+                                    <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
+                                        className="rvPill rvPill-sm rvPill-via mt-3">✕ togli i filtri</button>
+                                )}
+                            </div>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="w-full text-[12px]">
+                                <table className="psTab text-[12px]">
                                     <thead>
                                         <tr className="text-slate-500 text-[10px] uppercase tracking-widest">
                                             <th className="text-left font-bold py-1.5">Quando</th>
@@ -604,7 +706,7 @@ export function PayStoreAdminView() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {righe.map((r) => (
+                                        {righe.slice(0, quante).map((r) => (
                                             <tr key={r.id} className="border-t border-white/5">
                                                 <td className="py-1.5 text-slate-400 whitespace-nowrap">{new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                                                 <td className="text-slate-200 font-semibold">
@@ -615,7 +717,21 @@ export function PayStoreAdminView() {
                                                     <MarchioRiga op={r.operatore} />
                                                 </td>
                                                 <td className="text-slate-500">
-                                                    {r.taglio || "—"}
+                                                    {/* ⚠️ NON UN TRATTINO MUTO. Luca 02/09: «ci sono
+                                                        delle ricariche dove non è selezionato il taglio».
+                                                        Misurate: nessuna nasce così da una vendita al banco —
+                                                        sono righe RICOSTRUITE dopo il fatto (dallo scontrino o
+                                                        dalla vendita), di cui si conosce l'importo e non il
+                                                        tasto premuto. Quelle il cui importo corrisponde a un
+                                                        taglio del listino ora lo prendono da lì; restano solo
+                                                        gli importi COMPOSTI (23 €, 26 €), che un taglio non
+                                                        ce l'hanno perché sono somme. Dirlo è meglio che
+                                                        lasciare un trattino che sembra un difetto. */}
+                                                    {r.taglio || (
+                                                        <span className="rvBadge rvBadge-empty" title={r.nota || "riga ricostruita dopo la vendita: si conosce l'importo, non il taglio premuto — di solito perché l'importo è una somma di più tagli"}>
+                                                            somma di tagli
+                                                        </span>
+                                                    )}
                                                     {r.con_attivazione && <span className="psConSim" title="ricarica della SIM appena venduta: il numero è quello dell'attivazione">📶</span>}
                                                 </td>
                                                 <td className="font-mono text-slate-300">
@@ -652,6 +768,18 @@ export function PayStoreAdminView() {
                                         ))}
                                     </tbody>
                                 </table>
+                                {/* ⚠️ QUANTE NE MANCANO, SCRITTO. Un elenco che si
+                                    ferma senza dirlo è un elenco che mente: qui le
+                                    righe ci sono tutte, se ne disegnano un blocco
+                                    per volta e il resto si chiede. */}
+                                {righe.length > quante && (
+                                    <div className="text-center pt-3">
+                                        <button onClick={() => setQuante((q) => q + 500)} className="rvPill rvPill-sm rvPill-tinta rvT-indaco">
+                                            mostrane altre 500
+                                            <span className="rvPillN">{(righe.length - quante).toLocaleString("it-IT")} ancora</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

@@ -2327,8 +2327,6 @@ html.light .rvCoup{box-shadow:0 4px 14px color-mix(in srgb,var(--rv-acc) 16%,tra
 .psMarchio img{max-height:26px;max-width:80%;object-fit:contain;display:block}
 .psMarchioN{position:absolute;top:4px;right:5px;font-size:10px;font-weight:900;line-height:1;padding:2px 5px;border-radius:999px;background:var(--tf-0d1424);border:1px solid}
 /* il contatore dentro una pastiglia: dice quanto pesa quel filtro prima di premerlo */
-.psPillN{margin-left:7px;font-size:10.5px;font-weight:900;opacity:.75}
-.psPillVia{border-style:dashed}
 /* il marchio dentro una riga di elenco: alto quanto una riga di testo, così
    la tabella non si allarga */
 .psLogoRiga{display:inline-flex;align-items:center;height:22px}
@@ -2427,23 +2425,85 @@ html.light .rvFirmaBanco{color:#9a5b00 !important}
 html.light .rvCarta-ko{border-color:rgba(185,28,28,.28)}
 html.light .rvCarta-r-ko{background:rgba(185,28,28,.05);border-color:rgba(185,28,28,.2)}
 html.light .rvCarta-no-ko{color:#b91c1c}
-/* ═══ PAYSTORE — LA FASCIA DEI FILTRI (Luca 02/09) ══════════════════════
-   Sta sotto il grafico: i marchi dicono di che si parla, il grafico come sta
-   andando, i filtri servono dopo. I pulsanti degli stati portano il colore
-   dello stato che filtrano — il colore arriva dallo stile in linea (TINTE),
-   perché queste regole vincono sulle utility di Tailwind. */
-.psFiltro{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:8px;border:1px solid var(--tf-w120);background:var(--tf-w40);color:var(--tf-8892b0);font-size:12px;font-weight:700;cursor:pointer;line-height:1.25;white-space:nowrap;transition:transform .12s,filter .15s,box-shadow .15s}
-.psFiltro:hover{transform:translateY(-1px);filter:brightness(1.25)}
-.psFiltro-on{box-shadow:0 0 0 1.5px currentColor inset,0 4px 14px rgba(0,0,0,.35)}
-.psFiltroN{min-width:17px;height:17px;padding:0 4px;border-radius:5px;background:rgba(0,0,0,.32);font-size:10.5px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
-.psFiltroVia{border-style:dashed;gap:0}
-/* i due allarmi: due quadrati, con il numero nell'ambra dei contatori dei
-   marchi qui sopra — è una coda da smaltire, non un totale */
-.psQuadro{display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:11px;border:1px solid rgba(248,113,113,.4);background:linear-gradient(180deg,rgba(239,68,68,.16),rgba(239,68,68,.07));color:#fca5a5;font-size:11px;font-weight:700;line-height:1.15;text-align:left;cursor:pointer;transition:transform .12s,box-shadow .15s,background .15s}
-.psQuadro:hover{transform:translateY(-1px);background:linear-gradient(180deg,rgba(239,68,68,.24),rgba(239,68,68,.12))}
-.psQuadro-on{box-shadow:0 0 0 1.5px #f87171 inset,0 6px 18px rgba(239,68,68,.22);color:#fff}
-.psQuadroN{min-width:28px;height:28px;padding:0 6px;border-radius:8px;background:#f8b516;color:#191400;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
-.psQuadroT{letter-spacing:.2px}
+/* ═══ PAYSTORE — QUELLO CHE LA GRAMMATICA DI CASA NON AVEVA ═════════════
+   La fascia dei filtri usa `.rvPill` / `.rvRapido` / `.rvLab` / `.rvHint` come
+   il Magazzino: qui restano solo i tre pezzi che davvero mancavano. */
+
+/* la pastiglia che porta il colore di quello che filtra ANCHE da spenta: così
+   il filtro somiglia allo stato che seleziona, invece di essere grigio finché
+   non lo premi. Il colore arriva da `--rv-acc`, che ha già la sua variante
+   chiara — un esadecimale scritto qui non ce l'avrebbe. */
+.rvPill-tinta{border-color:color-mix(in srgb,var(--rv-acc) 42%,transparent);background:color-mix(in srgb,var(--rv-acc) 13%,transparent);color:color-mix(in srgb,var(--rv-acc) 62%,#ffffff)}
+.rvPill-tinta:hover{background:color-mix(in srgb,var(--rv-acc) 22%,transparent);color:#fff}
+html.light .rvPill-tinta{color:var(--rv-acc);background:color-mix(in srgb,var(--rv-acc) 11%,transparent);border-color:color-mix(in srgb,var(--rv-acc) 34%,transparent)}
+html.light .rvPill-tinta:hover{background:color-mix(in srgb,var(--rv-acc) 18%,transparent);color:var(--rv-acc)}
+.rvPill:active{transform:scale(.96)}
+.rvPill:focus-visible{outline:2px solid var(--rv-acc);outline-offset:2px}
+/* il contatore dentro la pastiglia: dice quante righe vedrai premendola */
+.rvPillN{margin-left:7px;min-width:18px;height:17px;padding:0 5px;border-radius:6px;background:rgba(0,0,0,.28);font-size:10.5px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+html.light .rvPillN{background:rgba(15,23,42,.10)}
+.rvPill-on .rvPillN{background:rgba(255,255,255,.22)}
+.rvT-grigio{--rv-acc:var(--tf-94a3b8)}
+html.light .rvT-grigio{--rv-acc:#5a6580}
+/* «togli i filtri»: tratteggiata, perché toglie invece di aggiungere */
+.rvPill-via{border-style:dashed}
+/* IL NUMERO DI UN DOCUMENTO USCITO DUE VOLTE. Non è un badge: è il dato, tinto
+   perché è la prova della doppia emissione. Sta nella cassetta e non come
+   classe Tailwind in linea, perché il colore lo porta il contesto. */
+.rvNumKo{color:var(--tf-fb7185);font-weight:800}
+html.light .rvNumKo{color:#be123c}
+/* ── LA RIGA IN ALLARME ────────────────────────────────────────────────
+   Un badge dentro una cella da 253px non è una gerarchia: «DOPPIO» pesava
+   quanto «annullo». Quando dal registratore sono usciti DUE documenti
+   fiscali — o ne sta per uscire un secondo — si accende la RIGA INTERA. */
+.rvTab-ko>td{background:rgba(239,68,68,.09)}
+.rvTab-ko>td:first-child{box-shadow:inset 3px 0 0 var(--tf-ef4444)}
+.rvTab-ko:hover>td{background:rgba(239,68,68,.14)}
+html.light .rvTab-ko>td{background:rgba(185,28,28,.07)}
+html.light .rvTab-ko>td:first-child{box-shadow:inset 3px 0 0 #b91c1c}
+html.light .rvTab-ko:hover>td{background:rgba(185,28,28,.11)}
+/* dentro una riga aperta (.rvTab-det) il grigio delle note scendeva a 4,15:1 —
+   sotto la soglia, e proprio sulla frase che dice cosa fare */
+html.light .rvNota-s{color:#4d5872}
+/* il quadratone che ha qualcosa da smaltire: il bordo si tinge del proprio
+   colore anche da spento, se no «4 senza scontrino» ha lo stesso peso di
+   «0 senza scontrino» e non chiama nessuno */
+.rvRapido-sveglia{border-color:color-mix(in srgb,var(--rv-acc) 42%,transparent)}
+.rvRapido-sveglia:hover{border-color:color-mix(in srgb,var(--rv-acc) 62%,transparent)}
+/* la fascia dei filtri di PayStore: due colonne DICHIARATE, non `ml-auto`.
+   Con `flex-wrap` l'ultimo elemento va a capo e il margine automatico lo
+   incolla a destra di una riga vuota — su un portatile da 1280 con la barra
+   laterale aperta i due quadrati cadevano sotto 698 px di niente, e bastava
+   premere un filtro per provocarlo. */
+.psFascia{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:24px;row-gap:16px}
+.psFascia-hint{grid-column:1 / -1}
+.psQuadri{grid-template-columns:repeat(2,minmax(0,146px))}
+.psLab-ko{color:#fca5a5}
+html.light .psLab-ko{color:#b91c1c}
+.psNum-sveglia{color:#f8b516}
+html.light .psNum-sveglia{color:#a16207}
+@media (max-width:900px){.psFascia{grid-template-columns:minmax(0,1fr)}}
+
+/* ═══ LA TABELLA DELLE RICARICHE ════════════════════════════════════════
+   Luca 02/09, riportando l'amministrazione: «la tabella è molto larga, per cui
+   c'è il rischio di confondersi… con dei colori sfumati ad alternanza delle
+   righe, così che quando sono posizionato col mouse si vede bene qual è quella
+   selezionata. Attualmente non si vede dove sono posizionato».
+   Undici colonne larghe uno schermo: fra la data a sinistra e lo stato a
+   destra l'occhio perde la riga, e cambiare lo stato della riga sbagliata qui
+   vuol dire dire «fatta» a una ricarica che non è partita. */
+.psTab{width:100%;border-collapse:separate;border-spacing:0}
+.psTab tbody tr{transition:background .12s,box-shadow .12s}
+.psTab tbody tr:nth-child(even){background:rgba(255,255,255,.028)}
+.psTab tbody tr:hover{background:color-mix(in srgb,var(--tf-f8b516) 13%,transparent);
+  box-shadow:inset 3px 0 0 var(--tf-f8b516),inset 0 0 0 1px rgba(248,181,22,.18)}
+.psTab tbody td{border-bottom:1px solid var(--tf-w60)}
+/* nel tema chiaro l'alternanza è una carta leggermente più calda, non un
+   grigio: l'amministrazione lavora tutto il giorno in chiaro su questa pagina */
+html.light .psTab tbody tr:nth-child(even){background:rgba(15,23,42,.032)}
+html.light .psTab tbody tr:hover{background:rgba(248,181,22,.14);
+  box-shadow:inset 3px 0 0 #b45309,inset 0 0 0 1px rgba(180,83,9,.22)}
+html.light .psTab tbody td{border-bottom-color:rgba(15,23,42,.08)}
 /* la ristampa e, sotto, da dove è arrivata la firma */
 .rvRistampa{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px}
 .rvRistampa-dev{font-size:10.5px;color:var(--tf-64748b);padding-left:2px}

@@ -167,7 +167,7 @@ function matricolaDoc(result: string | null): string | null {
    capire se ha fatto uno scontrino è la risposta sbagliata, e su quella
    risposta uno rifà lo scontrino e batte due volte. */
 type Esito = { et: string; tono: string; spiega: string };
-function esitoDi(stato: string, result: string | null, tentativi = 1, emessi = 0, inCoda = false, radiceFuori = false): Esito | null {
+function esitoDi(stato: string, result: string | null, tentativi = 1, emessi = 0, inCoda = false, radiceFuori = false, graveAperto = false, fiscale = true, storno = false): Esito | null {
     /* ⚠️ «RIEMESSO», non «emesso» (Luca 02/09): se ci sono voluti due
        tentativi il documento è uscito, ma qualcosa era andato storto — e chi
        guarda l'elenco deve vederlo senza aprire la riga. Un «emesso» pulito
@@ -180,10 +180,17 @@ function esitoDi(stato: string, result: string | null, tentativi = 1, emessi = 0
            numeri di documento, due volte l'importo nello Z di giornata.
            Dirgli «riemesso» in giallo sarebbe la bugia peggiore della pagina:
            qui è rosso, e si dice cosa fare. */
-        if (emessi > 1) return { et: "DOPPIO", tono: "rvBadge-ko",
-            spiega: `dal registratore sono usciti ${emessi} documenti fiscali per questa stessa vendita. L'importo è nello Z di giornata ${emessi} volte: annullane ${emessi - 1} DALLA CASSA, o la giornata non quadra.` };
+        /* ⚠️ IL TESTO CAMBIA CON IL TIPO DI DOCUMENTO. «Annullane uno dalla
+           cassa» detto su un ANNULLO è l'istruzione opposta a quella giusta, e
+           un documento non fiscale nello Z non c'è proprio. */
+        if (emessi > 1) return { et: `DOPPIO · ${emessi} usciti`, tono: "rvBadge-ko",
+            spiega: storno
+                ? `dal registratore sono usciti ${emessi} documenti di annullo per lo stesso scontrino: guarda in cassa che non ne sia stato stornato uno di troppo.`
+                : !fiscale
+                    ? `dal registratore sono uscite ${emessi} copie di questo documento non fiscale. Non tocca lo Z di giornata, ma il cliente ne ha due.`
+                    : `dal registratore sono usciti ${emessi} documenti fiscali per questa stessa vendita. L'importo è nello Z di giornata ${emessi} volte: annullane ${emessi - 1} DALLA CASSA, o la giornata non quadra.` };
         /* uscito, ma ce n'è un altro ancora in coda: se parte, diventa doppio */
-        if (inCoda) return { et: "uscito + 1 in coda", tono: "rvBadge-ko",
+        if (inCoda) return { et: "+1 IN CODA", tono: "rvBadge-ko",
             spiega: "il documento è già uscito, ma c'è un altro tentativo ancora in coda sulla cassa: se parte lo batti due volte. Toglilo dalla coda o preparati ad annullarlo." };
         /* ⚠️ NON si dice «il primo era andato male»: sui fallimenti di questa
            pagina 40 su 46 sono «esito ignoto», cioè la carta può essere uscita
@@ -193,10 +200,18 @@ function esitoDi(stato: string, result: string | null, tentativi = 1, emessi = 0
            la radice, resta sola, e con il solo conteggio dei tentativi
            sembrerebbe un documento pulito uscito al primo colpo — cioè
            l'opposto di quello che Luca ha chiesto di far vedere. */
+        /* ⚠️ NON SI DICE «ALLARGA LE DATE». La radice può mancare per tre
+           motivi — fuori periodo, tagliata dal tetto delle mille righe, o
+           scartata perché diagnostica — e proprio quando manca per il tetto,
+           allargare le date ne spinge fuori ancora di più. */
         if (radiceFuori) return { et: "riemesso", tono: "rvBadge-warn",
-            spiega: "questo documento è la ristampa di un tentativo precedente, che è fuori dall'intervallo di date scelto: allarga le date indietro per vedere com'era andata la prima volta." };
-        if (tentativi > 1) return { et: "riemesso", tono: "rvBadge-warn",
-            spiega: `ci sono voluti ${tentativi} tentativi, e il numero qui accanto è quello del documento uscito. Del tentativo precedente non risulta un numero — ma se dal rullo era uscita comunque della carta, controlla in cassa prima di considerarlo chiuso.` };
+            spiega: "questo documento è la ristampa di un tentativo precedente che non è in questo elenco: era in un altro giorno, o è rimasto fuori dal tetto delle mille righe. Per vedere com'era andata la prima volta, cerca il numero o restringi le date sul giorno della vendita." };
+        /* un tentativo ha lasciato il documento aperto sulla cassa: resta
+           rosso anche se poi è uscito, perché quello aperto va chiuso a mano */
+        if (graveAperto) return { et: `riemesso · ${tentativi}°`, tono: "rvBadge-ko",
+            spiega: "un tentativo ha stampato le righe e poi ha rifiutato il totale: quel documento è rimasto APERTO sulla cassa e va chiuso o annullato DALLA CASSA. Il documento buono è quello col numero qui accanto." };
+        if (tentativi > 1) return { et: `riemesso · ${tentativi}°`, tono: "rvBadge-warn",
+            spiega: `ci sono voluti ${tentativi} tentativi, e il numero qui accanto è quello del documento uscito. Degli altri tentativi non risulta un numero — ma se dal rullo era uscita comunque della carta, controlla in cassa prima di considerarlo chiuso.` };
         return null;
     }
     if (stato === "pending") return { et: "in coda", tono: "rvBadge-warn", spiega: "è ancora in attesa che la cassa lo ritiri." };
@@ -280,6 +295,13 @@ function uniscoTentativi(tutti: Doc[]): Doc[] {
         const prima = ordinate.filter((d) => d.id !== vero.id && d.stato === "error")
             .map((d) => esitoDi(d.stato, d.result))
             .find((e) => e && (e.et === "rimasto aperto" || e.et === "esito ignoto")) || null;
+        /* ⚠️ «RIMASTO APERTO» NON SCENDE MAI A GIALLO. Un tentativo che ha
+           stampato le righe e poi ha rifiutato il totale lascia il documento
+           APERTO sulla cassa: è la situazione in cui rifarlo lo batte due
+           volte, e non cambia gravità solo perché un ALTRO tentativo è andato
+           a buon fine. Prima finiva in fondo al dettaglio, dietro un badge
+           giallo «riemesso» — cioè il colore di una cosa risolta. */
+        const graveAperto = ordinate.some((x) => x.stato === "error" && /PRINTER ERROR/i.test(x.result || ""));
         out.push({
             ...vero,
             /* la riga resta chiavata sulla RADICE: è l'id che usano il link
@@ -307,12 +329,19 @@ function uniscoTentativi(tutti: Doc[]): Doc[] {
                telefona con in mano lo scontrino del PRIMO tentativo deve
                trovarlo scrivendo quel numero nella casella Cerca. */
             numeriEmessi: usciti.map((d) => d.numero).filter(Boolean) as string[],
-            inCoda: usciti.length > 0 && (ultimo.stato === "pending" || ultimo.stato === "sent"),
+            /* ⚠️ NON SOLO L'ULTIMO. Un documento può avere DUE ristampe — in
+               produzione ce n'è già una così, nata negli undici minuti prima
+               che il blocco lato server andasse su. Con `ultimo` si guardava
+               solo l'ultima nata: se quella era uscita e l'altra era ancora in
+               coda, la riga diceva «riemesso» in giallo mentre sulla cassa
+               c'era un secondo scontrino pronto a partire. */
+            inCoda: usciti.length > 0 && ordinate.some((x) => x.id !== vero.id && (x.stato === "pending" || x.stato === "sent")),
             /* la radice è FUORI dal periodo scelto: i tentativi veri sono più
                di quelli che si vedono, e la riga non deve spacciarsi per un
                documento uscito al primo colpo */
             radiceFuori: !!primo.ristampaDi && !perId.has(primo.ristampaDi),
             avvisoPrima: prima ? prima.spiega : null,
+            graveAperto,
             tentativi: ordinate.length,
             storia: ordinate.map((d) => ({ id: d.id, quando: d.quando, stato: d.stato, result: d.result, numero: d.numero })),
         });
@@ -358,6 +387,7 @@ type Doc = {
     numeriEmessi: string[];      // i numeri fiscali di tutti i documenti usciti
     inCoda: boolean;             // uno è uscito e un altro è ancora in coda
     radiceFuori: boolean;        // il primo tentativo è fuori dal periodo scelto
+    graveAperto: boolean;        // un tentativo ha lasciato il documento APERTO sulla cassa
     avvisoPrima: string | null;  // l'avviso grave di un tentativo precedente
     storia: { id: string; quando: string; stato: string; result: string | null; numero: string | null }[];
 };
@@ -496,7 +526,7 @@ function Documenti() {
                     ristampaDi: (m.ristampaDi as string) || null,
                     righe, pagamenti,
                     tentativi: 1,
-                    emessi: 0, numeriEmessi: [], inCoda: false, radiceFuori: false, avvisoPrima: null,
+                    emessi: 0, numeriEmessi: [], inCoda: false, radiceFuori: false, avvisoPrima: null, graveAperto: false,
                     storia: [],
                 };
             })));
@@ -590,12 +620,24 @@ function Documenti() {
            sta su una riga sola farebbe quadrare la pagina e non la cassa. */
         const somma = (l: Doc[]) => l.filter(d => d.stato === "done" && !d.prova && !d.storno)
             .reduce((a, d) => a + (d.totale || 0) * Math.max(1, d.emessi), 0);
+        /* ⚠️ E ANCHE IL CONTEGGIO. Dentro lo stesso riquadro il numero contava
+           RIGHE e la cifra contava DOCUMENTI: su una doppia emissione si
+           leggeva «1 scontrino · 239,80 €», cioè uno scontrino medio da 239,80
+           che non esiste. Una riga vale quanti documenti sono usciti. */
+        const quanti = (l: Doc[]) => l.reduce((a, d) => a + Math.max(1, d.emessi), 0);
         return {
-            scontrini: s.length, fatture: f.length,
+            scontrini: quanti(s), fatture: quanti(f),
             valScontrini: somma(s), valFatture: somma(f),
             incerti: base.filter(d => d.stato !== "done").length,
-            senzaNumero: base.filter(d => d.stato === "done" && !d.numero).length,
-            storni: base.filter(d => d.storno && d.stato === "done").length,
+            /* ⚠️ SENZA NUMERO SI CONTA SUI DOCUMENTI USCITI: una catena mista
+               (uno Epson col numero, uno Custom senza) ne ha uno solo senza. */
+            senzaNumero: base.filter(d => d.stato === "done").reduce((a, d) => a + Math.max(0, Math.max(1, d.emessi) - d.numeriEmessi.length), 0),
+            storni: quanti(base.filter(d => d.storno && d.stato === "done")),
+            /* ⚠️ I DOPPI HANNO `stato === "done"`, quindi NON entrano in
+               `incerti`: senza un contatore loro, la testata può dire tutto
+               verde mentre in elenco ci sono quattro doppie emissioni. */
+            doppi: base.filter(d => d.emessi > 1).length,
+            inCoda: base.filter(d => d.inCoda).length,
         };
     }, [base]);
 
@@ -627,8 +669,13 @@ function Documenti() {
             ...righe.map(d => [gg(d.quando), ora(d.quando), d.negozio,
                 d.storno ? "Annullo" : d.fiscale ? "Fiscale" : "Non fiscale",
                 d.numero || "", d.numeriEmessi.join(" + "), String(d.tentativi),
-                d.matricola || "", String(d.totale ?? "").replace(".", ","), d.cliente || "", d.operatore || "",
-                esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori)?.et || "emesso", d.righe.map(r => r.descrizione).join(" + ")].join(";")),
+                d.matricola || "",
+                /* ⚠️ QUANTO HA REGISTRATO LA CASSA, non quanto vale la riga:
+                   su una doppia emissione la pagina conta l'importo due volte
+                   (perché due volte sta nello Z) e il file che va al
+                   commercialista deve dire lo stesso numero. */
+                String(d.totale != null ? d.totale * Math.max(1, d.emessi) : "").replace(".", ","), d.cliente || "", d.operatore || "",
+                esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori, d.graveAperto, d.fiscale, d.storno)?.et || "emesso", d.righe.map(r => r.descrizione).join(" + ")].join(";")),
         ].join("\n");
         const a = document.createElement("a");
         a.href = URL.createObjectURL(new Blob(["﻿" + righeCsv], { type: "text/csv;charset=utf-8" }));
@@ -726,49 +773,20 @@ function Documenti() {
        tabella, con trecento righe caricate, compare a migliaia di pixel dalla
        riga che l'ha aperto — cioè fuori schermo. */
     const dettaglio = (d: Doc) => {
-        const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori);
+        const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori, d.graveAperto, d.fiscale, d.storno);
         return (
             <div className="rvDett">
-                {/* LA STORIA DEI TENTATIVI, quando ce n'è più di uno: chi controlla
-                    la cassa deve poter vedere che cosa è successo e quando, senza
-                    andarsi a cercare due righe diverse in elenco. */}
-                {(d.tentativi > 1 || d.radiceFuori) && (
-                    <div className="rvNota rvNota-info">
-                        <div className="rvNota-t">🖨️ {d.tentativi} tentativ{d.tentativi === 1 ? "o" : "i"} di stampa{d.radiceFuori ? " — e i primi sono fuori dal periodo scelto" : ""}</div>
-                        {d.storia.map((t, i) => {
-                            const e2 = esitoDi(t.stato, t.result, 1, t.stato === "done" ? 1 : 0);
-                            return (
-                                <div key={t.id} className="rvDettR">
-                                    <span className="rvTab-min">{i + 1}°</span>
-                                    <span>{new Date(t.quando).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                                    <span className={cn("rvBadge", e2 ? e2.tono : "rvBadge-ok")}>{e2 ? e2.et : "emesso"}</span>
-                                    {t.numero && <span className="rvBadge rvBadge-acc">n. {t.numero}</span>}
-                                    {t.result && e2 && <span className="rvTab-min">{t.result.slice(0, 90)}</span>}
-                                </div>
-                            );
-                        })}
-                        <div className="rvNota-s">
-                            A registro i tentativi restano distinti — sono due invii al registratore, e
-                            se per caso fossero usciti entrambi la doppia emissione deve restare
-                            visibile. Qui si leggono come un documento solo.
-                        </div>
-                    </div>
-                )}
-                {/* ⚠️ L'AVVISO DI UN TENTATIVO PRECEDENTE RESTA A VISTA. Appena
-                    la ristampa entra in coda, la riga diventa «in coda» e il
-                    «rimasto aperto» di prima uscirebbe dalla nota principale —
-                    cioè proprio quando il rischio di batterlo due volte è più
-                    alto. */}
-                {d.avvisoPrima && (
-                    <div className="rvNota rvNota-ko">
-                        <div className="rvNota-t">⚠️ Un tentativo precedente può aver già stampato</div>
-                        <div className="rvNota-s">{d.avvisoPrima}</div>
-                    </div>
-                )}
                 {es && (
                     <div className={cn("rvNota", es.tono === "rvBadge-ko" ? "rvNota-ko" : "rvNota-att")}>
                         <div className="rvNota-t">Questo documento è «{es.et}»</div>
                         <div className="rvNota-s">{es.spiega}</div>
+                        {/* ⚠️ L'AVVISO DEL TENTATIVO PRECEDENTE È PARTE DI QUESTO
+                            VERDETTO, non un secondo verdetto: due riquadri rossi
+                            identici uno sotto l'altro non dicono a chi legge quale
+                            dei due guardare. */}
+                        {d.avvisoPrima && (
+                            <div className="rvNota-s"><b>⚠️ Un tentativo precedente può aver già stampato.</b> {d.avvisoPrima}</div>
+                        )}
                         {d.result && <div className="rvTab-min">La cassa ha risposto: {d.result.slice(0, 300)}</div>}
                         {/* RIFAI IL DOCUMENTO (Luca 01/09): il tasto sta QUI, dentro
                             l'avviso rosso «non uscito», dove lo si legge. Solo sui
@@ -811,6 +829,42 @@ function Documenti() {
                                 </div>
                             );
                         })()}
+                    </div>
+                )}
+                {/* LA STORIA DEI TENTATIVI, quando ce n'è più di uno: chi controlla
+                    la cassa deve poter vedere che cosa è successo e quando, senza
+                    andarsi a cercare due righe diverse in elenco. */}
+                {(d.tentativi > 1 || d.radiceFuori) && (
+                    <div className="rvNota rvNota-info">
+                        <div className="rvNota-t">🖨️ {d.tentativi} tentativ{d.tentativi === 1 && !d.radiceFuori ? "o" : "i"} di stampa{d.radiceFuori ? " qui, più quelli che non sono in questo elenco" : ""}</div>
+                        {d.storia.map((t, i) => {
+                            const e2 = esitoDi(t.stato, t.result, 1, t.stato === "done" ? 1 : 0);
+                            return (
+                                <div key={t.id} className="rvDettR">
+                                    <span className="rvTab-min">{i + 1}°</span>
+                                    <span>{new Date(t.quando).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                                    <span className={cn("rvBadge", e2 ? e2.tono : "rvBadge-ok")}>{e2 ? e2.et : "emesso"}</span>
+                                    {t.numero && <span className="rvBadge rvBadge-acc">n. {t.numero}</span>}
+                                    {t.result && e2 && <span className="rvTab-min">{t.result.slice(0, 90)}</span>}
+                                </div>
+                            );
+                        })}
+                        <div className="rvNota-s">
+                            A registro i tentativi restano distinti — sono due invii al registratore, e
+                            se per caso fossero usciti entrambi la doppia emissione deve restare
+                            visibile. Qui si leggono come un documento solo.
+                        </div>
+                    </div>
+                )}
+                {/* ⚠️ L'AVVISO DI UN TENTATIVO PRECEDENTE RESTA A VISTA. Appena
+                    la ristampa entra in coda, la riga diventa «in coda» e il
+                    «rimasto aperto» di prima uscirebbe dalla nota principale —
+                    cioè proprio quando il rischio di batterlo due volte è più
+                    alto. */}
+                {d.avvisoPrima && (
+                    <div className="rvNota rvNota-ko">
+                        <div className="rvNota-t">⚠️ Un tentativo precedente può aver già stampato</div>
+                        <div className="rvNota-s">{d.avvisoPrima}</div>
                     </div>
                 )}
                 <div className="rvDettT">
@@ -979,6 +1033,25 @@ function Documenti() {
                 {docs === null ? (
                     <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico i documenti…</div>
                 ) : (
+                    <>
+                    {/* ⚠️ I DOPPI NON ENTRANO IN NESSUN ALTRO NUMERO DELLA TESTATA:
+                        hanno `stato === "done"`, quindi `incerti` non li vede e i
+                        riquadri possono dire tutto verde mentre in elenco ci sono
+                        quattro vendite scontrinate due volte. Questo è l'unico
+                        posto dove si leggono senza scorrere. */}
+                    {(conta.doppi + conta.inCoda) > 0 && (
+                        <div className="rvNota rvNota-ko mt-3">
+                            <div className="rvNota-t">
+                                🚨 {conta.doppi > 0 ? `${conta.doppi} vendit${conta.doppi === 1 ? "a" : "e"} con DUE documenti fiscali` : ""}
+                                {conta.doppi > 0 && conta.inCoda > 0 ? " · " : ""}
+                                {conta.inCoda > 0 ? `${conta.inCoda} con un secondo tentativo ancora in coda` : ""}
+                            </div>
+                            <div className="rvNota-s">
+                                L&apos;importo sta nello Z di giornata più di una volta: finché non se ne annulla uno
+                                DALLA CASSA la giornata non quadra. Sono le righe accese in rosso qui sotto.
+                            </div>
+                        </div>
+                    )}
                     <div className="rvTabBox mt-3">
                         <table className="rvTab rvTab-large">
                             <thead>
@@ -1004,11 +1077,16 @@ function Documenti() {
                                         ora quella riga è chiavata sulla radice, e senza questo
                                         l'amministrazione clicca la task e non si apre niente. */
                                     const apertaQui = aperto === d.id || (!!aperto && d.storia.some(t => t.id === aperto));
-                                    const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori);
+                                    const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori, d.graveAperto, d.fiscale, d.storno);
                                     return (
                                         <Fragment key={d.id}>
                                             <tr onClick={() => setAperto(apertaQui ? null : d.id)}
-                                                className={cn("rvTab-riga rvTab-cl", apertaQui && "rvTab-on")}>
+                                                /* ⚠️ LA RIGA, NON IL BADGE. «DOPPIO» in una cella
+                                                    da 253 px pesa quanto «annullo»: sull'unico stato
+                                                    che dice «la giornata non quadra» si accende la
+                                                    riga intera, con la barra rossa a sinistra. È
+                                                    l'unica riga della pagina che lo fa. */
+                                                className={cn("rvTab-riga rvTab-cl", (d.emessi > 1 || d.inCoda || d.graveAperto) && "rvTab-ko", apertaQui && "rvTab-on")}>
                                                 <td className="rvTab-min">
                                                     <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>
                                                     {gg(d.quando)} <b>{ora(d.quando)}</b>
@@ -1018,8 +1096,14 @@ function Documenti() {
                                                     {/* ⚠️ SE SONO USCITI IN DUE, SI VEDONO IN DUE. Mostrare solo
                                                         l'ultimo faceva sparire dall'elenco — e dalla ricerca — il
                                                         numero del primo documento, quello che il cliente ha in mano. */}
-                                                    {d.numeriEmessi.length > 1
-                                                        ? <b className="text-rose-300">n. {d.numeriEmessi.join(" + n. ")}</b>
+                                                    {/* ⚠️ `>= 1`, NON `> 1`. Su una catena mista — uno Epson
+                                                        col numero, uno Custom senza — `numeriEmessi` ne ha uno
+                                                        solo: si cadeva su `d.numero`, che viene dal tentativo
+                                                        uscito per ultimo e può essere nullo. Risultato: la
+                                                        pagina SAPEVA il numero (la ricerca lo trovava) e nella
+                                                        cella scriveva «cassa MAT1». */}
+                                                    {d.numeriEmessi.length >= 1
+                                                        ? <b className={cn(d.emessi > 1 && "rvNumKo")}>n. {d.numeriEmessi.join(" + ")}</b>
                                                         : d.numero ? <b>n. {d.numero}</b>
                                                             : d.matricola ? <span>cassa {d.matricola}</span>
                                                                 : <span>senza numero</span>}
@@ -1028,22 +1112,32 @@ function Documenti() {
                                                         EMESSO: «fiscale» accanto a «rimasto aperto» sono
                                                         due affermazioni che si contraddicono nella stessa
                                                         cella (revisione design). */}
-                                                    {d.storno ? <span className="rvBadge rvBadge-ko">annullo</span>
+                                                    {/* un annullo andato a buon fine è un'operazione VOLUTA:
+                                                        dipingerlo di rosso come un documento non uscito insegna
+                                                        a ignorare il rosso */}
+                                                    {d.storno ? <span className={cn("rvBadge", d.stato === "done" ? "rvBadge-empty" : "rvBadge-ko")}>annullo</span>
                                                         : d.prova ? <span className="rvBadge rvBadge-warn">di prova</span>
                                                             : !d.fiscale ? <span className="rvBadge rvBadge-empty">non fiscale</span>
-                                                                : d.stato === "done" ? <span className="rvBadge rvBadge-ok">fiscale</span>
+                                                                /* il verde si dà solo quando non c'è niente di
+                                                                    peggio da dire: «fiscale» accanto a «DOPPIO»
+                                                                    sono due affermazioni che si contraddicono
+                                                                    nella stessa cella — è lo stesso difetto già
+                                                                    corretto per «rimasto aperto», che era
+                                                                    rientrato dalla finestra. */
+                                                                : d.stato === "done" && d.emessi <= 1 && !d.inCoda && !d.graveAperto ? <span className="rvBadge rvBadge-ok">fiscale</span>
                                                                     : <span className="rvBadge rvBadge-empty">fiscale</span>}
                                                     {es && <span className={cn("rvBadge ml-1", es.tono)}>{es.et}</span>}
                                                     {/* ⚠️ QUANTE VOLTE ci si è provati. Sta accanto all'esito
                                                         perché è la stessa informazione: un documento uscito al
                                                         secondo tentativo non è come uno uscito al primo. */}
-                                                    {(d.tentativi > 1 || d.radiceFuori) && (
-                                                        <span className={cn("rvBadge ml-1", d.emessi > 1 ? "rvBadge-ko" : "rvBadge-warn")}
-                                                            title={`${d.tentativi} tentativi di stampa per questo documento${d.radiceFuori ? " nel periodo scelto: i primi sono più indietro" : ""}`}>
-                                                            🖨️ {d.tentativi}{d.radiceFuori ? "+" : ""} tentativi
-                                                        </span>
-                                                    )}
-                                                </td>
+                                                    {/* ⚠️ IL CONTATORE DEI TENTATIVI STA DENTRO L'ESITO
+                                                        («riemesso · 2°»), non in un secondo badge. Misurato:
+                                                        «fiscale» + «DOPPIO» + «🖨️ 2 tentativi» fanno 231 px
+                                                        in 225 disponibili — andavano a capo e la riga
+                                                        cresceva del 48%, su tutte e tre le situazioni nuove.
+                                                        Un elenco fiscale con le righe di altezza diversa a
+                                                        seconda di quanto è andata male sembra un modulo. */}
+                                                    </td>
                                                 <td className="rvTab-nome">
                                                     {d.righe.length
                                                         ? d.righe.map(r => r.descrizione).join(" · ")
@@ -1072,6 +1166,7 @@ function Documenti() {
                             {conta.storni > 0 ? ` · ${conta.storni} annull${conta.storni === 1 ? "o" : "i"}: restano fuori dagli incassi, perché il documento di annullo non porta con sé l'importo.` : ""}
                         </div>
                     </div>
+                    </>
                 )}
 
             </div>

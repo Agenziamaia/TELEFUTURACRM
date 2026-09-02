@@ -97,7 +97,14 @@ export function CassaScontriniView() {
             if (!isOggi(j.created_at)) continue;
             if (j.status === "error") s.erroriOggi++;
             if (j.kind === "cash_collect") { if (j.cassa?.incassato) s.incassatoOggi += j.cassa.incassato; s.incassiOggi++; }
-            if (j.kind === "fiscal_receipt" || j.kind === "non_fiscal") s.scontriniOggi++;
+            /* ⚠️ QUESTO PANNELLO CONTA INVII ALLA CASSA, NON DOCUMENTI. Sta
+               accanto a «Errori» e «In coda»: è un monitor della coda di
+               stampa, e la sua domanda onesta è «quanti lavori ho mandato».
+               Contarli come «scontrini» dava numeri che non tornano con la
+               sezione Documenti — misurato il 30/08: 64 qui contro 4 documenti
+               veri, perché 54 erano prove. Le prove restano fuori: una prova
+               non è un invio che qualcuno deve andare a guardare. */
+            if ((j.kind === "fiscal_receipt" || j.kind === "non_fiscal") && !j.testMode) s.scontriniOggi++;
         }
         return s;
     }, [jobs]);
@@ -194,7 +201,10 @@ export function CassaScontriniView() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Stat label="Incassato oggi (cassa)" val={eur(stats.incassatoOggi)} cls="text-emerald-300" />
                 <Stat label="Incassi oggi" val={stats.incassiOggi} cls="text-sky-300" />
-                <Stat label="Scontrini oggi" val={stats.scontriniOggi} />
+                {/* «invii», non «scontrini»: la coda può contenere lo stesso
+                    documento due volte (un tentativo e la sua ristampa), e la
+                    lettura di quanti documenti sono usciti sta in Documenti */}
+                <Stat label="Invii alla cassa (ultimi 300)" val={stats.scontriniOggi} />
                 <Stat label="Errori oggi" val={stats.erroriOggi} cls={stats.erroriOggi ? "text-rose-300" : "text-white"} />
             </div>
 

@@ -120,7 +120,11 @@ export function FiltroMulti({ values, onChange, opzioni, className = "", disable
     return (
         <div ref={box} className="relative">
             <button type="button" disabled={disabled} onClick={() => setAperta((v) => !v)}
-                className={(className || "glass-input w-full text-sm") + " flex items-center justify-between gap-2 text-left disabled:opacity-50"}>
+                /* ⚠️ `className` SI AGGIUNGE, non sostituisce. Con l'OR, chi passava una sola
+                   larghezza («min-w-[200px]») perdeva `glass-input` per intero: niente fondo,
+                   niente bordo, niente padding, e il testo tornava a 16px per il reset di
+                   Tailwind — la casella restava nuda in mezzo a una fascia di pastiglie. */
+                className={"glass-input w-full text-sm " + (className || "") + " flex items-center justify-between gap-2 text-left disabled:opacity-50"}>
                 <span className={"truncate " + (disabled || tutte ? "text-slate-400" : "text-white font-semibold")}>{chip}</span>
                 <ChevronDown className={"w-4 h-4 shrink-0 text-slate-400 transition-transform " + (aperta ? "rotate-180" : "")} />
             </button>

@@ -113,7 +113,22 @@ async function recuperaScontrinate(da: string, a: string) {
                 nota: d ? "ripresa dalla vendita scontrinata" : "venduta senza numero: da completare a mano",
             });
         }
-        if (nuove.length) await supabase.from("paystore_ricariche").insert(nuove);
+        /* ⚠️ IL TAGLIO SI RITROVA DAL LISTINO. Una riga ricostruita conosce
+           l'importo ma non il tasto che il negozio ha premuto: se in listino
+           c'è UN SOLO taglio attivo di quell'importo per quell'operatore, è
+           per forza quello. Senza questo passaggio ogni riga recuperata
+           nasceva con la colonna TAGLIO vuota — e a Luca sembrava che le
+           ricariche si vendessero senza sceglierlo. */
+        if (nuove.length) {
+            const { data: listino } = await supabase.from("paystore_tagli")
+                .select("operatore, etichetta, valore").eq("attivo", true);
+            const L = (listino || []) as { operatore: string; etichetta: string; valore: number }[];
+            for (const r of nuove) {
+                const c = L.filter((g) => g.operatore === r.operatore && Math.abs(Number(g.valore) - r.importo) < 0.005);
+                if (c.length === 1) (r as { taglio?: string }).taglio = c[0].etichetta;
+            }
+            await supabase.from("paystore_ricariche").insert(nuove);
+        }
     } catch (e) {
         // il recupero è un aiuto, non un prerequisito: se non riesce, la
         // schermata mostra quello che c'è invece di non aprirsi
@@ -253,6 +268,10 @@ export async function GET(request: Request) {
     const oggi = new Date().toISOString().slice(0, 10);
     const da = (q.get("da") || oggi.slice(0, 8) + "01").slice(0, 10);
     const a = (q.get("a") || oggi).slice(0, 10);
+    /* ⚠️ IL NEGOZIO NON ARRIVA PIÙ DA QUI. Da quando la tendina è a
+       multiselezione il filtro si applica sulle righe, nel browser: il
+       parametro resta accettato per non rompere un indirizzo salvato, ma non
+       serve più a nessuno. */
     const negozio = q.get("negozio") || "";
     const operatore = q.get("operatore") || "";
 
@@ -330,13 +349,44 @@ export async function GET(request: Request) {
         perGiorno, perOperatore, perNegozio,
         /* quante nascono da un'attivazione e quante si vendono da sole: dice
            se le ricariche sono un servizio a sé o la coda di una vendita */
+        /* ⚠️ `con_attivazione` NULL STA CON LE SCIOLTE. Le righe più vecchie —
+           e quelle recuperate dallo scontrino quando il collegamento alla
+           vendita non c'è — hanno il campo vuoto: confrontandolo con `false`
+           non entravano in nessuno dei due gruppi, e i due pulsanti sommati
+           davano meno del totale. «Non risulta attaccata a un'attivazione» è
+           esattamente quello che vuol dire una ricarica sciolta. */
         perOrigine: [true, false].map((v) => {
-            const d = R.filter((r) => r.con_attivazione === v);
+            const d = R.filter((r) => (r.con_attivazione === true) === v);
             return { conAttivazione: v, quante: d.length, euro: somma(d) };
         }).filter((x) => x.quante > 0),
-        ultime: R.slice(0, 200),
-        negozi: [...new Set((righe || []).map((r) => r.negozio).filter(Boolean))],
+        /* ⚠️ TUTTE, NON LE ULTIME DUECENTO. Il taglio a 200 era nato quando il
+           negozio si filtrava QUI: si tagliava dopo aver ristretto, e duecento
+           righe di un negozio erano tutte le sue. Da quando la tendina è a
+           multiselezione il filtro si applica nel browser, quindi tagliare
+           prima vuol dire nascondere: al ritmo misurato (72 ricariche il primo
+           giorno) il tetto scattava al TERZO giorno sulla vista Mese, e a
+           trenta giorni la pagina avrebbe taciuto 461 righe — 5.855 € di
+           ricariche incassate — mostrando comunque il contatore giusto nella
+           tendina. Un elenco che tace in silenzio è peggio di un elenco lungo:
+           quante ne disegna è una decisione del browser, non del server. */
+        ultime: R,
+        /* i negozi che si possono scegliere sono quelli che HANNO righe fra
+           quelle mostrate: con un marchio attivo, elencare i negozi che non
+           vendono quel marchio significa offrire dodici scelte di cui sei
+           danno lista vuota */
+        /* IN ORDINE ALFABETICO (Luca 02/09): «la casella del filtro dei punti
+           vendita deve essere in ordine alfabetico, per lo meno me li trovo
+           tutti». Arrivavano nell'ordine delle righe, cioè dall'ultima vendita
+           — che in una tendina di quattordici voci vuol dire cercarli a uno a
+           uno ogni volta. */
+        negozi: [...new Set(R.map((r) => r.negozio).filter(Boolean))].sort((x, y) => String(x).localeCompare(String(y), "it")),
         operatori: [...new Set((righe || []).map((r) => r.operatore))],
+        /* ⚠️ I CONTATORI DEI DUE ALLARMI SI CALCOLANO QUI, sul periodo intero.
+           Contarli nel browser sulle righe caricate voleva dire, col tetto,
+           un allarme che si RIMPICCIOLISCE quando il problema cresce: «4 senza
+           scontrino» dove in archivio erano 60, cioè 56 clienti che hanno
+           pagato e non hanno il documento. */
+        senzaScontrino: R.filter((r) => r.scontrino_stato === "errore").length,
         tagli: tagli || [],
     });
 }
