@@ -164,13 +164,24 @@ export function PayStoreAdminView() {
     /* «senza scontrino» e «rimaste indietro»: due pulsanti che filtrano la
        lista, non due elenchi da leggere */
     const [allarme, setAllarme] = useState("");
+    /* ⚠️ QUELLO CHE HAI APPENA SEGNATO NON SPARISCE DA SOTTO IL DITO. Misurato:
+       delle 79 sospese di oggi, 71 uscivano dall'elenco nell'istante in cui le
+       si marcava «fatta» — un clic sbagliato e la riga era in mezzo a 89
+       nascoste. Le righe toccate in questa sessione restano finché non si
+       ricarica la pagina. */
+    const [toccate, setToccate] = useState<Set<string>>(new Set());
     /* ⚠️ LE GIÀ FATTE DEI GIORNI SCORSI NON STANNO IN ELENCO (Luca 02/09): «le
        ricariche dei giorni PRECEDENTI che sono in ok devono nascondersi».
        Una ricarica chiusa e passata non chiede più niente a nessuno: sta in
        mezzo e basta. Quelle di OGGI restano — la giornata è ancora aperta e
        serve vedere cosa è uscito dal banco. Si riaprono con questo
        interruttore, premendo lo stato «ok», o tornando indietro col periodo. */
-    const [mostraChiuse, setMostraChiuse] = useState(false);
+    /* `null` = non l'ha ancora toccato nessuno: allora decide il periodo —
+       su OGGI si vede tutto, sullo storico si vede quello che resta da fare.
+       Appena qualcuno preme, comanda la sua scelta, e comanda su tutte e due
+       le viste: prima, sulla vista di oggi, premere non faceva assolutamente
+       niente perché non c'era niente da nascondere per costruzione. */
+    const [mostraChiuse, setMostraChiuse] = useState<boolean | null>(null);
     /* ⚠️ QUANTE SE NE DISEGNANO, non quante ne arrivano. Il server manda tutte
        le righe del periodo — a trenta giorni sono un paio di migliaia — e la
        pagina ne disegna un blocco per volta, dicendo sempre quante ne restano.
@@ -208,7 +219,7 @@ export function PayStoreAdminView() {
     /* ⚠️ CAMBIANDO FILTRO O PERIODO SI RIPARTE DA 200. `setQuante` sapeva solo
        crescere: dopo quattro «mostrane altre 500» ogni cambio di mese
        ridisegnava duemiladuecento righe in un colpo. */
-    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stato, origine, allarme, operatore]);
+    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stato, origine, allarme, operatore, mostraChiuse]);
     useEffect(() => { setGiornoAperto(null); }, [periodo.da, periodo.a]);
     const carica = useCallback(async () => {
         setCaricando(true); setErr(null);
@@ -264,9 +275,12 @@ export function PayStoreAdminView() {
        comprese. Su un periodo più lungo la domanda è un'altra — cosa è rimasto
        da sistemare — e le chiuse sono solo rumore fra cui cercare. */
     const soloOggi = periodo.da === oggiS && periodo.a === oggiS;
+    /* ⚠️ SI NASCONDE ANCHE SU OGGI, SE LO CHIEDE. Legare il nascondimento al
+       periodo voleva dire che sulla giornata in corso il pulsante cambiava
+       etichetta senza spostare una riga — Luca ha chiesto di poter decidere
+       «se mostrare O NASCONDERE», e nascondere non si poteva. */
     const chiusaVecchia = (r: Riga) =>
-        !soloOggi
-        && (r.stato === "ok_automatico" || r.stato === "ok_manuale")
+        (r.stato === "ok_automatico" || r.stato === "ok_manuale")
         && r.scontrino_stato === "emesso"
         && (r.reparto_usato == null || r.reparto_usato === 1)
         && !!String(r.numero || "").trim();
@@ -282,9 +296,11 @@ export function PayStoreAdminView() {
        Ora è il gruppo «Quando» ad accendere l'interruttore: toccare il periodo
        fra i filtri VUOL DIRE «fammi vedere tutto», ed è quello che Luca ha
        chiesto. Resta un interruttore visibile, che si può rispegnere. */
-    const mostraTutte = mostraChiuse || stato === "ok_automatico" || stato === "ok_manuale";
+    const filtroSuOk = stato === "ok_automatico" || stato === "ok_manuale";
+    const chiuseInElenco = mostraChiuse ?? soloOggi;
+    const mostraTutte = chiuseInElenco || filtroSuOk;
     const F = {
-        chiuse: (r: Riga) => mostraTutte || !chiusaVecchia(r),
+        chiuse: (r: Riga) => mostraTutte || toccate.has(r.id) || !chiusaVecchia(r),
         negozio: (r: Riga) => !negoziSel || negoziSel.includes(String(r.negozio || "")),
         stato: (r: Riga) => !stato || r.stato === stato,
         origine: (r: Riga) => !origine || String(r.con_attivazione === true) === origine,
@@ -668,18 +684,24 @@ export function PayStoreAdminView() {
                                         const on = periodo.da === v.da && periodo.a === v.a;
                                         return (
                                             <button key={v.id} aria-pressed={on}
-                                                onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); setMostraChiuse(true); }}
+                                                /* ⚠️ SCEGLIERE UN PERIODO NON RIAPRE LE COMPLETATE. Prima
+                                                    sì, ed era il gesto più comune: premere «Mese» — che
+                                                    spesso non sposta il periodo di un giorno — rimetteva
+                                                    in elenco tutte e 89, cioè l'opposto di quello che
+                                                    serve andando sullo storico. Lo decide l'interruttore,
+                                                    che è lì apposta. */
+                                                onClick={() => { setTipoP("range"); setRange({ da: v.da, a: v.a }); }}
                                                 className={cn("rvPill rvPill-tinta rvT-ambra", on && "rvPill-on")}>
                                                 {v.et}{on ? " ✓" : ""}
                                             </button>
                                         );
                                     })}
                                     <input type="date" value={periodo.da} max={oggiISO()} title="dal"
-                                        onChange={(e) => { setTipoP("range"); setMostraChiuse(true); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
+                                        onChange={(e) => { setTipoP("range"); setRange({ da: e.target.value, a: periodo.a < e.target.value ? e.target.value : periodo.a }); }}
                                         className="an-data glass-input px-3 py-2 rounded-lg text-[13px]" />
                                     <span className="text-[11px] text-slate-500">→</span>
                                     <input type="date" value={periodo.a} min={periodo.da} max={oggiISO()} title="al"
-                                        onChange={(e) => { setTipoP("range"); setMostraChiuse(true); setRange({ da: periodo.da, a: e.target.value }); }}
+                                        onChange={(e) => { setTipoP("range"); setRange({ da: periodo.da, a: e.target.value }); }}
                                         className="an-data glass-input px-3 py-2 rounded-lg text-[13px]" />
                                 </div>
                             </div>
@@ -719,13 +741,21 @@ export function PayStoreAdminView() {
                                         Nascondere in silenzio, poi, è come non averle mai
                                         registrate: il numero di quelle tenute da parte è scritto
                                         sopra. */}
-                                    <button onClick={() => setMostraChiuse(!mostraChiuse)} aria-pressed={mostraChiuse}
-                                        title={mostraChiuse
-                                            ? "le ricariche già fatte sono in elenco: premi per toglierle"
-                                            : "le ricariche già fatte — credito partito, scontrino uscito, niente da sistemare — sono fuori dall'elenco: premi per rivederle"}
-                                        className={cn("rvPill rvPill-tinta rvT-grigio", mostraChiuse && "rvPill-on")}>
-                                        {mostraChiuse ? "👁 completate in elenco ✓" : "👁 mostra le completate"}
-                                        {!mostraChiuse && nascoste > 0 && <span className="rvPillN">{nascoste}</span>}
+                                    {/* ⚠️ SPENTO QUANDO NON PUÒ FARE NIENTE. Col filtro sugli
+                                        stati «ok» le completate sono esattamente quello che si sta
+                                        chiedendo: il pulsante diceva «sono nascoste», si premeva, e
+                                        non cambiava una riga. Un comando che non fa niente e non lo
+                                        dice è peggio di un comando assente. */}
+                                    <button onClick={() => setMostraChiuse(!chiuseInElenco)} aria-pressed={chiuseInElenco}
+                                        disabled={filtroSuOk}
+                                        title={filtroSuOk
+                                            ? "stai già chiedendo le completate con il filtro sullo stato: qui non c'è niente da nascondere"
+                                            : chiuseInElenco
+                                                ? "le ricariche completate sono in elenco: premi per toglierle"
+                                                : "le completate — credito partito, scontrino uscito, niente da sistemare — sono fuori dall'elenco: premi per rivederle"}
+                                        className={cn("rvPill rvPill-tinta rvT-grigio", chiuseInElenco && "rvPill-on")}>
+                                        {chiuseInElenco ? "👁 completate in elenco ✓" : "👁 mostra le completate"}
+                                        {!chiuseInElenco && nascoste > 0 && <span className="rvPillN">{nascoste}</span>}
                                     </button>
                                 </div>
                             </div>
@@ -807,6 +837,15 @@ export function PayStoreAdminView() {
                                 {/* QUALI, non solo quante: premendo «senza scontrino» la
                                     testata diceva ancora «le ultime 4», che è il numero
                                     giusto sotto l'etichetta sbagliata */}
+                                {/* ⚠️ IL NASCONDIMENTO SI DICE. È l'unico «filtro» che è
+                                    acceso senza che nessuno l'abbia premuto, e nell'unico caso
+                                    in cui non c'è nient'altro da elencare era anche l'unico a
+                                    non comparire: la lista diceva «91 di 180» e non spiegava. */}
+                                {nascoste > 0 && (
+                                    <span className="text-[11px] font-semibold text-slate-400">
+                                        {" · "}{nascoste} completate nascoste
+                                    </span>
+                                )}
                                 {(allarme || stato || origine || negoziSel) && (
                                     <span className="text-[11px] font-semibold text-amber-300/90">
                                         {" · "}{[
@@ -833,14 +872,14 @@ export function PayStoreAdminView() {
                                         : nascoste > 0 && !negoziSel && !stato && !origine && !allarme
                                             /* ⚠️ «vuoto» su un registro di soldi incassati è il messaggio
                                                 peggiore possibile: se sono tutte già fatte, si dice così. */
-                                            ? `Tutte le ricariche di questo periodo sono già state fatte nei giorni scorsi.`
+                                            ? `Tutte le ricariche di questo periodo sono già state completate.`
                                             : "Nessuna ricarica con questi filtri."}
                                 </p>
                                 {/* la via d'uscita sta dentro il vuoto, non venti righe più
                                     su: chi ci arriva sta cercando proprio quella */}
                                 {nascoste > 0 && (
                                     <button onClick={() => setMostraChiuse(true)} className="rvPill rvPill-sm rvPill-tinta rvT-grigio mt-3">
-                                        👁 mostra le già fatte<span className="rvPillN">{nascoste}</span>
+                                        👁 mostra le completate<span className="rvPillN">{nascoste}</span>
                                     </button>
                                 )}
                                 {d.ultime.length > 0 && (negoziSel || stato || origine || allarme || operatore) && (
@@ -905,7 +944,7 @@ export function PayStoreAdminView() {
                                                         chi guarda: è stampato nella descrizione della riga. Il
                                                         campo a mano resta per i casi in cui lo scontrino non
                                                         c'è — ma è l'eccezione, non la regola. */}
-                                                    {r.numero ? r.numero : <NumeroMancante r={r} onCambiato={() => void carica()} />}
+                                                    {r.numero ? r.numero : <NumeroMancante r={r} onCambiato={() => { setToccate((t) => new Set(t).add(r.id)); void carica(); }} />}
                                                 </td>
                                                 <td className="text-right font-bold text-white tabular-nums">{eurC(r.importo)}</td>
                                                 <td className="pl-3 text-slate-400">{r.negozio || "—"}</td>
@@ -926,7 +965,7 @@ export function PayStoreAdminView() {
                                                         dica chi l'ha caricato — e resta scritto chi è stato.
                                                         Accanto, il pulsante che la fa partire davvero. */}
                                                     <div className="flex items-center gap-1.5">
-                                                        <StatoRicarica r={r} onCambiato={() => void carica()} />
+                                                        <StatoRicarica r={r} onCambiato={() => { setToccate((t) => new Set(t).add(r.id)); void carica(); }} />
                                                         <RifaiRicarica r={r} onFatto={() => void carica()} />
                                                     </div>
                                                 </td>

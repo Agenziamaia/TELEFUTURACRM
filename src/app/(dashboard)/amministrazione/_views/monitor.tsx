@@ -34,22 +34,28 @@ function PuliziaTransito() {
       await guarda();
     } finally { setBusy(false); }
   };
-  if (!dati) return null;
+  /* ⚠️ IL RIQUADRO NON SPARISCE MAI. Prima, se il conteggio non arrivava, si
+     nascondeva del tutto: Luca l'ha cercato dove gli avevo detto e non c'era
+     niente — e non aveva modo di sapere se il pulsante non esistesse o se
+     fosse il conto a non rispondere. */
   return (
     <div className="glass-card rounded-2xl p-4 mt-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[240px]">
           <div className="text-sm font-bold text-white">🧹 Documenti di transito (QR)</div>
+          {!dati && <div className="rvNota-s mt-1">{esito || "conto i file…"}</div>}
           <div className="rvNota-s mt-1">
             Le copie di passaggio dei documenti fotografati col telefono: il documento vero è già dentro la
-            vendita, queste vanno tolte appena importate. {dati.sessioniVive > 0 ? <>Le {dati.sessioniVive} sessioni ancora aperte non si toccano.</> : null}
+            vendita, queste vanno tolte appena importate. {dati && dati.sessioniVive > 0 ? <>Le {dati.sessioniVive} sessioni ancora aperte non si toccano.</> : null}
           </div>
         </div>
-        <div className="text-right">
-          <div className={cn("text-2xl font-black tabular-nums", dati.daTogliere > 0 ? "text-amber-300" : "text-emerald-300")}>{dati.daTogliere}</div>
-          <div className="text-[11px] text-slate-500">da togliere · {dati.mb} MB</div>
-        </div>
-        {dati.daTogliere > 0 && (
+        {dati && (
+          <div className="text-right">
+            <div className={cn("text-2xl font-black tabular-nums", dati.daTogliere > 0 ? "text-amber-300" : "text-emerald-300")}>{dati.daTogliere}</div>
+            <div className="text-[11px] text-slate-500">da togliere · {dati.mb} MB</div>
+          </div>
+        )}
+        {dati && dati.daTogliere > 0 && (
           <button onClick={pulisci} disabled={busy} className="rvPill rvPill-tinta rvT-rosso">
             {busy ? "tolgo…" : "🧹 Svuota adesso"}
           </button>

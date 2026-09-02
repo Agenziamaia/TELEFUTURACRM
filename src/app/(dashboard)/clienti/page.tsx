@@ -595,7 +595,11 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                 color: ass ? "var(--tf-f59e0b)" : "var(--tf-818cf8)", icon: ass ? "🛠️" : "📦",
                 title: `${ass ? "Assistenza" : "Ordine cliente"} — ${cosa || pr.protocollo}`,
                 desc: [pr.protocollo, pr.imei ? `IMEI ${pr.imei}` : null,
-                    pr.valore != null && Number(pr.valore) > 0 ? `${Number(pr.valore).toLocaleString("it-IT")} €` : null,
+                    /* ⚠️ ANCHE ZERO È UN PREZZO. Col `> 0` una pratica in garanzia perdeva
+                       l'importo del tutto e in timeline diventava identica a una di cui il
+                       prezzo non si conosce: è la stessa confusione fra vuoto e zero che
+                       abbiamo appena tolto dal modulo di apertura. */
+                    pr.valore != null ? `${Number(pr.valore).toLocaleString("it-IT")} €` : null,
                     pr.negozio].filter(Boolean).join(" · ") + (docsPr ? ` · 📎 ${docsPr}` : ""),
                 stato: pr.stato ? String(pr.stato).replace(/_/g, " ") : null,
                 docsN: docsPr || undefined, docsLabel: ass ? "dell'assistenza" : "dell'ordine",

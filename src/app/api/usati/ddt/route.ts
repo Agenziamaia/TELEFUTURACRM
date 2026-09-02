@@ -83,8 +83,19 @@ export async function POST(req: Request) {
         .eq("da_negozio", b.da).eq("a_negozio", b.a).eq("viaggio_giorno", giorno).maybeSingle();
     if (gia) return NextResponse.json({ ok: true, gia: true, ddt: gia });
 
-    const azDa = await aziendaDelNegozio(b.da);
-    const azA = await aziendaDelNegozio(b.a);
+    /* ⚠️ IL LABORATORIO NON È UNA SOCIETÀ, È UN REPARTO. Non ha `azienda` in
+       anagrafica, e la lasciava nulla: il trigger la deduceva dal magazzino di
+       un negozio che non ha magazzino e ripiegava su «T1» fisso. Risultato
+       misurato: l'andata Garbatella(T2)→Laboratorio usciva T2→T2, e il ritorno
+       Laboratorio→Garbatella usciva T1→T2 — cioè una CESSIONE FRA SOCIETÀ
+       inventata, con la fattura da fare, sullo stesso viaggio. Erano 64 i
+       telefoni a un clic da lì.
+       Il telefono che passa dal laboratorio resta di chi era: sulle tratte che
+       lo toccano, la società è quella del negozio vero. */
+    let azDa = await aziendaDelNegozio(b.da);
+    let azA = await aziendaDelNegozio(b.a);
+    if (!azDa && azA) azDa = azA;
+    if (!azA && azDa) azA = azDa;
     const cessione = !!azDa && !!azA && azDa !== azA;
 
     const { data: creato, error } = await supabaseAdmin.from("mag_ddt").insert({

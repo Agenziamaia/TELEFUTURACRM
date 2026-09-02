@@ -16,6 +16,8 @@ export type DatiModulo = {
     protocollo: string; tipologia: string; negozio: string; operatore: string;
     cliente: { etichetta?: string; email?: string; cellulare?: string; cf_piva?: string; indirizzo?: string; cap?: string; citta?: string };
     valore: number;
+    /** perché vale zero: «gratis» o «da_quantificare». Nullo se ha un prezzo. */
+    motivo_zero?: string | null;
     acconto?: { importo?: number; forma?: string; scontrino?: string } | null;
     righe?: { descrizione: string; qta: number; prezzo: number; note?: string }[];
     dispositivo?: Record<string, string> | null;
@@ -142,7 +144,14 @@ perché non si può dire di quale dispositivo si stia parlando.</p>
 
 <h2>3 · Quanto paga</h2>
 <div class="soldi">
-  <div><em>${esc(t ? t.valoreLabel : "Valore")}</em><strong>${esc(eur(d.valore))}</strong></div>
+  <div><em>${esc(t ? t.valoreLabel : "Valore")}</em><strong>${
+        /* ⚠️ ZERO NON SI STAMPA SEMPRE ALLO STESSO MODO. Su tre tipologie su
+           quattro questo campo è un PREVENTIVO: se vale zero perché il prezzo
+           si saprà dopo la diagnosi, stampare «0,00 €» e sotto «l'intero
+           importo si paga alla consegna» vuol dire far firmare al cliente un
+           foglio che dice zero, e chiedergli novanta euro alla consegna. */
+        Number(d.valore) === 0 && d.motivo_zero === "da_quantificare"
+            ? "da quantificare" : esc(eur(d.valore))}</strong></div>
   <div><em>Acconto versato oggi</em><strong>${accImporto > 0 ? esc(eur(accImporto)) : "—"}</strong>
        ${accImporto > 0 ? `<div class="muto">${esc(acc.forma || "")}${acc.scontrino ? ` · doc. ${esc(acc.scontrino)}` : ""}</div>` : ""}</div>
   <div><em>Saldo alla consegna</em><strong>${esc(eur(saldo))}</strong></div>
@@ -150,7 +159,13 @@ perché non si può dire di quale dispositivo si stia parlando.</p>
 ${accImporto > 0 ? `<p class="nota">L'acconto è versato a titolo di <b>caparra confirmatoria</b>. Alla consegna viene
 emesso un secondo documento commerciale sul solo saldo, che richiama il numero di quello dell'acconto: i due
 documenti insieme valgono come prova d'acquisto ai fini della garanzia.</p>`
-            : `<p class="nota">Non è stato versato alcun acconto: questo modulo vale come riepilogo della pratica e
+            : Number(d.valore) === 0 && d.motivo_zero === "gratis"
+                ? `<p class="nota">Questa lavorazione <b>non si paga</b>: è in garanzia o a titolo di cortesia. Alla
+consegna non è dovuto alcun importo.</p>`
+                : Number(d.valore) === 0 && d.motivo_zero === "da_quantificare"
+                    ? `<p class="nota">Il prezzo <b>non è ancora stato quantificato</b>: si stabilisce dopo la diagnosi e
+viene comunicato al cliente, che lo approva prima che la lavorazione prosegua. Nessun importo è dovuto oggi.</p>`
+                    : `<p class="nota">Non è stato versato alcun acconto: questo modulo vale come riepilogo della pratica e
 l'intero importo si paga alla consegna.</p>`}
 
 ${conDispositivo ? `

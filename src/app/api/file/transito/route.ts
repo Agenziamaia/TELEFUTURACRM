@@ -30,48 +30,44 @@ export const dynamic = "force-dynamic";
 
 const DEPOSITO = "qr-uploads";
 
-async function elenca(): Promise<{ tutti: number; daTogliere: string[]; mb: number; viveSessioni: number }> {
-    /* i token delle sessioni ancora vive: quei file sono in corso d'opera */
+/** Il conto, in una riga di SQL. Leggerlo dal deposito a pagine — cinquecento
+ *  cartelle, cento per volta — era così lento da non rispondere, e il riquadro
+ *  senza dati spariva del tutto invece di dire che non ce la faceva. */
+async function conta() {
+    const { data, error } = await supabaseAdmin.rpc("tf_transito_da_pulire");
+    const r = ((data || []) as { tutti: number; da_togliere: number; byte: number; sessioni_vive: number }[])[0];
+    if (error || !r) return null;
+    return { tutti: Number(r.tutti), daTogliere: Number(r.da_togliere), mb: Math.round(Number(r.byte) / 104857.6) / 10, viveSessioni: Number(r.sessioni_vive) };
+}
+
+/** I percorsi da togliere davvero: qui il deposito si legge sul serio, ma solo
+ *  quando si cancella — non a ogni apertura della schermata. */
+async function elenca(): Promise<{ daTogliere: string[] }> {
     const { data: sess } = await supabaseAdmin.from("qr_uploads").select("token");
     const vivi = new Set(((sess || []) as { token: string }[]).map((s) => s.token));
-
-    /* il deposito si legge a pagine: `list` ne dà 100 per volta e i file sono
-       centinaia — fermarsi alla prima pagina avrebbe fatto sembrare il lavoro
-       finito con quattro quinti dei file ancora lì */
     const cartelle: string[] = [];
     for (let da = 0; ; da += 100) {
         const { data } = await supabaseAdmin.storage.from(DEPOSITO).list("", { limit: 100, offset: da });
         const p = (data || []) as { name: string }[];
         cartelle.push(...p.map((x) => x.name));
-        if (p.length < 100) break;
-        if (da > 5000) break;
+        if (p.length < 100 || da > 5000) break;
     }
-
-    let tutti = 0, mb = 0;
     const daTogliere: string[] = [];
     for (const c of cartelle) {
-        for (let da = 0; ; da += 100) {
-            const { data } = await supabaseAdmin.storage.from(DEPOSITO).list(c, { limit: 100, offset: da });
-            const p = (data || []) as { name: string; metadata?: { size?: number } }[];
-            for (const f of p) {
-                tutti++;
-                if (!vivi.has(c)) {
-                    daTogliere.push(`${c}/${f.name}`);
-                    mb += Number(f.metadata?.size || 0) / 1048576;
-                }
-            }
-            if (p.length < 100) break;
-        }
+        if (vivi.has(c)) continue;
+        const { data } = await supabaseAdmin.storage.from(DEPOSITO).list(c, { limit: 100 });
+        for (const f of (data || []) as { name: string }[]) daTogliere.push(`${c}/${f.name}`);
     }
-    return { tutti, daTogliere, mb: Math.round(mb * 10) / 10, viveSessioni: vivi.size };
+    return { daTogliere };
 }
 
 export async function GET(req: Request) {
     const g = await accesso(req, "file/transito");
     if (!g.ok) return g.risposta;
     if (!serviceRolePresente()) return NextResponse.json({ error: "chiave di servizio assente" }, { status: 500 });
-    const r = await elenca();
-    return NextResponse.json({ ok: true, tutti: r.tutti, daTogliere: r.daTogliere.length, mb: r.mb, sessioniVive: r.viveSessioni });
+    const r = await conta();
+    if (!r) return NextResponse.json({ error: "non riesco a contare i file di transito" }, { status: 500 });
+    return NextResponse.json({ ok: true, tutti: r.tutti, daTogliere: r.daTogliere, mb: r.mb, sessioniVive: r.viveSessioni });
 }
 
 export async function POST(req: Request) {
@@ -84,6 +80,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "solo la direzione può svuotare il deposito di transito." }, { status: 403 });
     }
 
+    const quanti = await conta();
     const r = await elenca();
     if (!r.daTogliere.length) return NextResponse.json({ ok: true, tolti: 0, mb: 0 });
 
@@ -96,5 +93,5 @@ export async function POST(req: Request) {
         if (error) errori.push(error.message);
         else tolti += (data || []).length;
     }
-    return NextResponse.json({ ok: !errori.length, tolti, mb: r.mb, errori: errori.slice(0, 3) });
+    return NextResponse.json({ ok: !errori.length, tolti, mb: quanti?.mb ?? 0, errori: errori.slice(0, 3) });
 }

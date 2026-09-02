@@ -2520,6 +2520,13 @@ html.light .rvNota-s{color:#4d5872}
    laterale aperta i due quadrati cadevano sotto 698 px di niente, e bastava
    premere un filtro per provocarlo. */
 .psFascia{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:24px;row-gap:16px}
+/* ⚠️ SOTTO I 1400px I DUE QUADRATI VANNO A CAPO DA SOLI, e la colonna dei
+   filtri prende tutta la larghezza. Misurato: a 1280 con la barra laterale
+   aperta la colonna di sinistra vale 600px e il gruppo «Quando» ne chiede 611,
+   quindi il secondo campo data finiva orfano su una riga sua, con la freccia
+   staccata dal suo estremo. Una riga in più è meglio di un intervallo di date
+   spezzato a metà. */
+@media (max-width:1400px){.psFascia{grid-template-columns:minmax(0,1fr)}}
 .psFascia-hint{grid-column:1 / -1}
 .psQuadri{grid-template-columns:repeat(2,minmax(0,146px))}
 .psLab-ko{color:#fca5a5}

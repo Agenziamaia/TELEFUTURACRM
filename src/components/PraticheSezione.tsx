@@ -285,6 +285,8 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
     const [dev, setDev] = useState<Record<string, string>>({ brand: "", modello: "", colore: "", pin: "", condizioni: "", difetto: "" });
     const [imei, setImei] = useState("");
     const [valore, setValore] = useState("");
+    // «gratis» = non si paga niente · «da_quantificare» = il prezzo si saprà dopo
+    const [motivoZero, setMotivoZero] = useState<"" | "gratis" | "da_quantificare">("");
     const [approvv, setApprovv] = useState("");
     const [attesaDa, setAttesaDa] = useState("");
     const [noteInt, setNoteInt] = useState("");
@@ -342,9 +344,33 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
        si guarda se il campo è stato SCRITTO, e il valore si legge solo se lo
        è. Un prezzo dimenticato resta un prezzo dimenticato. */
     const valoreTxt = String(valore ?? "").trim();
-    const valoreN = Number(valoreTxt.replace(",", "."));
+    /* ⚠️ IL NUMERO SI LEGGE COME LO SCRIVE UN ITALIANO. `Number("1.500")` fa
+       UNO VIRGOLA CINQUE: chi scrive millecinquecento col punto delle migliaia
+       si ritrovava una pratica da 1,50 €. E `"1.234,50"` non era un numero
+       affatto — «Avanti» restava morto senza dire perché.
+       Regola: se c'è la virgola, i punti sono migliaia e la virgola è il
+       decimale; se non c'è, un punto solo con una o due cifre dopo è un
+       decimale, altrimenti sono migliaia. */
+    const valoreN = (() => {
+        const t = valoreTxt.replace(/\s/g, "");
+        if (!t) return NaN;
+        if (t.includes(",")) return Number(t.replace(/\./g, "").replace(",", "."));
+        const p = t.split(".");
+        if (p.length === 2 && p[1].length <= 2) return Number(t);
+        return Number(t.replace(/\./g, ""));
+    })();
+    /* `+ 0` toglie il meno-zero, che in JavaScript è `>= 0` ma si porta dietro
+       un segno che poi salta fuori dove non deve */
     const valoreScritto = valoreTxt !== "" && Number.isFinite(valoreN) && valoreN >= 0;
-    const totale = perArticoli ? totaleRighe(righe) : (valoreScritto ? Math.round(valoreN * 100) / 100 : 0);
+    const totaleScritto = valoreScritto ? Math.round(valoreN * 100) / 100 + 0 : 0;
+    const totale = perArticoli ? totaleRighe(righe) : totaleScritto;
+    /* ⚠️ ZERO NON BASTA: CI VUOLE IL PERCHÉ. Chi riapre la pratica domani
+       legge «0,00 €» e non sa distinguere «gratis, è in garanzia» da «prezzo
+       sbagliato». E su tre tipologie su quattro quel campo è un PREVENTIVO,
+       dove zero vuol dire quasi sempre «non lo so ancora»: il modulo che il
+       cliente firma diceva «0,00 €» e sotto «l'intero importo si paga alla
+       consegna», cioè due cose che si contraddicono. */
+    const aZero = !perArticoli && valoreScritto && totale === 0;
     /* la voce che finirà sullo scontrino: la sceglie il contenuto della
        pratica, non l'operatore */
     const voceAcconto = sezione === "assistenze" ? "Acconto-Assistenza"
@@ -356,7 +382,8 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
     const serveImei = !!t && t.imei === "apertura";
     const contenutoOk = !t ? false : (perArticoli
         ? righe.length > 0
-        : !!(dev.brand.trim() && dev.modello.trim() && valoreScritto && (!serveImei || imei.trim().length >= 6)))
+        : !!(dev.brand.trim() && dev.modello.trim() && valoreScritto && (!aZero || !!motivoZero)
+            && (!serveImei || imei.trim().length >= 6)))
         && (!t.approvvigionamento || (!!approvv && (approvv !== "altro_negozio" || !!attesaDa)))
         && (t.noteInterne !== "obbligatorie" || noteInt.trim().length > 0);
     const accontoOk = pctAcconto === null ? false
@@ -410,6 +437,11 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
             const statoIniziale = sezione === "ordini" ? "inviato" : "aperta";
             const storia = [{ at: oggiIso(), chi: operatore, txt: sezione === "ordini" ? "Richiesta inviata all'amministrazione" : "Assistenza aperta al banco" }];
             if (accImporto > 0) storia.push({ at: oggiIso(), chi: operatore, txt: `Acconto di ${eur(accImporto)} da incassare in Registra Vendita` });
+            if (totale === 0 && !perArticoli && motivoZero) {
+                storia.push({ at: oggiIso(), chi: operatore, txt: motivoZero === "gratis"
+                    ? "Lavorazione a zero: non si paga niente (garanzia o cortesia)"
+                    : "Aperta senza preventivo: il prezzo si quantifica dopo la diagnosi" });
+            }
             storia.push({ at: oggiIso(), chi: operatore, txt: `Modulo firmato ${firma.via === "otp" ? "col codice" : "su carta"}, documento d'identità archiviato` });
             const payload = {
                 protocollo: proto, sezione, tipologia,
@@ -422,6 +454,7 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                 approvvigionamento: t.approvvigionamento ? approvv : null,
                 attesa_da: approvv === "altro_negozio" ? attesaDa : null,
                 note_interne: noteInt.trim() || null,
+                motivo_zero: totale === 0 && !perArticoli ? (motivoZero || null) : null,
                 dispositivo: perArticoli ? null : dev,
                 imei: imei.trim() || null,
                 acconto: accImporto > 0 ? { importo: accImporto, pct: pctAcconto === -1 ? null : pctAcconto, voce: voceAcconto, stato: "da_incassare" } : null,
@@ -557,7 +590,8 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                     {perArticoli
                         ? <PassoArticoli righe={righe} onCambia={setRighe} negozio={negozio} />
                         : <PassoDispositivo dev={dev} onCambia={setDev} imei={imei} onImei={setImei} serveImei={serveImei}
-                            valore={valore} onValore={setValore} etichettaValore={t.valoreLabel} nota={t.valoreNota} />}
+                            valore={valore} onValore={setValore} etichettaValore={t.valoreLabel} nota={t.valoreNota}
+                            aZero={aZero} motivoZero={motivoZero} onMotivoZero={setMotivoZero} />}
                     {t.approvvigionamento && <PassoApprovvigionamento tipologia={tipologia} valore={approvv} onCambia={setApprovv}
                         ruolo="negozio" bloccaDisponibile={bloccaDisponibile} motivoBlocco={motivoBlocco} inCasa={inCasa}
                         attesaDa={attesaDa} onAttesaDa={setAttesaDa} negozi={negozi} mioNegozio={negozio} />}
@@ -585,6 +619,8 @@ function Wizard({ sezione, negozio, operatore, negozi, onAnnulla, onFatto }: {
                         cf_piva: cliente.cf_piva || "", indirizzo: cliente.indirizzo || "", cap: cliente.cap || "", citta: cliente.citta || "",
                     } : {},
                     valore: totale,
+                    // il perché dello zero arriva fino al foglio che il cliente firma
+                    motivo_zero: aZero ? (motivoZero || null) : null,
                     acconto: accImporto > 0 ? { importo: accImporto } : null,
                     righe: perArticoli ? righe.map((r) => ({ descrizione: r.descrizione, qta: r.qta, prezzo: r.prezzo, note: r.note })) : [],
                     dispositivo: perArticoli ? null : dev, imei,
@@ -944,10 +980,11 @@ const CATEGORIE_DEV: { k: CategoriaDispositivo; l: string; i: string }[] = [
     { k: "computer", l: "Computer", i: "💻" },
 ];
 
-function PassoDispositivo({ dev, onCambia, imei, onImei, serveImei, valore, onValore, etichettaValore, nota }: {
+function PassoDispositivo({ dev, onCambia, imei, onImei, serveImei, valore, onValore, etichettaValore, nota, aZero, motivoZero, onMotivoZero }: {
     dev: Record<string, string>; onCambia: (d: Record<string, string>) => void;
     imei: string; onImei: (v: string) => void; serveImei: boolean;
     valore: string; onValore: (v: string) => void; etichettaValore: string; nota: string;
+    aZero: boolean; motivoZero: string; onMotivoZero: (v: "gratis" | "da_quantificare") => void;
 }) {
     const set = (k: string, v: string) => onCambia({ ...dev, [k]: v });
     const cat = (dev.categoria || "smartphone") as CategoriaDispositivo;
@@ -1036,13 +1073,33 @@ function PassoDispositivo({ dev, onCambia, imei, onImei, serveImei, valore, onVa
                     scelto e non dimenticato: la garanzia e la cortesia sono
                     lavorazioni come le altre — stesso contratto, stessa firma,
                     stessi dati archiviati — e valgono zero. */}
-                {(() => {
-                    const t = String(valore ?? "").trim();
-                    return t !== "" && Number(t.replace(",", ".")) === 0;
-                })() ? (
-                    <div className="rvHint" style={{ marginTop: 8 }}>
-                        🎁 <b>Lavorazione a zero</b>: va bene — in garanzia o per cortesia. Il contratto si firma
-                        e la pratica si archivia come tutte le altre, semplicemente non si incassa niente.
+                {aZero ? (
+                    /* ⚠️ ZERO CHIEDE UN PERCHÉ, E NON È UNA FORMALITÀ. Su tre
+                        tipologie su quattro questo campo è un PREVENTIVO: lì zero
+                        vuol dire quasi sempre «non lo so ancora», e il modulo che
+                        il cliente firma diceva «0,00 €» e sotto «l'intero importo
+                        si paga alla consegna» — due cose che si contraddicono, su
+                        un foglio firmato. Le due risposte scrivono due documenti
+                        diversi. */
+                    <div className="rvSub" style={{ marginTop: 10 }}>
+                        <div className="rvLab">Perché vale zero?</div>
+                        <div className="rvPillRow" style={{ marginTop: 6 }}>
+                            <button type="button" onClick={() => onMotivoZero("gratis")} aria-pressed={motivoZero === "gratis"}
+                                className={cn("rvPill rvPill-sm rvPill-tinta rvT-verde", motivoZero === "gratis" && "rvPill-on")}>
+                                🎁 Non si paga niente
+                            </button>
+                            <button type="button" onClick={() => onMotivoZero("da_quantificare")} aria-pressed={motivoZero === "da_quantificare"}
+                                className={cn("rvPill rvPill-sm rvPill-tinta rvT-ambra", motivoZero === "da_quantificare" && "rvPill-on")}>
+                                ❓ Da quantificare dopo la diagnosi
+                            </button>
+                        </div>
+                        <div className="rvHint" style={{ marginTop: 6 }}>
+                            {motivoZero === "gratis"
+                                ? "In garanzia o per cortesia: sul modulo si legge «0,00 €» e che non c'è niente da pagare."
+                                : motivoZero === "da_quantificare"
+                                    ? "Sul modulo, al posto della cifra, si legge «da quantificare»: il cliente non firma un prezzo che poi cambia."
+                                    : "Sceglierne uno è obbligatorio: fra sei mesi «0,00 €» da solo non dice se era gratis o se il prezzo mancava."}
+                        </div>
                     </div>
                 ) : null}
             </div>
