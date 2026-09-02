@@ -30,18 +30,52 @@ if ($Install) {
   # Scarica anche il driver Custom (registratori Vodafone via OPOS locale).
   try { Invoke-WebRequest -UseBasicParsing -Uri "$Crm/cust-fp.ps1" -OutFile (Join-Path (Split-Path $dest) "cust-fp.ps1") -TimeoutSec 30 } catch { }
   $argLine = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dest`" -Crm `"$Crm`" -Token `"$Token`" -Negozio `"$Negozio`" -FiscalUrl `"$FiscalUrl`" -CashIp `"$CashIp`""
-  # Avvio automatico a ogni ACCESSO — chiave Run dell'UTENTE: nessun permesso admin.
-  Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "TelefuturaPosAgent" -Value ("powershell " + $argLine) -Force
+  # ── AUTO-RIAVVIO: ATTIVITA' PIANIFICATA che si riaccende da sola ─────────────
+  # Il difetto storico (notte 01-02/09, decine di "negozio giu'"): la chiave Run
+  # parte SOLO al login, quindi l'agente moriva a ogni logout/riavvio/sospensione e
+  # il punto vendita restava muto finche' qualcuno non reinstallava a mano. Qui
+  # usiamo un'ATTIVITA' PIANIFICATA che: (1) parte all'accesso, (2) si ricontrolla
+  # ogni 5 minuti e si RILANCIA se e' morta, (3) si riavvia in caso di crash.
+  # MultipleInstances=IgnoreNew => se e' gia' viva il rilancio viene ignorato: NIENTE
+  # doppioni (l'altro flagello della notte). Niente admin: gira come l'utente, solo a
+  # PC acceso e loggato (il registratore serve comunque solo a sessione aperta).
+  # Se per qualsiasi motivo non si registra, RIPIEGO sulla vecchia chiave Run.
+  $taskName = "TelefuturaPosAgent"
+  $taskOk = $false
+  try {
+    $act  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argLine
+    $tLog = New-ScheduledTaskTrigger -AtLogOn
+    # ripetizione ogni 5 min (auto-heal). BUG noto di PowerShell: la ripetizione non
+    # "prende" da New-ScheduledTaskTrigger, va copiata a mano sull'oggetto trigger.
+    $tRep = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(2))
+    $tRep.Repetition = (New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(2)) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)).Repetition
+    $set  = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+    $prin = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName $taskName -Action $act -Trigger @($tLog, $tRep) -Settings $set -Principal $prin -Force -ErrorAction Stop | Out-Null
+    $taskOk = $true
+    # con l'attivita' pianificata attiva, togli la vecchia chiave Run (se no doppioni al login).
+    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $taskName -ErrorAction SilentlyContinue
+  } catch {
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $taskName -Value ("powershell " + $argLine) -Force
+  }
+
   # Chiudi eventuali agenti gia' in esecuzione (evita doppioni al re-install).
   Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
     Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match 'TelefuturaPosAgent' } |
     ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch { } }
-  # Avvia subito, nascosto.
-  Start-Process powershell -WindowStyle Hidden -ArgumentList $argLine
+
+  # Avvia subito.
+  if ($taskOk) { try { Start-ScheduledTask -TaskName $taskName -ErrorAction Stop } catch { Start-Process powershell -WindowStyle Hidden -ArgumentList $argLine } }
+  else { Start-Process powershell -WindowStyle Hidden -ArgumentList $argLine }
+
   Write-Host ""
-  Write-Host "  Installato (avvio automatico all'accesso, SENZA admin) e GIA' in esecuzione." -ForegroundColor Green
+  if ($taskOk) {
+    Write-Host "  Installato come ATTIVITA' PIANIFICATA (parte all'accesso + si rilancia ogni 5 min se muore, si riavvia ai crash, niente doppioni) e GIA' in esecuzione." -ForegroundColor Green
+  } else {
+    Write-Host "  Installato (chiave Run, avvio all'accesso) e GIA' in esecuzione. [attivita' pianificata non disponibile su questo PC]" -ForegroundColor Yellow
+  }
   Write-Host "  Negozio='$Negozio'  stampante='$FiscalUrl'  cassa='$CashIp'"
-  Write-Host "  (Per rimuoverlo: Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name TelefuturaPosAgent)"
+  Write-Host "  (Per rimuoverlo: schtasks /delete /tn TelefuturaPosAgent /f ; Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name TelefuturaPosAgent -EA 0)"
   Write-Host ""
   exit 0
 }
