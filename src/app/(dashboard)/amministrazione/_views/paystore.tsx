@@ -1309,7 +1309,7 @@ function ListinoTagli({ tagli, onCambiato }: { tagli: Taglio[]; onCambiato: () =
        loro hanno e noi no non si può vendere; uno che noi mostriamo e loro non
        hanno si vende e poi non parte, col cliente che ha già pagato.
        ⚠️ SI GUARDA PRIMA, SI SCRIVE DOPO: il confronto non tocca niente. */
-    const [confronto, setConfronto] = useState<{ daAggiungere: { operatore: string; valore: number }[]; daSpegnere: { operatore: string; valore: number }[]; catalogo: number } | null>(null);
+    const [confronto, setConfronto] = useState<{ daAggiungere: { operatore: string; valore: number }[]; daSpegnere: { operatore: string; valore: number }[]; catalogo: number; prodottiNonRiconosciuti?: string[]; operatoriNonVisti?: string[]; catalogoGrezzo?: string[] } | null>(null);
     const [sync, setSync] = useState(false);
     const chiediCatalogo = async (applica: boolean) => {
         setSync(true); setErrore(null);
@@ -1360,6 +1360,33 @@ function ListinoTagli({ tagli, onCambiato }: { tagli: Taglio[]; onCambiato: () =
                             {!!confronto.daSpegnere.length && <> Ci sono da noi e non da loro: {confronto.daSpegnere.map((x) => `${nomeOp(x.operatore)} ${x.valore}€`).join(", ")} — si spengono, non si cancellano, se no le ricariche già vendute che li citano diventano inspiegabili.</>}
                         </div>
                     </div>
+                )}
+                {/* ⚠️ QUELLO CHE NON HO SAPUTO LEGGERE. Un nome di prodotto che
+                    non riesco a tradurre non vuol dire «operatore assente»: vuol
+                    dire che la mia mappa è incompleta. Qui si vedono i nomi veri
+                    che usa PayStore, ed è da lì che si corregge. */}
+                {confronto && !!(confronto.operatoriNonVisti?.length || confronto.prodottiNonRiconosciuti?.length) && (
+                    <div className="rvNota rvNota-att">
+                        <div className="rvNota-t">🔤 Nomi che non ho saputo tradurre</div>
+                        <div className="rvNota-s">
+                            {!!confronto.operatoriNonVisti?.length && <>
+                                Nel catalogo che ho letto non compaiono: <b>{confronto.operatoriNonVisti.map(nomeOp).join(", ")}</b>.
+                                I loro tagli NON sono stati proposti per lo spegnimento — non so se mancano davvero.{" "}
+                            </>}
+                            {!!confronto.prodottiNonRiconosciuti?.length && <>
+                                Prodotti che PayStore chiama così e che non ho collegato a nessun operatore:{" "}
+                                <b>{confronto.prodottiNonRiconosciuti.slice(0, 12).join(" · ")}</b>.
+                            </>}
+                        </div>
+                    </div>
+                )}
+                {confronto && !!confronto.catalogoGrezzo?.length && (
+                    <details className="rvNota rvNota-info">
+                        <summary className="rvNota-t" style={{ cursor: "pointer" }}>
+                            📇 I {confronto.catalogoGrezzo.length} prodotti che PayStore ci mostra
+                        </summary>
+                        <div className="rvNota-s mt-1">{confronto.catalogoGrezzo.join(" · ")}</div>
+                    </details>
                 )}
                 {!!senzaListino.length && (
                     <div className="rvNota rvNota-att">

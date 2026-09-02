@@ -99,11 +99,25 @@ export async function POST(request: Request) {
     for (const t of ((nostri || []) as T[])) miei.set(`${t.operatore}|${Number(t.valore).toFixed(2)}`, t);
 
     const daAggiungere = [...veri.values()].filter((v) => !miei.has(`${v.operatore}|${v.valore.toFixed(2)}`));
-    /* ⚠️ QUELLO CHE AVANZA NON SI CANCELLA: si SPEGNE. Un taglio tolto dal
-       listino sparisce anche dalle ricariche già vendute che lo citano, e in un
-       controllo quella riga diventa inspiegabile. */
+
+    /* ⚠️ UN NOME CHE NON SO LEGGERE NON È UN OPERATORE CHE NON ESISTE.
+       Luca 03/09: «le ricariche Wind3 loro le hanno in realtà, quindi forse un
+       disallineamento?» — e aveva ragione. `operatoreDi()` traduce il nome del
+       prodotto PayStore nel nostro codice: se PayStore chiama WindTre in un
+       modo che non riconosco, quell'operatore semplicemente NON compare nel
+       catalogo che ho letto, e la conclusione «non ce l'hanno, spegni gli otto
+       tagli» è falsa — con dentro 61 ricariche già vendute.
+       Da spegnere si propone SOLO per gli operatori che il catalogo ha
+       nominato davvero: sugli altri non so niente, e non sapere non è una
+       ragione per togliere. */
+    const operatoriVisti = new Set([...veri.values()].map((v) => v.operatore));
     const daSpegnere = [...miei.values()]
-        .filter((t) => t.attivo && !veri.has(`${t.operatore}|${Number(t.valore).toFixed(2)}`));
+        .filter((t) => t.attivo && operatoriVisti.has(t.operatore)
+            && !veri.has(`${t.operatore}|${Number(t.valore).toFixed(2)}`));
+    /* e quelli che non ho saputo leggere si dicono, con i nomi veri: è l'unico
+       modo per correggere la traduzione invece di indovinarla */
+    const operatoriNonVisti = [...new Set([...miei.values()].filter((t) => t.attivo).map((t) => t.operatore))]
+        .filter((o) => !operatoriVisti.has(o));
 
     if (!b.applica) {
         return NextResponse.json({
@@ -111,7 +125,12 @@ export async function POST(request: Request) {
             catalogo: veri.size, nostri: miei.size,
             daAggiungere: daAggiungere.map((v) => ({ operatore: v.operatore, valore: v.valore, prodotto: v.prodotto })),
             daSpegnere: daSpegnere.map((t) => ({ operatore: t.operatore, valore: Number(t.valore) })),
+            /* i nomi grezzi che PayStore usa e che non ho saputo tradurre:
+               è da qui che si corregge la mappa, non a indovinare */
             prodottiNonRiconosciuti: [...new Set(senzaOperatore)],
+            operatoriNonVisti,
+            /* il catalogo COM'È, per poterlo leggere quando qualcosa non torna */
+            catalogoGrezzo: [...new Set([...veri.values()].map((v) => v.prodotto))],
         });
     }
 
