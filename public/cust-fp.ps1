@@ -13,8 +13,10 @@
 #   non fiscale = comincia_scontrino_nonfiscale -> stampa_testo_semplice_nonfiscale
 #   (PrintNormal) -> chiudi_scontrino_nonfiscale.
 #
-# VINCOLI: gira a 32 bit (MiraOposDll e' x86, si rilancia da solo); il registratore
-# deve essere LIBERO (MIRA_FP_SERVER di SuiteMobile chiuso).
+# VINCOLI: gira a 32 bit (MiraOposDll e' x86, si rilancia da solo). Il registratore
+# deve essere LIBERO: MIRA_FP_SERVER (server fiscale di SuiteMobile) lo tiene occupato
+# in modo esclusivo, quindi lo CHIUDIAMO da soli prima di aprire (vedi sotto) - niente
+# piu' "chiudi SuiteMobile a mano" su ogni PC.
 #
 # USO:  powershell -File cust-fp.ps1 -XmlFile <ePOS.xml> [-OposName CUSTOM]
 # stdout, ULTIMA riga = esito JSON: {"ok":true,"msg":"...","matricola":"..."}
@@ -116,6 +118,16 @@ try {
   $__devs = @(); foreach ($__b in $__bases) { if (Test-Path $__b) { $__devs += (Get-ChildItem $__b -ErrorAction SilentlyContinue).PSChildName } }
   if ($__devs.Count -gt 0 -and ($__devs -notcontains $OposName)) { $OposName = $__devs[0] }
 } catch { }
+
+# ── LIBERA IL REGISTRATORE (fix permanente 02/09) ────────────────────────────
+# MIRA_FP_SERVER e' il server fiscale Mira che SuiteMobile lascia acceso: tiene la
+# connessione ESCLUSIVA al registratore, percio' la nostra apri_stampante fallisce con
+# "apertura fallita: MiraOposException" (visto a W3, Merulana, Acilia Multi). Il nostro
+# driver NON ne ha bisogno (i negozi senza MIRA_FP_SERVER stampano regolarmente, es.
+# Baleniere) e chiuderlo NON lo fa ripartire (verificato a W3: non e' un servizio).
+# Lo chiudiamo qui, prima di aprire: lo scontrino esce da solo, senza dover chiudere
+# SuiteMobile a mano su ogni PC ogni mattina.
+try { Get-Process -Name MIRA_FP_SERVER -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
 
 $fp = $null
 try {
