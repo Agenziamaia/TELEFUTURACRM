@@ -1887,11 +1887,6 @@ html.light .rvTabBox{background:linear-gradient(180deg,#ffffff 0%,#f8f9ff 100%);
    alta mezza schermata. Con una larghezza minima il `rvTabBox` scorre — che e'
    la risposta onesta: meglio una barra che un testo spappolato. */
 .rvTab-large{min-width:920px}
-/* UN CAMPO CHE SI LEGGE E NON SI TOCCA. Serve dove il valore lo decide il
-   sistema e cambiarlo a mano fa danni — il negozio della vendita, che comanda
-   scontrino, cassa e magazzino. Ha la forma di una casella per non far pensare
-   che manchi qualcosa, ma non ha il cursore ne' il fuoco. */
-.rvIn-fermo{display:flex;align-items:center;cursor:default;background:var(--tf-w20);color:var(--tf-e2e8f0);font-weight:700}
 .rvTab thead th{padding:11px 14px;white-space:nowrap;font-size:10.5px;font-weight:800;letter-spacing:.75px;text-transform:uppercase;
   color:var(--tf-8892b0);background:var(--tf-w50);border-bottom:1px solid var(--tf-w80)}
 /* `html.light thead th` (riga ~601) è `!important`: senza !important qui

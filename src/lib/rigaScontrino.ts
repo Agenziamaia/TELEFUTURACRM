@@ -52,7 +52,11 @@ export function rigaConImei(modello: unknown, seriale: unknown, ripiego = ""): s
 export function tagliaRiga(descrizione: unknown): string {
     const t = String(descrizione || "ARTICOLO").trim();
     if (t.length <= MAX_RIGA_SCONTRINO) return t;
-    const m = t.match(/^(.*?)\s*·\s*IMEI\s*([A-Za-z0-9]{6,})$/i);
+    /* IL TRATTINO FA PARTE DEL SERIALE. `SM-R800` (un Galaxy Watch a
+       magazzino) non veniva agganciato dalla vecchia classe di caratteri, e la
+       riga finiva tagliata a metà seriale — «· IMEI SM-R» — cioè proprio quello
+       che questo file giura di non fare mai (revisione ostile 02/09). */
+    const m = t.match(/^(.*?)\s*·\s*IMEI\s*([A-Za-z0-9-]{6,})$/i);
     if (m) return rigaConImei(m[1], m[2], t);
     return t.slice(0, MAX_RIGA_SCONTRINO).trim();
 }

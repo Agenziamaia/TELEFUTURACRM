@@ -491,11 +491,44 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        scrive dopo due `await`, e la macchina si apriva DUE volte. */
     const inCorso = useRef(false);
 
+    /* ⚠️ CHI DECIDE LA SOCIETÀ È IL SERVER, NON QUESTA PAGINA (Luca 02/09).
+       Guardare `i.azienda` non bastava: la riga del telefono che nasce da una
+       pratica arriva senza società e senza codice, quindi il modale credeva ci
+       fosse una società sola, non divideva niente, e il server rifiutava —
+       dopo aver fatto prendere i contanti alla macchina.
+       La verifica preventiva ora torna la società di OGNI riga, decisa con le
+       stesse regole con cui verrà stampata: si chiede a lei, una volta, appena
+       la finestra è pronta. Se la risposta non arriva si ricade su `i.azienda`,
+       che è quello che si faceva prima: non si peggiora mai. */
+    const [perRigaSrv, setPerRigaSrv] = useState<(string | null)[] | null>(null);
+    const _firmaItems = itemsTutte.map((i) => `${i.description}|${i.unitPrice}|${i.qty ?? 1}`).join("~");
+    useEffect(() => {
+        let vivo = true;
+        setPerRigaSrv(null);
+        if (!data?.negozio || !itemsTutte.length) return;
+        (async () => {
+            try {
+                const res = await fetch("/api/vendita/scontrino", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ negozio: data.negozio, items: itemsTutte, azienda: null, dryRun: true }),
+                });
+                const j = await res.json().catch(() => ({}));
+                if (vivo && Array.isArray(j?.perRiga)) setPerRigaSrv(j.perRiga as (string | null)[]);
+            } catch { /* si resta su quello che dice la riga */ }
+        })();
+        return () => { vivo = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [_firmaItems, data?.negozio]);
+
+    /** La società di una riga: quella che ha detto il server, se l'ha detta. */
+    const _azDi = (i: RigaScontrino, k: number) => (perRigaSrv?.[k] ?? i.azienda) || null;
+
     /* LE SOCIETÀ CHE LA MERCE IMPONE. Solo quelle: se in carrello ci sono solo
        servizi la domanda è un'altra (chi emette), ed è già risolta sopra. */
     const aziendeMerce = useMemo(
-        () => Array.from(new Set(itemsTutte.map((i) => i.azienda).filter(Boolean))) as string[],
-        [itemsTutte]);
+        () => Array.from(new Set(itemsTutte.map((i, k) => _azDi(i, k)).filter(Boolean))) as string[],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [itemsTutte, perRigaSrv]);
     const multiSocieta = aziendeMerce.length > 1;
 
     const sezioni = useMemo(() => {
@@ -503,7 +536,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         const per: Record<string, { i: RigaScontrino; k: number }[]> = {};
         aziendeMerce.forEach((a) => { per[a] = []; });
         itemsTutte.forEach((i, k) => {
-            const az = i.azienda || assegna[_chiaveRiga(i, k)] || aziendeMerce[0];
+            const az = _azDi(i, k) || assegna[_chiaveRiga(i, k)] || aziendeMerce[0];
             (per[az] ||= []).push({ i, k });
         });
         return aziendeMerce.map((a) => {
@@ -564,7 +597,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 });
             }
 
-            const az = riga?.azienda;
+            const az = riga ? _azDi(riga, itemsTutte.indexOf(riga)) : null;
             /* SE NON SI SA DI CHI È, NON SI INDOVINA. Attribuirlo alla società
                sbagliata farebbe incassare in contanti un importo finanziato. */
             if (!az) { orfani.push({ descrizione: t.descrizione, importo }); return; }
@@ -624,7 +657,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
     /* SPOSTA UN SERVIZIO DA UNA SEZIONE ALL'ALTRA. La merce non si sposta: la
        sua società è un fatto, non una preferenza. */
     const spostaServizio = (i: RigaScontrino, k: number, verso: string) => {
-        if (i.azienda) return;
+        if (_azDi(i, k)) return;
         setAssegna((a) => ({ ...a, [_chiaveRiga(i, k)]: verso }));
     };
 
@@ -767,6 +800,18 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         if (!chk.ok) {
             setFase("errore");
             setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
+            return;
+        }
+        /* ⚠️ L'ULTIMO CONTROLLO PRIMA DEI SOLDI (Luca 02/09). Se il server vede
+           più società di quelle che questa finestra ha disegnato, mandarlo
+           avanti significa far prendere i contanti alla macchina e poi
+           incassare un rifiuto: soldi nel cassetto e nessuno scontrino.
+           Non dovrebbe più capitare — le sezioni le disegna la risposta del
+           server — ma se capitasse, ci si ferma qui, prima del cassetto. */
+        if (Array.isArray(chk.aziende) && chk.aziende.length > 1 && !multiSocieta) {
+            setFase("errore"); setErroreDi("pagamento");
+            setMsg("Questo carrello contiene merce di più società e va emesso come più scontrini, "
+                + "ma la finestra non è riuscita a dividerlo. Chiudi e rifai la vendita: nessun incasso è stato avviato.");
             return;
         }
         /* ⭐ UN SOLO CASSETTO, ANCHE CON DUE SCONTRINI (Luca 02/09): «quando
@@ -1324,7 +1369,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                                 e.preventDefault();
                                                 const k = Number(e.dataTransfer.getData("text/plain"));
                                                 const riga = itemsTutte[k];
-                                                if (riga && !riga.azienda) spostaServizio(riga, k, s2.azienda);
+                                                if (riga && !_azDi(riga, k)) spostaServizio(riga, k, s2.azienda);
                                             }}
                                             className={"rounded-2xl border p-3 space-y-2.5 transition-colors "
                                                 + (quadra ? "border-emerald-400/40 bg-emerald-500/[0.06]" : "border-white/10 bg-white/[0.03]")}>
@@ -1337,14 +1382,14 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                             <div className="space-y-1">
                                                 {s2.righe.map(({ i, k }) => (
                                                     <div key={k}
-                                                        draggable={!i.azienda}
+                                                        draggable={!_azDi(i, k)}
                                                         onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(k)); }}
                                                         className={"flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs "
-                                                            + (i.azienda ? "bg-white/5 text-slate-300" : "bg-sky-500/10 text-sky-100 cursor-grab active:cursor-grabbing")}>
-                                                        <span className="shrink-0">{i.azienda ? "📦" : "🔧"}</span>
+                                                            + (_azDi(i, k) ? "bg-white/5 text-slate-300" : "bg-sky-500/10 text-sky-100 cursor-grab active:cursor-grabbing")}>
+                                                        <span className="shrink-0">{_azDi(i, k) ? "📦" : "🔧"}</span>
                                                         <span className="flex-1 min-w-0 truncate">{i.description}</span>
                                                         <span className="shrink-0 font-semibold">{eur(Number(i.unitPrice) * (Number(i.qty) > 0 ? Number(i.qty) : 1))}</span>
-                                                        {!i.azienda && altre.map((o) => (
+                                                        {!_azDi(i, k) && altre.map((o) => (
                                                             <button key={o.azienda} type="button" title={`Sposta su ${o.label}`}
                                                                 onClick={() => spostaServizio(i, k, o.azienda)}
                                                                 className="shrink-0 rounded-md px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold">→</button>

@@ -166,20 +166,37 @@ export async function POST(req: Request) {
         const seriali = [...new Set(righe.map((r) => {
             const diretto = String((r as { seriale?: string; imei?: string }).seriale || (r as { imei?: string }).imei || "").trim();
             if (diretto) return diretto;
-            return (String(r.description || "").match(/IMEI\s*([A-Za-z0-9]{6,})/i)?.[1] || "").trim();
+            return (String(r.description || "").match(/(?:^|\s)IMEI\s+([A-Za-z0-9-]{6,})\s*$/i)?.[1] || "").trim();
         }).filter(Boolean))];
         if (seriali.length) {
             const { data } = await supabase.from("mag_unita")
-                .select("seriale, azienda, negozio").in("seriale", seriali);
-            (data || []).forEach((u: { seriale: string; azienda: string | null; negozio: string }) => {
-                if (u.azienda) societaDelSeriale[String(u.seriale)] = String(u.azienda);
+                .select("seriale, azienda, negozio, stato").in("seriale", seriali);
+            /* ⚠️ SOLO I PEZZI DI QUESTO LOCALE, E IL PAREGGIO SI DECIDE (revisione
+               ostile 02/09). Senza il filtro, un pezzo trasferito in un altro
+               negozio imponeva una società che qui un registratore non ce l'ha,
+               e lo scontrino veniva rifiutato INTERO. E senza ordine vinceva
+               l'ultima riga che il database restituiva: un pezzo `annullato` o
+               `venduto` — che possono essere in più copie, l'indice unico vale
+               solo sui vivi — decideva la partita IVA al posto di quello vero.
+               Chi è vivo vince su chi non lo è; a parità vince il negozio dove
+               si sta battendo. È la stessa regola già scritta per i codici. */
+            const vinceSer: Record<string, { vivo: boolean; qui: boolean; azienda: string }> = {};
+            (data || []).forEach((u: { seriale: string; azienda: string | null; negozio: string; stato: string }) => {
+                if (!u.azienda) return;
+                if (negozio && !stessoMagazzino(u.negozio, negozio)) return;
+                const vivo = u.stato !== "annullato";
+                const qui = u.negozio === negozio;
+                const a0 = vinceSer[String(u.seriale)];
+                const meglio = !a0 || (vivo !== a0.vivo ? vivo : (qui !== a0.qui ? qui : false));
+                if (meglio) vinceSer[String(u.seriale)] = { vivo, qui, azienda: String(u.azienda) };
             });
+            Object.entries(vinceSer).forEach(([ser, v]) => { societaDelSeriale[ser] = v.azienda; });
         }
     }
     /** L'IMEI di una riga, come sopra: campo esplicito o descrizione. */
     const serialeDi = (r: { seriale?: string; imei?: string; description?: unknown }) =>
         String(r.seriale || r.imei || "").trim()
-        || (String(r.description || "").match(/IMEI\s*([A-Za-z0-9]{6,})/i)?.[1] || "").trim();
+        || (String(r.description || "").match(/(?:^|\s)IMEI\s+([A-Za-z0-9-]{6,})\s*$/i)?.[1] || "").trim();
 
     const societaDelCodice: Record<string, string> = {};
     if (negozio) {
@@ -293,8 +310,19 @@ export async function POST(req: Request) {
     // Costruisci le voci raggruppate per AZIENDA ("__def" = azienda di default / negozio non multi).
     type FI = { description: string; quantity: number; unitPrice: number; department: number };
     const gruppi: Record<string, FI[]> = {};
+    /* ⚠️ LA SOCIETÀ DI OGNI RIGA TORNA AL BROWSER (Luca 02/09, guasto grave).
+       Il modale la deduceva da sé, ma la riga del telefono che nasce da una
+       pratica arriva senza società E senza codice: il browser credeva ci fosse
+       una società sola, non mandava i pagamenti divisi, e il server — che
+       invece la società la sa, dal seriale — spaccava in due e rifiutava.
+       Rifiutava DOPO l'incasso, perché la verifica preventiva non guardava
+       questo: contanti nel cassetto e nessuno scontrino.
+       Adesso è il server a dire chi è chi, e il modale disegna le sezioni su
+       quello che uscirà davvero: quello che si legge è quello che si stampa. */
+    const perRiga: (string | null)[] = new Array(righe.length).fill(null);
     const esclusi: { description: string; motivo: string }[] = [];
-    for (const r of righe) {
+    for (let _i = 0; _i < righe.length; _i++) {
+        const r = righe[_i];
         const meta = byId[stripId(r.productId)] || byName[String(r.description || "").trim()] || null;
         const va = meta ? meta.va : true;
         const reparto = meta && meta.reparto != null ? meta.reparto : (r.reparto ?? null);
@@ -319,6 +347,7 @@ export async function POST(req: Request) {
            resta la possibilità di correggere quando serve. */
         const az = (meta && meta.azienda) || societaDelSeriale[serialeDi(r)] || r.azienda || societaDelCodice[String(r.codice || "")]
             || azDellaMerce || b.azienda || azRicaricheSciolte || defaultAzienda || "__def";
+        perRiga[_i] = az === "__def" ? null : az;
         const desc = tagliaRiga(r.description);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;
@@ -364,7 +393,7 @@ export async function POST(req: Request) {
                 esclusi, testMode,
             }, { status: 400 });
         }
-        return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), esclusi, testMode });
+        return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), perRiga, esclusi, testMode });
     }
 
     /* CHI HA BATTUTO LO SCONTRINO. Si legge dal database con l'id della

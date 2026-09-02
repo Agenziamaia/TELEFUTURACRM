@@ -5372,10 +5372,13 @@ function CRM() {
   const negDichiarato = useRef("");
   const _loginPrefill=useRef(false);
   useEffect(()=>{
-    if(_loginPrefill.current||!user)return;
-    _loginPrefill.current=true;
-    setSelVend(p=>p||user.name||"");
-    setSelNeg(p=>p||user.negozio||"");
+    if(!user)return;
+    if(negDichiarato.current)return;          // già risolta: non si rifà
+    if(!_loginPrefill.current){
+      _loginPrefill.current=true;
+      setSelVend(p=>p||user.name||"");
+      setSelNeg(p=>p||user.negozio||"");
+    }
     /* IL NEGOZIO DICHIARATO STAMATTINA COMANDA (Luca 31/08, reso definitivo il
        02/09). La schermata «dove
        stai lavorando oggi» scrive una SEDE — «magliana», «donna» — perché le
@@ -5386,20 +5389,52 @@ function CRM() {
        fonte. Chi non l'ha fatta non resta a piedi — si ripiega sul negozio in
        scheda — perché un negozio che non vende è peggio di un negozio che
        vende sotto l'insegna di partenza. */
+    /* SI RITENTA FINCHÉ L'ELENCO DEI NEGOZI NON È ARRIVATO (revisione ostile
+       02/09): `negozi` si riempie in modo asincrono, e se la dichiarazione
+       arrivava prima l'effetto usciva a vuoto — dichiarazione persa in
+       silenzio, e da quando la tendina non c'è più non si poteva più
+       rimediare a mano. */
     (async () => {
       try {
         const { presenzaOggi } = await import("@/lib/doveLavoro");
         const { sedeFisica } = await import("@/lib/negoziNomi");
         const p = await presenzaOggi(user.id);
-        if (!p.attiva) return;
-        const dentro = negozi.filter(n => sedeFisica(n) === p.attiva.sede);
+        /* ⚠️ VALE ANCHE LA DICHIARAZIONE IN ATTESA (revisione ostile 02/09).
+           `presenzaOggi` separa «attiva» da «in attesa»: chi chiede di lavorare
+           in un altro negozio resta in attesa finché non lo approvano, e da
+           quando la tendina non c'è più quello voleva dire NON POTER VENDERE.
+           Misurato: quattro persone in questo stato oggi, fra cui chi non ha
+           nessun negozio in scheda. L'approvazione serve a coprire i turni,
+           non a decidere se si può battere uno scontrino. */
+        const dich = p.attiva || p.inAttesa;
+        if (!dich) return;
+        const dentro = negozi.filter(n => sedeFisica(n) === dich.sede);
         if (!dentro.length) return;
-        const mio = dentro.find(n => n === user.negozio) || dentro[0];
+        /* ⚠️ E L'INSEGNA NON SI SCEGLIE IN ORDINE ALFABETICO. `dentro[0]` a
+           Magliana dà sempre «Magliana Multi», e siccome tutti gli attivi hanno
+           quello in scheda l'insegna Wind3 era diventata IRRAGGIUNGIBILE: con
+           lei le sue regole di brand e il suo magazzino di riferimento. Stessa
+           trappola a Collatina e ad Acilia, dove «Acilia Multi» non può
+           registrare WindTre e non c'era più modo di spostarsi.
+           L'ordine giusto: il negozio in scheda, poi uno di quelli in cui la
+           persona è assegnata, poi quello che ha la cassa predefinita. */
+        let mio = dentro.find(n => n === user.negozio) || "";
+        if (!mio) {
+          const { data: ass } = await supabase.from("user_stores").select("store").eq("user_id", user.id);
+          const suoi = (ass || []).map((x) => String(x.store));
+          mio = dentro.find(n => suoi.includes(n)) || "";
+        }
+        if (!mio) {
+          const { data: rt } = await supabase.from("pos_rt").select("negozio, is_default").eq("is_default", true);
+          const conCassa = (rt || []).map((x) => String(x.negozio));
+          mio = dentro.find(n => conCassa.includes(n)) || "";
+        }
+        if (!mio) mio = dentro[0];
         negDichiarato.current = mio;
         setSelNeg(mio);
       } catch { /* se non si sa, resta il negozio in scheda */ }
     })();
-  },[user]);
+  },[user, negozi.length]);
   // ── MATRICE BRAND × NEGOZIO (Luca 06/08): il negozio vede/registra solo i
   // brand concessi da Amministrazione → Catalogo → Brand × Negozio. Senza riga
   // specifica vale il default del brand (catalog_brands.default_abilitato:
