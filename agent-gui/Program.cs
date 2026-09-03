@@ -50,7 +50,7 @@ namespace TelefuturaCassa
 
         // UI
         Label lblStore, dotAgent, txtAgent, dotReg, txtReg, dotCash, txtCash, dotCrm, txtCrm, lblFooter;
-        Button btnRestart, btnFree, btnRecheck, btnReport;
+        Button btnRestart, btnFree, btnRecheck, btnReport, btnTest;
         System.Windows.Forms.Timer reportTimer;
 
         static readonly Color BG = Color.FromArgb(13, 17, 23);
@@ -103,7 +103,7 @@ namespace TelefuturaCassa
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(430, 420);
+            ClientSize = new Size(430, 478);
 
             var title = new Label { Text = "TELEFUTURA — Stato Cassa", ForeColor = TXT, Font = new Font("Segoe UI", 13f, FontStyle.Bold), Location = new Point(18, 14), AutoSize = true };
             lblStore = new Label { Text = negozio, ForeColor = MUT, Font = new Font("Segoe UI", 11f, FontStyle.Bold), Location = new Point(20, 44), AutoSize = true };
@@ -122,13 +122,19 @@ namespace TelefuturaCassa
             btnFree = MakeBtn("Libera registratore", new Point(222, 238), Color.FromArgb(56, 78, 126));
             btnRecheck = MakeBtn("Ricontrolla", new Point(16, 296), Color.FromArgb(48, 54, 61));
             btnReport = MakeBtn("Segnala problema", new Point(222, 296), Color.FromArgb(158, 106, 3));
+            // STAMPA DI PROVA: documento NON fiscale, tutta larghezza, colore distinto.
+            // Testa stampante + agente SENZA emettere scontrini fiscali veri (evita i
+            // casi tipo "PROVA REPARTO" 03/09: 9 documenti fiscali reali solo per prova).
+            btnTest = new Button { Text = "Stampa di prova (non fiscale)", Location = new Point(16, 354), Size = new Size(398, 48), FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(28, 104, 122), ForeColor = Color.White, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold), Cursor = Cursors.Hand };
+            btnTest.FlatAppearance.BorderSize = 0;
             btnRestart.Click += async (s, e) => await OnRestart();
             btnFree.Click += (s, e) => OnFree();
             btnRecheck.Click += (s, e) => RefreshStatus();
             btnReport.Click += async (s, e) => await OnReport();
-            Controls.Add(btnRestart); Controls.Add(btnFree); Controls.Add(btnRecheck); Controls.Add(btnReport);
+            btnTest.Click += async (s, e) => await OnTestPrint();
+            Controls.Add(btnRestart); Controls.Add(btnFree); Controls.Add(btnRecheck); Controls.Add(btnReport); Controls.Add(btnTest);
 
-            lblFooter = new Label { Text = "", ForeColor = MUT, Font = new Font("Segoe UI", 9f), Location = new Point(18, 360), Size = new Size(396, 46) };
+            lblFooter = new Label { Text = "", ForeColor = MUT, Font = new Font("Segoe UI", 9f), Location = new Point(18, 414), Size = new Size(396, 46) };
             Controls.Add(lblFooter);
         }
 
@@ -284,6 +290,33 @@ namespace TelefuturaCassa
             if (string.IsNullOrWhiteSpace(note)) return;
             bool ok = await SendReport("problema", note.Trim());
             MessageBox.Show(ok ? "Segnalazione inviata al supporto. Grazie!" : "Non sono riuscito a inviare (controlla il collegamento CRM).");
+        }
+
+        // STAMPA DI PROVA — chiede al CRM di mettere in coda un documento NON fiscale;
+        // l'agente locale lo stampa. Niente Agenzia Entrate, niente chiusura Z.
+        async Task OnTestPrint()
+        {
+            SetBusy(true);
+            btnTest.Enabled = false;
+            btnTest.Text = "Stampa in corso…";
+            try
+            {
+                string json = "{"
+                    + "\"token\":\"" + TOKEN + "\","
+                    + "\"negozio\":" + JStr(negozio) + ","
+                    + "\"deviceUrl\":" + JStr(fiscalUrl ?? "")
+                    + "}";
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var r = await http.PostAsync(CRM + "/api/agent/test-print", content);
+                if (r.IsSuccessStatusCode)
+                    MessageBox.Show("Stampa di prova inviata (documento NON fiscale). Tra pochi secondi esce dalla stampante.\n\nSe non esce: controlla che 'Agente' sia ATTIVO e riprova.", "Stampa di prova");
+                else
+                    MessageBox.Show("Non riuscita (HTTP " + (int)r.StatusCode + "). Controlla il collegamento CRM.", "Stampa di prova");
+            }
+            catch (Exception ex) { MessageBox.Show("Errore: " + ex.Message); }
+            btnTest.Text = "Stampa di prova (non fiscale)";
+            btnTest.Enabled = true;
+            SetBusy(false);
         }
 
         // ── Report al CRM ───────────────────────────────────────────────────────
