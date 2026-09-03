@@ -61,22 +61,56 @@ export async function GET(req: Request) {
        minuti: una query che torna quattro colonne dei soli documenti aperti
        costa meno di tre `count` separati con dei filtri per negozio che
        PostgREST non sa esprimere sul «locale». */
+    /* IL CONTO DEI RITARDI SI FA QUI, che è il posto dove tutti passano ogni
+       due minuti: così gli episodi sono sempre di oggi senza bisogno di un
+       cron che qualcuno deve ricordarsi di guardare. La funzione è
+       idempotente — un episodio per documento e per persona — quindi quindici
+       browser che chiedono insieme scrivono le stesse righe, non quindici. */
+    await supabase.rpc("mag_matura_ritardi");
+
     const { data: dd, error } = await supabase.from("mag_ddt")
-        .select("da_negozio, a_negozio, stato, problema_il, problema_chiuso_il")
+        .select("da_negozio, a_negozio, stato, creato_il, problema_il, problema_chiuso_il")
         .in("stato", ["in_transito", "parziale"])
         .limit(2000);
-    if (error) return NextResponse.json({ ok: false, inArrivo: 0, problemi: 0 }, { status: 200 });
+    if (error) return NextResponse.json({ ok: false, inArrivo: 0, problemi: 0, ritardo: 0, avviso: 0 }, { status: 200 });
 
-    let inArrivo = 0, problemi = 0;
-    (dd ?? []).forEach((d: { da_negozio: string; a_negozio: string; stato: string; problema_il: string | null; problema_chiuso_il: string | null }) => {
+    /* LA SCALA DEL PATTO (Luca 03/09): sei giorni lavorativi per accettare, dal
+       quarto lampeggia giallo, dal settimo diventa rosso e costa 5 €/giorno.
+       I giorni li conta il database — sa quali negozi aprono la domenica e
+       quali sono i festivi — e li si chiede in blocco per non fare una query
+       per documento. */
+    const { data: reg } = await supabase.from("mag_trasferimenti_regole")
+        .select("giorni_avviso, giorni_max, decorrenza").eq("id", 1).maybeSingle();
+    const r = reg as { giorni_avviso: number; giorni_max: number; decorrenza: string | null } | null;
+
+    let inArrivo = 0, problemi = 0, ritardo = 0, avviso = 0;
+    type Riga = { da_negozio: string; a_negozio: string; stato: string; creato_il: string; problema_il: string | null; problema_chiuso_il: string | null };
+    const aperti = (dd ?? []) as Riga[];
+
+    /* i giorni lavorativi di ogni documento, in una chiamata sola */
+    const giorni = new Map<number, number>();
+    if (r?.decorrenza) {
+        const q = aperti.map((d, i) => ({ i, negozio: d.a_negozio, da: d.creato_il.slice(0, 10) > r.decorrenza! ? d.creato_il.slice(0, 10) : r.decorrenza! }));
+        const { data: gg } = await supabase.rpc("mag_giorni_lavorativi_molti", { p_righe: q });
+        ((gg ?? []) as { i: number; n: number }[]).forEach(x => giorni.set(x.i, x.n));
+    }
+
+    aperti.forEach((d, i) => {
         const mioDest = miei.has(locale(d.a_negozio));
         const mioMitt = miei.has(locale(d.da_negozio));
         const guasto = !!d.problema_il && !d.problema_chiuso_il;
         if (mioDest && d.stato === "in_transito") inArrivo++;
-        /* IL ROSSO ARRIVA A TUTTI E TRE: chi manda, chi riceve, e chi in
-           mezzo ci deve mettere una pezza. */
+        /* IL ROSSO DEL PROBLEMA ARRIVA A TUTTI E TRE: chi manda, chi riceve, e
+           chi in mezzo ci deve mettere una pezza. */
         if (guasto && (admin || mioDest || mioMitt)) problemi++;
+        /* IL RITARDO NO: quello è del negozio che deve accettare, e basta
+           (Luca: «qui il pallino è solo per il negozio oggetto di problema»).
+           E chi ha segnalato un problema è fuori: è l'uscita di sicurezza. */
+        if (!mioDest || guasto || !r?.decorrenza) return;
+        const n = giorni.get(i) ?? 0;
+        if (n > r.giorni_max) ritardo++;
+        else if (n >= r.giorni_avviso) avviso++;
     });
 
-    return NextResponse.json({ ok: true, inArrivo, problemi });
+    return NextResponse.json({ ok: true, inArrivo, problemi, ritardo, avviso });
 }

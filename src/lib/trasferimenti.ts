@@ -314,7 +314,15 @@ export const SITUAZIONI: { id: Situazione; et: string; ico: string; spiega: stri
     { id: "con_problema", et: "Con problema", ico: "🚩", spiega: "Qualcuno ha segnalato che qualcosa non torna: il documento resta accettabile" },
     /* fermi da una settimana: `fermo()` esisteva già e non lo contava nessuno —
        serviva solo a tingere di rosso una riga piccola */
-    { id: "fermi", et: `Fermi da ${GIORNI_FERMO} giorni`, ico: "⛔", spiega: `Partiti da ${GIORNI_FERMO} giorni o più e ancora in viaggio` },
+    /* ⚠️ NON PIÙ «fermi da 7 giorni di calendario» MA «OLTRE I TERMINI»
+       (Luca 03/09): il patto dice sei giorni LAVORATIVI per accettare, contati
+       col calendario di quel negozio — la domenica non conta se il negozio è
+       chiuso, e Ferragosto non conta per nessuno. Dal settimo in poi costa
+       5 € al giorno, e il riquadro lo dice.
+       I giorni li conta il database (`mag_giorni_lavorativi`), che è l'unico a
+       sapere quali negozi aprono la domenica: qui si legge il numero già
+       calcolato che la riga si porta dietro. */
+    { id: "fermi", et: "Oltre i termini", ico: "⛔", spiega: "Passati i 6 giorni lavorativi per accettarli: stanno maturando 5 € al giorno" },
 ];
 
 /** Le due situazioni che parlano di «qui» e di «me»: hanno senso solo per chi
@@ -336,8 +344,15 @@ export const situazioniPer = (miei: readonly string[]) =>
 /** Il documento rientra nella situazione? `miei` sono i negozi della persona
  *  (i gemelli contano come uno solo: chi sta a Magliana W3 riceve anche
  *  quello che arriva al Multi, è lo stesso bancone). */
+/** I GIORNI LAVORATIVI DI OGNI DOCUMENTO, contati dal database col calendario
+ *  di quel negozio. Li si passa qui invece di ricalcolarli a schermo: sono gli
+ *  stessi che decidono il malus, e una stima che diverge dal conto è un numero
+ *  che litiga col portafoglio delle persone. */
+export type GiorniLav = Readonly<Record<string, number>>;
+
 export function nellaSituazione(
     s: Situazione, d: Ddt, righe: RigaDdt[], miei: readonly string[], ora = Date.now(),
+    giorniLav?: GiorniLav, giorniMax = 6,
 ): boolean {
     const mio = (n: string) => miei.some((m) => stessoMagazzino(n, m));
     switch (s) {
@@ -349,7 +364,12 @@ export function nellaSituazione(
         case "differenze": return haDifferenze(righe);
         case "da_fatturare": return daFatturare(d);
         case "con_problema": return guastoDdt(d);
-        case "fermi": return fermo(d, ora);
+        /* OLTRE I TERMINI: sei giorni lavorativi per accettare. Senza i giorni
+           veri — la prima frazione di secondo, prima che arrivino — si ripiega
+           su `fermo()`, che sui giorni di calendario è sempre più prudente:
+           meglio mostrarne uno in meno che uno in più. */
+        case "fermi": return aperto(d) && !guastoDdt(d)
+            && (giorniLav ? (giorniLav[d.id] ?? 0) > giorniMax : fermo(d, ora));
     }
 }
 

@@ -97,15 +97,18 @@ function useFeriePendenti(userId: string | undefined, role: string | undefined):
  *  Il rosso arriva a tutti e tre — chi manda, chi riceve e l'amministrazione —
  *  ed è il motivo per cui il conteggio lo fa il server: da qui non si saprebbe
  *  quali negozi sono «miei». */
-function useMagazzino(userId: string | undefined): { inArrivo: number; problemi: number } {
-    const [v, setV] = useState({ inArrivo: 0, problemi: 0 });
+function useMagazzino(userId: string | undefined): { inArrivo: number; problemi: number; ritardo: number; avviso: number } {
+    const [v, setV] = useState({ inArrivo: 0, problemi: 0, ritardo: 0, avviso: 0 });
     useEffect(() => {
-        if (!userId) { setV({ inArrivo: 0, problemi: 0 }); return; }
+        if (!userId) { setV({ inArrivo: 0, problemi: 0, ritardo: 0, avviso: 0 }); return; }
         let vivo = true;
         const load = async () => {
             try {
                 const r = await fetch("/api/magazzino/avvisi", { cache: "no-store" }).then((x) => x.json());
-                if (vivo && r?.ok) setV({ inArrivo: Number(r.inArrivo || 0), problemi: Number(r.problemi || 0) });
+                if (vivo && r?.ok) setV({
+                    inArrivo: Number(r.inArrivo || 0), problemi: Number(r.problemi || 0),
+                    ritardo: Number(r.ritardo || 0), avviso: Number(r.avviso || 0),
+                });
             } catch { /* pallino best-effort */ }
         };
         load();
@@ -441,11 +444,22 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                                 apro Magazzino lo vedo che c'è un pallino rosso che
                                                 bipa»). Sull'hub non si scrive il numero — lo si
                                                 legge entrando — si dice solo CHE c'è. */}
-                                            {group.label === "Magazzino" && mag.problemi > 0 && (
-                                                <span title={`${mag.problemi} trasferiment${mag.problemi === 1 ? "o" : "i"} con un problema`}
+                                            {/* UN PALLINO SOLO, quello che pesa di più: rosso se
+                                                c'è un problema o un ritardo oltre i termini, giallo
+                                                se si sta per sforare, viola se sta solo arrivando
+                                                roba. Tre pallini in fila sull'hub sarebbero tre
+                                                cose da decifrare invece di una da guardare. */}
+                                            {group.label === "Magazzino" && (mag.problemi + mag.ritardo) > 0 && (
+                                                <span title={mag.ritardo > 0
+                                                    ? `${mag.ritardo} trasferiment${mag.ritardo === 1 ? "o" : "i"} oltre i termini: sta maturando il malus`
+                                                    : `${mag.problemi} trasferiment${mag.problemi === 1 ? "o" : "i"} con un problema`}
                                                     className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,.9)]" />
                                             )}
-                                            {group.label === "Magazzino" && mag.problemi === 0 && mag.inArrivo > 0 && (
+                                            {group.label === "Magazzino" && (mag.problemi + mag.ritardo) === 0 && mag.avviso > 0 && (
+                                                <span title={`${mag.avviso} trasferiment${mag.avviso === 1 ? "o" : "i"} da accettare entro pochi giorni`}
+                                                    className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,.9)]" />
+                                            )}
+                                            {group.label === "Magazzino" && (mag.problemi + mag.ritardo + mag.avviso) === 0 && mag.inArrivo > 0 && (
                                                 <span title={`${mag.inArrivo} in arrivo da prendere in carico`}
                                                     className="w-2 h-2 rounded-full bg-violet-500" />
                                             )}
@@ -474,13 +488,26 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                                         {/* SULLA VOCE IL NUMERO, perché lì la domanda è
                                                             «quanti»: il rosso lampeggia e sta prima,
                                                             perché un problema batte un promemoria. */}
+                                                        {/* IL RITARDO PRIMA DEL PROBLEMA: costa soldi ogni
+                                                            giorno che passa, e sta al negozio che deve
+                                                            accettare. Il giallo esce solo se non c'è già
+                                                            un rosso: due allarmi accesi insieme sono due
+                                                            allarmi che nessuno guarda. */}
+                                                        {child.href === "/magazzino?tab=trasferimenti" && mag.ritardo > 0 && (
+                                                            <span title={`${mag.ritardo} oltre i 6 giorni lavorativi: sta maturando 5 € al giorno`}
+                                                                className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">{mag.ritardo}</span>
+                                                        )}
+                                                        {child.href === "/magazzino?tab=trasferimenti" && mag.ritardo === 0 && mag.avviso > 0 && (
+                                                            <span title={`${mag.avviso} da accettare entro pochi giorni, poi scatta il malus`}
+                                                                className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-black text-[10px] font-black flex items-center justify-center animate-pulse">{mag.avviso}</span>
+                                                        )}
                                                         {child.href === "/magazzino?tab=trasferimenti" && mag.problemi > 0 && (
                                                             <span title={`${mag.problemi} trasferiment${mag.problemi === 1 ? "o" : "i"} con un problema segnalato`}
-                                                                className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">{mag.problemi}</span>
+                                                                className={cn("min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse", (mag.ritardo || mag.avviso) ? "ml-1" : "ml-auto")}>🚩{mag.problemi}</span>
                                                         )}
                                                         {child.href === "/magazzino?tab=trasferimenti" && mag.inArrivo > 0 && (
                                                             <span title={`${mag.inArrivo} in arrivo: da prendere in carico`}
-                                                                className={cn("min-w-[18px] h-[18px] px-1 rounded-full bg-violet-500 text-white text-[10px] font-bold flex items-center justify-center", mag.problemi > 0 ? "ml-1" : "ml-auto")}>{mag.inArrivo}</span>
+                                                                className={cn("min-w-[18px] h-[18px] px-1 rounded-full bg-violet-500 text-white text-[10px] font-bold flex items-center justify-center", (mag.problemi || mag.ritardo || mag.avviso) ? "ml-1" : "ml-auto")}>{mag.inArrivo}</span>
                                                         )}
                                                         {child.href === "/collaboratori?tab=ferie" && feriePendenti > 0 && (
                                                             <span title={`${feriePendenti} richieste ferie in attesa`} className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center animate-pulse">{feriePendenti}</span>

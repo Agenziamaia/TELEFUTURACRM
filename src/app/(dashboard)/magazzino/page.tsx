@@ -2551,12 +2551,56 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
         if (!negoziDoveLavoro.length) return [];
         return senzaUfficio(negozi.filter(n => negoziDoveLavoro.some(m => stessoMagazzino(n, m))));
     }, [seesAll, negozi, negoziDoveLavoro, puoCaricare]);
+    /* I GIORNI LAVORATIVI VERI, e il patto che li governa. Li conta il
+       database, che è l'unico a sapere quali negozi aprono la domenica e quali
+       sono i festivi — e sono gli STESSI che fanno maturare il malus. Una
+       stima fatta a schermo che diverge dal conto è un numero che litiga col
+       portafoglio delle persone. */
+    const [giorniLav, setGiorniLav] = useState<Record<string, number>>({});
+    const [patto, setPatto] = useState<{ giorni_avviso: number; giorni_max: number; malus_giorno: number; decorrenza: string | null } | null>(null);
+    /* quanto è già maturato, dal registro degli episodi: la stessa cifra che
+       finirà nella partita delle persone */
+    const [malusMaturato, setMalusMaturato] = useState(0);
+    useEffect(() => {
+        let vivo = true;
+        supabase.from("mag_ddt_malus").select("importo, negozio").eq("stato", "in_corso").eq("eliminato", false)
+            .then(({ data }) => {
+                if (!vivo) return;
+                const righe = (data ?? []) as { importo: number; negozio: string }[];
+                /* solo i negozi che sto guardando: il numero sotto un riquadro
+                   deve parlare della stessa merce che il riquadro conta */
+                const suoi = miei.length ? righe.filter(r => miei.some(m => stessoMagazzino(r.negozio, m))) : righe;
+                setMalusMaturato(suoi.reduce((t, r) => t + (Number(r.importo) || 0), 0));
+            });
+        return () => { vivo = false; };
+    }, [ddt, miei]);
+    useEffect(() => {
+        supabase.from("mag_trasferimenti_regole").select("giorni_avviso, giorni_max, malus_giorno, decorrenza").eq("id", 1)
+            .maybeSingle().then(({ data }) => setPatto(data as typeof patto));
+    }, []);
+    useEffect(() => {
+        const dec = patto?.decorrenza;
+        if (!dec) return;
+        const vivi = ddt.filter(d => ["in_transito", "parziale"].includes(d.stato));
+        if (!vivi.length) { setGiorniLav({}); return; }
+        let vivo = true;
+        supabase.rpc("mag_giorni_lavorativi_molti", {
+            p_righe: vivi.map((d, i) => ({ i, negozio: d.a_negozio, da: d.creato_il.slice(0, 10) > dec ? d.creato_il.slice(0, 10) : dec })),
+        }).then(({ data }) => {
+            if (!vivo) return;
+            const m: Record<string, number> = {};
+            ((data ?? []) as { i: number; n: number }[]).forEach(x => { const d = vivi[x.i]; if (d) m[d.id] = x.n; });
+            setGiorniLav(m);
+        });
+        return () => { vivo = false; };
+    }, [ddt, patto?.decorrenza]);
+
     const conteggi = useMemo(() => {
         const ora = Date.now();
         const out = {} as Record<Situazione, number>;
-        SITUAZIONI.forEach(s => { out[s.id] = filtrati.filter(d => nellaSituazione(s.id, d, righeDi(d.id), miei, ora)).length; });
+        SITUAZIONI.forEach(s => { out[s.id] = filtrati.filter(d => nellaSituazione(s.id, d, righeDi(d.id), miei, ora, giorniLav, patto?.giorni_max ?? 6)).length; });
         return out;
-    }, [filtrati, righeDi, miei]);
+    }, [filtrati, righeDi, miei, giorniLav, patto?.giorni_max]);
 
     /* IL SECONDO NUMERO DI OGNI RIQUADRO. Il grande dice quanti DOCUMENTI
        vedrai premendolo; questo dice quanta merce c'è dietro — che è la
@@ -2568,14 +2612,14 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
         SITUAZIONI.forEach(s => {
             out[s.id] = filtrati.reduce((t, d) => {
                 const rs = righeDi(d.id);
-                if (!nellaSituazione(s.id, d, rs, miei, ora)) return t;
+                if (!nellaSituazione(s.id, d, rs, miei, ora, giorniLav, patto?.giorni_max ?? 6)) return t;
                 return t + (s.id === "differenze"
                     ? rs.filter(r => r.stato === "mancante").length
                     : rs.reduce((n, r) => n + pezziDi(r), 0));
             }, 0);
         });
         return out;
-    }, [filtrati, righeDi, miei]);
+    }, [filtrati, righeDi, miei, giorniLav, patto?.giorni_max]);
 
     /* LA TINTA DICE SE È UNA COSA DA FARE O UNA DA SAPERE: rosso quello che
        chiama, ambra quello che aspetta, indaco quello che è solo un elenco. */
@@ -2588,8 +2632,8 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
 
     const visibili = useMemo(() => {
         const ora = Date.now();
-        return filtrati.filter(d => nellaSituazione(situazione, d, righeDi(d.id), miei, ora));
-    }, [filtrati, situazione, righeDi, miei]);
+        return filtrati.filter(d => nellaSituazione(situazione, d, righeDi(d.id), miei, ora, giorniLav, patto?.giorni_max ?? 6));
+    }, [filtrati, situazione, righeDi, miei, giorniLav, patto?.giorni_max]);
 
     const merce: RigaWithDdt[] = useMemo(() => {
         const q = cerca.trim().toLowerCase();
@@ -2931,7 +2975,16 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                         const p = pezziSituazione[s.id] ?? 0;
                         /* la riga piccola dice sempre due cose: cosa conta il
                            numero grande, e il secondo numero che serve davvero */
-                        const sotto = s.id === "da_fatturare"
+                        const sotto = s.id === "fermi"
+                            /* IL RIQUADRO DICE I SOLDI VERI, non un calcolo fatto
+                               qui. Il malus è 5 € al giorno A TESTA, e quante
+                               teste siano dipende dal negozio: dove c'è uno store
+                               manager è una, dove non c'è sono quelli che c'erano.
+                               Moltiplicare i documenti per cinque scriverebbe un
+                               numero sbagliato accanto a una multa vera: si legge
+                               quello che il registro ha davvero maturato. */
+                            ? `documenti · ${malusMaturato.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € maturati`
+                            : s.id === "da_fatturare"
                             ? `cession${n === 1 ? "e" : "i"} · da emettere`
                             /* «righe aperte» finiva coi puntini in una tessera da
                                136px: la parola che porta l'informazione è «righe» */
