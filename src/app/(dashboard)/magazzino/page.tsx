@@ -1150,73 +1150,123 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     return (
         <div className="space-y-4">
             <div className="rvBox">
-                {/* I DUE VALORI IN ALTO A DESTRA (Luca 01/09), come negli Usati:
-                    non sono filtri e non si premono, e fuori dalla griglia non
-                    devono più stare nella sagoma di un conteggio — che è il
-                    motivo per cui uscivano dal bordo e disallineavano la fila. */}
-                {/* ⭐ IL CARICO STA QUI (Luca 03/09): «attualmente è posizionata un
-                    po' per errore dentro i trasferimenti, invece deve stare dentro
-                    Giacenze con un pulsante in alto». Ha ragione anche nella
-                    sostanza: caricare è un fatto delle giacenze — la merce entra
-                    a scaffale — mentre i trasferimenti sono merce che si sposta
-                    fra due posti che ce l'hanno già. */}
-                {puoCaricare && (
-                    <div className="rvPillRow">
-                        <button onClick={() => setApriCarico(v => !v)}
-                            className={cn("rvPill", apriCarico && "rvPill-on")}>
-                            <PackagePlus size={15} className="inline-block align-[-3px] mr-1.5" /> Carico merce
+                {/* ═══ LA TESTATA: IL NOME A SINISTRA, LE AZIONI A DESTRA ═══
+                    (riordino 03/09, Luca: «i filtri come i bottoni sono
+                    posizionati male e creano spazi vuoti e poco organizzato»).
+                    Qui dentro ci sono tre AZIONI e non tre filtri — si carica,
+                    si azzera, si esporta — e prima erano sparpagliate in tre
+                    posti diversi: «Carico merce» su una riga tutta sua sopra il
+                    titolo (862px di vuoto accanto), Reset ed Excel in coda ai
+                    filtri fini, dove a 1366 non ci stavano e cadevano su una
+                    seconda riga vuota per 833px. Messe insieme in cima, il
+                    titolo smette di stare da solo su una riga da 1014 e la riga
+                    dei filtri fini si chiude in una riga sola.
+                    ⭐ IL CARICO STA IN GIACENZE (Luca 03/09): «attualmente è
+                    posizionata un po' per errore dentro i trasferimenti, invece
+                    deve stare dentro Giacenze con un pulsante in alto». Ha
+                    ragione anche nella sostanza: caricare è un fatto delle
+                    giacenze — la merce entra a scaffale — mentre i trasferimenti
+                    sono merce che si sposta fra due posti che ce l'hanno già. */}
+                <div className="rvBoxTop rvBoxTop-c">
+                    <div className="rvBoxT">🔎 Cosa guardo</div>
+                    <div className="rvAzioniTop">
+                        {puoCaricare && (
+                            <button onClick={() => setApriCarico(v => !v)}
+                                className={cn("rvPill rvPill-sm", apriCarico && "rvPill-on")}>
+                                <PackagePlus size={14} className="inline-block align-[-3px] mr-1.5" /> Carico merce
+                            </button>
+                        )}
+                        <button onClick={azzeraFiltri} className="rvPill rvPill-sm"
+                            title="Rimette tutto com'è entrando: i miei negozi, disponibili e in arrivo">
+                            ↺ Reset
+                        </button>
+                        <button onClick={esporta} disabled={vistaVenduto ? !vendutiInCategoria.length : vistaTrasf ? !inViaggioInCategoria?.length : !righe.length} className="rvAzione rvAzione-sm">
+                            <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                         </button>
                     </div>
-                )}
+                </div>
                 {apriCarico && puoCaricare && (
                     <CaricoMerce negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
                         utente={utente} dopo={ricarica} chiudi={() => setApriCarico(false)} />
                 )}
 
-                <div className="rvBoxTop">
-                    <div className="rvBoxT">🔎 Cosa guardo</div>
-                    <div className="rvValori">
-                        {(vedeValori ? QUADRI.filter(q => q.euro) : []).map(q => (
-                            <div key={q.id} className={cn("rvValore", q.tinta)} title={q.spiega}>
-                                <em>{eurTondo(q.id === "val_vendita" ? conteggi.val_vendita : conteggi.val_acquisto)}</em>
-                                <b>{q.icona} {q.et}</b>
-                                <small>su {conteggi.righe.disponibile.toLocaleString("it-IT")} articoli a scaffale</small>
-                            </div>
-                        ))}
+                {/* ═══ DOVE GUARDO · QUANTO VALE ═════════════════════════
+                    I DUE VALORI HANNO UN POSTO, NON UN ANGOLO (riordino 03/09).
+                    Erano appesi in alto a destra, dall'altra parte del titolo,
+                    e sembravano capitati lì: 464px di vuoto sotto di loro a
+                    1366, mille a 1920. Ma non sono un ornamento — dicono quanto
+                    vale la merce NEI PUNTI VENDITA CHE STAI GUARDANDO, cioè
+                    sono la risposta alla domanda della riga: si mettono in
+                    fondo alla riga che li governa, col loro nome sopra. Il
+                    vuoto si chiude e i due numeri acquistano un perché.
+                    NON entrano nella griglia dei riquadri: fuori di lì non
+                    devono più stare nella sagoma di un conteggio, che è il
+                    motivo per cui il 01/09 uscivano dal bordo (Luca). */}
+                <div className="rvBarra rvBarra-t mt-3">
+                    <div className="rvCampo rvCampo-gruppo"><span className="rvLab">Dove guardo</span>
+                        <div className="rvBarra rvBarra-c">
+                        {/* «I MIEI» sono il mio negozio E il suo gemello (Luca 01/09):
+                            chi sta a Magliana ha un magazzino solo diviso su due
+                            insegne, e vederne metà non serve a niente. È già scelto
+                            all'ingresso: la domanda normale è «cos'ho qui». */}
+                        {mieiNegozi.length > 0 && (
+                            <button onClick={() => setScelti(mieiNegozi)}
+                                className={cn("rvPill rvPill-sm", sonoIMiei && "rvPill-on")}>
+                                🏪 I miei{mieiNegozi.length > 1 ? <span className="rvLabX"> · {mieiNegozi.length} insegne</span> : ""}{sonoIMiei ? " ✓" : ""}
+                            </button>
+                        )}
+                        <button onClick={() => setScelti([])} className={cn("rvPill rvPill-sm", !scelti.length && "rvPill-on")}>🌐 Tutti i negozi{!scelti.length ? " ✓" : ""}</button>
+                        {/* PIÙ NEGOZI INSIEME (Luca 31/08). Il primo tentativo usava
+                            `SelectOpzioni` — una tendina a scelta SINGOLA — passandole
+                            `value=""` e aggiungendo la voce presa a una lista fuori.
+                            Non funzionava: il componente si tiene il testo scelto, e
+                            siccome `value` restava "" e non cambiava mai, l'effetto
+                            che lo azzera non ripartiva — dopo la prima scelta il campo
+                            restava pieno e sembrava bloccato. In questo stesso file
+                            c'era GIÀ `SelectMulti`, con le spunte e la voce «Tutti»:
+                            bastava usarlo.
+                            La className SOSTITUISCE il default (non si fondono): va
+                            addosso all'<input>, quindi `.rvIn` e basta. */}
+                        {/* LA TENDINA SI ALLARGA CON LA RIGA: a taglia fissa (244px)
+                            finiva a 549 su una riga da 1014 e lasciava 464px di
+                            niente — il vuoto che Luca vede per primo. */}
+                        <div className="rvCampo rvCampo-el-lg"><SelectMulti className="rvIn"
+                            values={scelti} onChange={setScelti} opzioni={negozi}
+                            maxVoci={30} tuttiLabel="🌐 Tutti i negozi"
+                            placeholder="Scegli i punti vendita — vuoto = tutti" /></div>
+                        {/* le pastiglie di quello che hai scelto le disegna già
+                            `SelectMulti`: rifarle qui le raddoppiava, con due
+                            grafiche diverse (revisore 31/08) */}
+                        </div>
                     </div>
-                </div>
-                {/* DOVE GUARDO — il mio negozio è già scelto */}
-                <div className="rvLab">Dove guardo</div>
-                <div className="rvBarra rvBarra-c">
-                    {/* «I MIEI» sono il mio negozio E il suo gemello (Luca 01/09):
-                        chi sta a Magliana ha un magazzino solo diviso su due
-                        insegne, e vederne metà non serve a niente. È già scelto
-                        all'ingresso: la domanda normale è «cos'ho qui». */}
-                    {mieiNegozi.length > 0 && (
-                        <button onClick={() => setScelti(mieiNegozi)}
-                            className={cn("rvPill rvPill-sm", sonoIMiei && "rvPill-on")}>
-                            🏪 I miei{mieiNegozi.length > 1 ? <span className="rvLabX"> · {mieiNegozi.length} insegne</span> : ""}{sonoIMiei ? " ✓" : ""}
-                        </button>
+                    {/* QUANTO VALE — non si preme, non è un filtro. Ogni riquadro
+                        si porta dietro la SUA esclusione nella riga piccola: il
+                        listino dice quanti pezzi non hanno prezzo, il costo
+                        quanti non hanno costo. Prima stava tutto in fondo a un
+                        paragrafo di cinque righe, lontano dai numeri che
+                        qualifica — e un'avvertenza lontana dal numero non la
+                        legge nessuno. */}
+                    {vedeValori && (
+                        <div className="rvCampo"><span className="rvLab">Quanto vale</span>
+                            <div className="rvValori rvValori-uno">
+                                {QUADRI.filter(q => q.euro).map(q => {
+                                    const listino = q.id === "val_vendita";
+                                    const senza = listino ? senzaPrezzo : senzaCosto;
+                                    return (
+                                        <div key={q.id} className={cn("rvValore", q.tinta)}
+                                            title={`${q.spiega}${senza ? `. Fuori dal conto ${senza} ${senza === 1 ? "pezzo" : "pezzi"} senza ${listino ? "prezzo di listino" : "costo d'acquisto"}.` : ""}`}>
+                                            <em>{eurTondo(listino ? conteggi.val_vendita : conteggi.val_acquisto)}</em>
+                                            <b>{q.icona} {q.et}</b>
+                                            <small>
+                                                {conteggi.righe.disponibile.toLocaleString("it-IT")} a scaffale
+                                                {senza ? ` · ${senza.toLocaleString("it-IT")} senza ${listino ? "prezzo" : "costo"}` : ""}
+                                            </small>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     )}
-                    <button onClick={() => setScelti([])} className={cn("rvPill rvPill-sm", !scelti.length && "rvPill-on")}>🌐 Tutti i negozi{!scelti.length ? " ✓" : ""}</button>
-                    {/* PIÙ NEGOZI INSIEME (Luca 31/08). Il primo tentativo usava
-                        `SelectOpzioni` — una tendina a scelta SINGOLA — passandole
-                        `value=""` e aggiungendo la voce presa a una lista fuori.
-                        Non funzionava: il componente si tiene il testo scelto, e
-                        siccome `value` restava "" e non cambiava mai, l'effetto
-                        che lo azzera non ripartiva — dopo la prima scelta il campo
-                        restava pieno e sembrava bloccato. In questo stesso file
-                        c'era GIÀ `SelectMulti`, con le spunte e la voce «Tutti»:
-                        bastava usarlo.
-                        La className SOSTITUISCE il default (non si fondono): va
-                        addosso all'<input>, quindi `.rvIn` e basta. */}
-                    <div className="rvCampo rvCampo-lg"><SelectMulti className="rvIn"
-                        values={scelti} onChange={setScelti} opzioni={negozi}
-                        maxVoci={30} tuttiLabel="🌐 Tutti i negozi"
-                        placeholder="Scegli i punti vendita — vuoto = tutti" /></div>
-                    {/* le pastiglie di quello che hai scelto le disegna già
-                        `SelectMulti`: rifarle qui le raddoppiava, con due
-                        grafiche diverse (revisore 31/08) */}
                 </div>
                 {/* ── OGNI ASSE COL SUO NOME (revisore design 31/08) ──
                     Erano cinque pastiglie identiche in fila, tre accese,
@@ -1246,7 +1296,11 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     dettaglio; prima «Totale 1667 articoli» e «Disponibili
                     12.546 pezzi» stavano affiancati come se fossero un
                     rapporto, e non lo erano. */}
-                <div className="rvCampo rvCampo-flex mt-3"><span className="rvLab">Cosa c&apos;è in magazzino</span>
+                {/* `rvGriglia7`: i riquadri sono sette e quando c'è lo spazio
+                    stanno in fila. Con la sola `auto-fill` da 146px, a 1366 col
+                    menù aperto, uscivano SEI colonne e il settimo restava solo
+                    su una riga sua con 853px di vuoto accanto (misurato). */}
+                <div className="rvCampo rvCampo-flex rvGriglia7 mt-3"><span className="rvLab">Cosa c&apos;è in magazzino</span>
                     <div className="rvRapidoG rvRapidoG-kpi">
                         {QUADRI.filter(q => !q.euro).map(q => {
                             const on = quadroAcceso(q.id);
@@ -1260,7 +1314,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                             // la riga piccola: sempre «unità · secondo numero»
                             const sotto = euro ? `su ${conteggi.righe.disponibile.toLocaleString("it-IT")} articoli`
                                 : q.id === "trasferiti" ? `${q.unita} · ${new Set((inViaggioInCategoria ?? []).map(r => r.id)).size} documenti`
-                                    : q.id === "venduto" ? `${q.unita} · nel periodo scelto`
+                                    /* «nel periodo» e non «nel periodo scelto»: in
+                                       fila per sette il riquadro viene 136px e la
+                                       stringa lunga finiva coi puntini — e il
+                                       periodo lo dice già il campo delle date qui
+                                       sotto, che compare proprio premendo questo. */
+                                    : q.id === "venduto" ? `${q.unita} · nel periodo`
                                         : q.id === "sotto_zero" ? `${q.unita} · ${conteggi.pezzi.sotto_zero.toLocaleString("it-IT")} mancanti`
                                             : `${q.unita} · ${conteggi.pezzi[q.id as FiltroId].toLocaleString("it-IT")} pezzi`;
                             const cls = cn("rvRapido", q.tinta, euro && "rvRapido-statico",
@@ -1273,24 +1332,44 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                     <small>{sotto}</small>
                                 </>
                             );
+                            /* IL TITOLO SI PORTA DIETRO COSA SUCCEDE PREMENDOLO
+                               (riordino 03/09). Prima stava nel paragrafo di
+                               cinque righe sotto la fila, e un'istruzione lontana
+                               dal pulsante che governa non la legge nessuno: qui
+                               è addosso all'oggetto, e la fila torna a essere
+                               sette riquadri invece di sette riquadri più un muro
+                               di testo. */
+                            const spiega = q.vista
+                                ? `${q.spiega}. Premilo per aprire la sua lista, con le sue colonne e il suo Excel; premilo di nuovo per tornare qui.`
+                                : `${q.spiega}. Premilo per vedere solo questi: il numero grande dice quante righe vedrai.`;
                             return euro
-                                ? <div key={q.id} title={q.spiega} className={cls}>{dentro}</div>
-                                : <button key={q.id} type="button" onClick={() => premiQuadro(q.id)} title={q.spiega} className={cls}>{dentro}</button>;
+                                ? <div key={q.id} title={spiega} className={cls}>{dentro}</div>
+                                : <button key={q.id} type="button" onClick={() => premiQuadro(q.id)} title={spiega} className={cls}>{dentro}</button>;
                         })}
                     </div>
+                    {/* ═══ UNA RIGA, NON CINQUE (riordino 03/09) ═══════════
+                        Qui c'era un paragrafo di cinque righe fitte — 48px a
+                        1366, 64px a 1024 — che diceva quattro cose vere e che
+                        nessuno leggeva. Le quattro cose non si buttano: si
+                        mettono DOVE SERVONO.
+                          · «premilo per vedere solo questi» e «il numero grande
+                            dice quante righe» → nel `title` di ogni riquadro,
+                            addosso al pulsante che governano;
+                          · «i due col filetto aprono la loro lista, premili di
+                            nuovo per tornare qui» → nel `title` di quei due, più
+                            il richiamo qui sotto perché la freccia ↗ va spiegata
+                            una volta a chi non l'ha mai vista;
+                          · «i riquadri e le categorie si restringono a vicenda»
+                            → resta qui: non appartiene a nessuna delle due file,
+                            parla del rapporto FRA le due (revisione 01/09);
+                          · «i due valori escludono N pezzi senza prezzo» → nella
+                            riga piccola di ciascun valore, sotto il numero che
+                            qualifica.
+                        Restano 16px al posto di 48, e ogni pezzo sta vicino alla
+                        cosa di cui parla. */}
                     <div className="rvHint">
-                        Premi un riquadro per vedere solo quello; il numero grande dice quante righe vedrai.
-                        I due col filetto e la freccia ↗ non filtrano questa tabella: aprono la loro lista,
-                        con le sue colonne e il suo Excel — premili di nuovo per tornare qui.
-                        {/* CHE RAPPORTO C'È FRA LE DUE FILE DI NUMERI (revisione design
-                            01/09): i riquadri contano dentro la categoria scelta, le
-                            pastiglie della categoria contano dentro il riquadro acceso.
-                            Premendo una qualsiasi si muovono i numeri dell'altra fila, e
-                            senza una riga che lo dica «cosa filtra cosa» resta una
-                            domanda aperta. */}
-                        {" "}I riquadri e le categorie qui sotto si restringono a vicenda: ognuno conta dentro
-                        la scelta dell&apos;altro.
-                        {senzaPrezzo > 0 || senzaCosto > 0 ? ` I due valori escludono ${senzaPrezzo ? `${senzaPrezzo} pezzi senza prezzo di listino` : ""}${senzaPrezzo && senzaCosto ? " e " : ""}${senzaCosto ? `${senzaCosto} senza costo d'acquisto` : ""}.` : ""}
+                        Il numero grande dice quante righe vedrai premendo il riquadro; i due con la freccia ↗
+                        non filtrano la tabella, aprono la loro lista. Riquadri e categorie si restringono a vicenda.
                     </div>
                 </div>
                 {/* ═══ LE CATEGORIE ═══════════════════════════════════════
@@ -1319,93 +1398,146 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     misurava 1,11:1 contro il fondo nel tema chiaro, cioè non
                     si vedeva — e riscriveva pure il bordo dell'hover. Il «0»
                     nel chip lo dice già, come in Articoli. */}
-                <div className="rvCampo mt-3"><span className="rvLab">Categoria</span>
-                    <div className="rvPillRow">
-                        <button onClick={() => setFamiglia("")}
-                            className={cn("rvPill", !famiglia && "rvPill-on")}>
-                            Tutte <b className="rvPillN">{perCategoria.tutte.toLocaleString("it-IT")}</b></button>
-                        {[...FAMIGLIE, ALTRO].map(f => {
-                            /* LA CATEGORIA SCELTA RESTA SEMPRE A SCHERMO, anche se
-                               con questi filtri non ha più niente dentro: se
-                               sparisse, il filtro resterebbe acceso su una
-                               tabella vuota e la sua pastiglia — l'unico modo di
-                               spegnerlo — non ci sarebbe più. */
-                            if (!categorieVive.has(f.id) && famiglia !== f.id) return null;   // in magazzino non c'è proprio
-                            const n = perCategoria.m[f.id] || 0;
-                            return (
-                                <button key={f.id} onClick={() => setFamiglia(x => x === f.id ? "" : f.id)}
-                                    className={cn("rvPill", famiglia === f.id && "rvPill-on")}>
-                                    {f.icona} {f.nome}<b className="rvPillN">{n.toLocaleString("it-IT")}</b></button>
-                            );
-                        })}
+                {/* ═══ IL SECONDO PIANO ══════════════════════════════════
+                    (riordino 03/09) Fin qui i due assi che dicono COSA c'è
+                    nella tabella: in quali negozi guardo, e in che stato è la
+                    merce. Da qui in giù si restringe soltanto — la categoria e
+                    i quattro campi — ed erano quattro blocchi etichettati uno
+                    sotto l'altro, tutti col medesimo peso, senza che niente
+                    dicesse quale domanda viene prima.
+                    Il segnale è il NOME della fascia, non un filo: un filo su
+                    questi fondi si misura fra 1,3 e 1,9:1, cioè non si vede, ed
+                    è l'errore già pagato il 31/08 col divisorio a 1,38:1 fra le
+                    pastiglie. Sotto la fascia le etichette restano tutte —
+                    nessun asse perde il suo nome — ma si leggono un gradino più
+                    in basso, perché il gradino c'è e ha un nome. */}
+                <div className="rvSottoFiltri">
+                    <div className="rvFascia">
+                        <span className="rvFascia-t">Restringi ancora</span>
+                        <span className="rvFascia-f" />
                     </div>
-                </div>
-                {/* I FILTRI FINI */}
-                <div className="rvBarra mt-3">
-                    <label className="rvCampo rvCampo-lg"><span className="rvLab">Cerca</span>
-                        <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="codice, descrizione o IMEI — puoi spararlo col lettore"
-                            className="rvIn" /></label>
-                    {/* IL SERIALE CHE A MAGAZZINO NON C'È PIÙ (revisore 31/08).
-                        La scheda «Ricerca seriale» è stata tolta, e con lei
-                        l'unico modo di cercare un pezzo che in `mag_unita` non
-                        sta: 219 telefoni di permuta e 468 vendite con un IMEI
-                        che il magazzino non ha mai visto — più i pezzi
-                        cestinati, che la griglia giustamente non mostra ma la
-                        cui storia esiste. In tutto 626 seriali che ieri si
-                        trovavano e stamattina no.
-                        La scheda della storia funziona già su un seriale che
-                        non è a magazzino: mancava solo come chiamarla. */}
-                    {cerca.trim().replace(/[\s./-]/g, "").length >= 8 && (
-                        <button onClick={() => setSeriale(cerca.trim().replace(/[\s./-]/g, ""))}
-                            className="rvPill rvPill-sm" title="Cerca questo seriale ovunque: magazzino, permute, vendite">
-                            🕰 Storico</button>
-                    )}
-                    <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
-                        <SelectMulti className="rvIn"
-                            values={operatori} onChange={setOperatori}
-                            opzioni={[...operatoriPresenti, "(nessuno)"]}
-                            maxVoci={20} tuttiLabel="Tutti gli operatori"
-                            placeholder="Tutti — scrivi per filtrare" /></div>
-                    <div className="rvCampo rvCampo-lg"><span className="rvLab">Azienda</span>
-                        <SelectOpzioni className="rvIn"
-                            value={azienda ? (nomiAzienda[azienda] || azienda) : ""}
-                            onChange={(v) => setAzienda(v ? (Object.keys(nomiAzienda).find(k => nomiAzienda[k] === v) || v) : "")}
-                            opzioni={aziende.map(a => nomiAzienda[a] || a)} placeholder="Tutte le società" /></div>
-                    {/* LA DATA CAMBIA MESTIERE COL FILTRO DELLO STATO (Luca
-                        31/08: «quel range di data diventa un range di data
-                        adattabile in virtù del filtro dello stato»). Sul
-                        venduto una fotografia a una data non vuol dire niente:
-                        quello che serve è «dal … al …». */}
-                    {vistaVenduto ? (
-                        <>
-                            {/* le due date e il loro azzeramento stanno INSIEME (revisore
-                                design 31/08): andando a capo, «✕ tutto» finiva da solo su
-                                una riga sua, staccato da quello che governa */}
-                            <div className="rvCampo rvCampo-lg"><span className="rvLab">Venduto dal … al</span>
-                                <div className="rvBarra rvBarra-c">
-                                    <input type="date" value={dal} onChange={e => setDal(e.target.value)} className="rvIn rvCampo-sm" />
-                                    <input type="date" value={al} onChange={e => setAl(e.target.value)} className="rvIn rvCampo-sm" />
-                                    {(dal || al) && <button onClick={() => { setDal(""); setAl(""); }} className="rvPill rvPill-sm"
-                                        title="Tutto il venduto, da sempre">✕ tutto</button>}
+                    <div className="rvCampo"><span className="rvLab">Categoria</span>
+                        <div className="rvPillRow">
+                            <button onClick={() => setFamiglia("")}
+                                className={cn("rvPill", !famiglia && "rvPill-on")}>
+                                Tutte <b className="rvPillN">{perCategoria.tutte.toLocaleString("it-IT")}</b></button>
+                            {[...FAMIGLIE, ALTRO].map(f => {
+                                /* LA CATEGORIA SCELTA RESTA SEMPRE A SCHERMO, anche se
+                                   con questi filtri non ha più niente dentro: se
+                                   sparisse, il filtro resterebbe acceso su una
+                                   tabella vuota e la sua pastiglia — l'unico modo di
+                                   spegnerlo — non ci sarebbe più. */
+                                if (!categorieVive.has(f.id) && famiglia !== f.id) return null;   // in magazzino non c'è proprio
+                                const n = perCategoria.m[f.id] || 0;
+                                return (
+                                    /* IL NOME BREVE, che è QUELLO CHE LA TABELLA GIÀ
+                                       SCRIVE nella colonna Categoria (riordino 03/09).
+                                       Non è una seconda lista: è la stessa `FAMIGLIE`,
+                                       stesse emoji, stesse voci — solo il campo
+                                       `breve` invece di `nome`, e il nome per esteso
+                                       nel `title`. Misurato: coi nomi lunghi le
+                                       pastiglie occupavano TRE file a 1366, l'ultima
+                                       con una sola pastiglia e 889px di vuoto accanto,
+                                       e quattro a 1024; col breve sono due file da sei
+                                       e tre da quattro. Niente si nasconde e niente si
+                                       rimpicciolisce: `rvPill-sm` qui è la trappola
+                                       che questo file documenta più sotto. */
+                                    <button key={f.id} onClick={() => setFamiglia(x => x === f.id ? "" : f.id)}
+                                        title={f.nome}
+                                        className={cn("rvPill", famiglia === f.id && "rvPill-on")}>
+                                        {f.icona} {f.breve}<b className="rvPillN">{n.toLocaleString("it-IT")}</b></button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    {/* ═══ I FILTRI FINI ═════════════════════════════════════
+                        LE TAGLIE FISSE LASCIAVANO UN BUCO (riordino 03/09, il
+                        difetto che Luca nomina per primo). 244+200+244+200 = 924px
+                        dentro una riga da 1014: 90px di avanzo a 1366 e 644 a 1920,
+                        e i 90 non bastavano ai due pulsanti in coda — che cadevano
+                        su una seconda riga vuota per 833px. Adesso i pulsanti stanno
+                        in cima, dove sono azioni fra le azioni, e i quattro campi
+                        sono elastici: la riga si chiude sempre da sola, misurato a
+                        zero di vuoto a 1366 e a 1920. */}
+                    <div className="rvBarra mt-3">
+                        <label className="rvCampo rvCampo-el-lg"><span className="rvLab">Cerca</span>
+                            <input value={cerca} onChange={e => setCerca(e.target.value)} placeholder="codice, descrizione o IMEI — puoi spararlo col lettore"
+                                className="rvIn" /></label>
+                        {/* IL SERIALE CHE A MAGAZZINO NON C'È PIÙ (revisore 31/08).
+                            La scheda «Ricerca seriale» è stata tolta, e con lei
+                            l'unico modo di cercare un pezzo che in `mag_unita` non
+                            sta: 219 telefoni di permuta e 468 vendite con un IMEI
+                            che il magazzino non ha mai visto — più i pezzi
+                            cestinati, che la griglia giustamente non mostra ma la
+                            cui storia esiste. In tutto 626 seriali che ieri si
+                            trovavano e stamattina no.
+                            La scheda della storia funziona già su un seriale che
+                            non è a magazzino: mancava solo come chiamarla. */}
+                        {cerca.trim().replace(/[\s./-]/g, "").length >= 8 && (
+                            <button onClick={() => setSeriale(cerca.trim().replace(/[\s./-]/g, ""))}
+                                className="rvPill rvPill-sm" title="Cerca questo seriale ovunque: magazzino, permute, vendite">
+                                🕰 Storico</button>
+                        )}
+                        <div className="rvCampo rvCampo-el"><span className="rvLab">Operatore</span>
+                            <SelectMulti className="rvIn"
+                                values={operatori} onChange={setOperatori}
+                                opzioni={[...operatoriPresenti, "(nessuno)"]}
+                                maxVoci={20} tuttiLabel="Tutti gli operatori"
+                                placeholder="Tutti — scrivi per filtrare" /></div>
+                        <div className="rvCampo rvCampo-el"><span className="rvLab">Azienda</span>
+                            <SelectOpzioni className="rvIn"
+                                value={azienda ? (nomiAzienda[azienda] || azienda) : ""}
+                                onChange={(v) => setAzienda(v ? (Object.keys(nomiAzienda).find(k => nomiAzienda[k] === v) || v) : "")}
+                                opzioni={aziende.map(a => nomiAzienda[a] || a)} placeholder="Tutte le società" /></div>
+                        {/* LA DATA CAMBIA MESTIERE COL FILTRO DELLO STATO (Luca
+                            31/08: «quel range di data diventa un range di data
+                            adattabile in virtù del filtro dello stato»). Sul
+                            venduto una fotografia a una data non vuol dire niente:
+                            quello che serve è «dal … al …». */}
+                        {vistaVenduto ? (
+                            <>
+                                {/* le due date e il loro azzeramento stanno INSIEME (revisore
+                                    design 31/08): andando a capo, «✕ tutto» finiva da solo su
+                                    una riga sua, staccato da quello che governa */}
+                                <div className="rvCampo rvCampo-el-lg"><span className="rvLab">Venduto dal … al</span>
+                                    <div className="rvBarra rvBarra-c">
+                                        <input type="date" value={dal} onChange={e => setDal(e.target.value)} className="rvIn rvCampo-sm" />
+                                        <input type="date" value={al} onChange={e => setAl(e.target.value)} className="rvIn rvCampo-sm" />
+                                        {(dal || al) && <button onClick={() => { setDal(""); setAl(""); }} className="rvPill rvPill-sm"
+                                            title="Tutto il venduto, da sempre">✕ tutto</button>}
+                                    </div>
                                 </div>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <label className="rvCampo rvCampo-md" title="Fotografia del magazzino a quella data: caricato entro la data e non ancora venduto">
-                                <span className="rvLab">Giacenza alla data</span>
-                                <input type="date" value={dataStorica} onChange={e => setDataStorica(e.target.value)} className="rvIn" /></label>
-                            {dataStorica && <button onClick={() => setDataStorica("")} className="rvPill rvPill-sm">✕ oggi</button>}
-                        </>
-                    )}
-                    <span className="rvSpazio" />
-                    <button onClick={azzeraFiltri} className="rvPill rvPill-sm"
-                        title="Rimette tutto com'è entrando: i miei negozi, disponibili e in arrivo">
-                        ↺ Reset
-                    </button>
-                    <button onClick={esporta} disabled={vistaVenduto ? !vendutiInCategoria.length : vistaTrasf ? !inViaggioInCategoria?.length : !righe.length} className="rvAzione rvAzione-sm">
-                        <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
-                    </button>
+                            </>
+                        ) : (
+                            <>
+                                {/* LA DATA E IL SUO AZZERAMENTO STANNO INSIEME, come
+                                    le due date del venduto qui sopra (revisore
+                                    design 31/08: «andando a capo, ✕ tutto finiva da
+                                    solo su una riga sua, staccato da quello che
+                                    governa»). Misurato col riordino: con «🕰 Storico»
+                                    a schermo la riga chiede 1037px su 1014 e, sciolti,
+                                    «✕ oggi» cadeva da solo su una seconda riga con
+                                    944px di vuoto accanto. Dentro un gruppo solo non
+                                    può più separarsi, a nessuna larghezza.
+                                    Il nome resta legato al campo con `htmlFor`: qui il
+                                    `<label>` non può più avvolgere l'input, perché si
+                                    porterebbe dentro anche il pulsante. */}
+                                <div className="rvCampo rvCampo-el" title="Fotografia del magazzino a quella data: caricato entro la data e non ancora venduto">
+                                    <label className="rvLab" htmlFor="giac-data">Giacenza alla data</label>
+                                    <div className="rvBarra rvBarra-c">
+                                        <input id="giac-data" type="date" value={dataStorica} onChange={e => setDataStorica(e.target.value)} className="rvIn rvCampo-flex" />
+                                        {dataStorica && <button onClick={() => setDataStorica("")} className="rvPill rvPill-sm">✕ oggi</button>}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                        {/* «↺ Reset» ed «Excel» sono saliti nella testata del
+                            riquadro: erano le due cose che il `rvSpazio` spingeva a
+                            destra dopo un buco di 644px, o che a 1366 finivano su
+                            una riga tutta loro. Con loro se n'è andato anche il
+                            `rvSpazio`: qui non c'è più niente da spingere via,
+                            perché i campi si allargano da soli. */}
+                    </div>
                 </div>
                 {/* la nota della fotografia sta DENTRO il ramo che la usa
                     (revisore design 31/08): nella vista del venduto restava a
