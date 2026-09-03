@@ -437,12 +437,39 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         });
         /* LE SOCIETÀ CHE POSSONO EMETTERE QUI comprendono i gemelli: a Magliana
            il registratore dell'altra insegna è a tre metri (Luca 31/08). */
-        supabase.from("pos_rt").select("negozio, azienda, ragione_sociale, is_default").then(({ data: tuttiR }) => {
+        Promise.all([
+            supabase.from("pos_rt").select("negozio, azienda, ragione_sociale, is_default"),
+            supabase.from("aziende").select("codice, ragione_sociale"),
+        ]).then(([{ data: tuttiR }, { data: soc }]) => {
+            /* IL NOME LEGALE, non quello scritto sul registratore. In `pos_rt`
+               la ragione sociale è quella che il negozio ha battuto quando ha
+               censito la cassa: ad Acilia dice «Telefutura (Custom) - Acilia»,
+               col NOME DEL NEGOZIO dentro. Ma qui si sta scegliendo la SOCIETÀ
+               che emette lo scontrino, e il negozio lo sai già — sei lì.
+               Luca 03/09: «deve esserci scritto Telefutura SRL Custom, basta,
+               senza Acilia».
+               Si toglie la coda col trattino, e se resta senza forma giuridica
+               gliela si rimette da `aziende`, che è dove sta scritta per
+               davvero. La famiglia del registratore — «(Custom)» — resta:
+               distingue due casse dentro lo stesso muro. */
+            const legale: Record<string, string> = {};
+            (soc || []).forEach((a: { codice?: string; ragione_sociale?: string }) => {
+                legale[String(a.codice)] = String(a.ragione_sociale || "");
+            });
+            const nomeCassa = (code: string, ragione: string) => {
+                const senzaCoda = String(ragione || "").split(/\s+-\s+/)[0].trim() || code;
+                if (/s\.?r\.?l|s\.?p\.?a/i.test(senzaCoda)) return senzaCoda;
+                const forma = (legale[code] || "").replace(/^\s*telefutura\s*2?\s*/i, "").trim() || "S.R.L.";
+                /* la forma va PRIMA della parentesi: «Telefutura S.R.L. (Custom)»,
+                   non «Telefutura (Custom) S.R.L.» */
+                const m = senzaCoda.match(/^(.*?)\s*(\([^)]*\))\s*$/);
+                return m ? `${m[1]} ${forma} ${m[2]}` : `${senzaCoda} ${forma}`;
+            };
             const rows = (tuttiR || []).filter((r: any) => stessoMagazzino(r.negozio, neg));
             const list = rows.map((r: any) => ({
                 code: r.azienda,
                 negozio: String(r.negozio),
-                label: (r.ragione_sociale || r.azienda) + (r.negozio !== neg ? ` · ${r.negozio}` : ""),
+                label: nomeCassa(String(r.azienda), String(r.ragione_sociale || "")) + (r.negozio !== neg ? ` · ${r.negozio}` : ""),
                 isDef: !!r.is_default && r.negozio === neg,
                 // ha un registratore SUO qui, o è quello del negozio accanto?
                 propria: r.negozio === neg,
@@ -1838,8 +1865,10 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             (A Donna il riquadro del cassetto non esce comunque: i due
                             registratori li serve lo stesso agente, quindi il cassetto è
                             uno solo e non c'è niente da scegliere.) */}
+                        {/* i due riquadri distanziati il doppio (Luca 03/09): incollati
+                            si leggevano come un blocco solo, e sono due domande diverse */}
                         {(aziende.length > 1 || insegne.length > 1) && (
-                            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2.5">
+                            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-5">
                                 <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
                                     Dove va questa vendita
                                 </p>
@@ -1866,12 +1895,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                                     {aziende.map((a) => (
                                                         <button key={a.code} type="button" onClick={() => setAziendaSel(a.code)}
                                                             aria-pressed={aziendaSel === a.code}
-                                                            className={"flex-1 min-w-[150px] min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-bold transition "
+                                                            className={"relative flex-1 min-w-[170px] min-h-[46px] flex items-center justify-center px-9 py-2.5 rounded-xl border text-xs font-bold transition "
                                                                 + (aziendaSel === a.code
                                                                     ? "bg-sky-500/35 border-sky-300 text-white shadow-lg shadow-sky-900/30"
                                                                     : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white")}>
-                                                            <span aria-hidden="true">{aziendaSel === a.code ? "✅" : "🏢"}</span>
-                                                            <span className="truncate">{a.label}</span>
+                                                            {/* l'icona esce dal flusso: in mezzo alla riga spingeva la
+                                                                scritta a destra, e con due riquadri affiancati le due
+                                                                scritte finivano a due altezze diverse dal bordo */}
+                                                            <span className="absolute left-3" aria-hidden="true">{aziendaSel === a.code ? "✅" : "🏢"}</span>
+                                                            <span className="truncate text-center">{a.label}</span>
                                                         </button>
                                                     ))}
                                                 </div>
@@ -1898,23 +1930,23 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                         <div className="flex items-baseline gap-2">
                                             <span className="text-base leading-none shrink-0" aria-hidden="true">💶</span>
                                             <span className="text-xs font-extrabold uppercase tracking-wide text-emerald-100">
-                                                Il cassetto · dove entrano i contanti
+                                                La cash machine · dove entrano i contanti
                                             </span>
                                         </div>
                                         <p className="text-[11px] text-slate-300">
-                                            La <b className="text-emerald-100">cash machine</b> davanti a cui sta il cliente: prende {eur(multiSocieta ? contantiTotali : cashRounded)} e dà il resto.
+                                            La macchina davanti a cui sta il cliente: prende {eur(multiSocieta ? contantiTotali : cashRounded)} e dà il resto.
                                             <b className="text-emerald-100"> Non cambia chi emette lo scontrino.</b>
                                         </p>
                                         <div className="flex gap-2 flex-wrap">
                                             {insegne.map((n) => (
                                                 <button key={n} type="button" onClick={() => setCassaSel(n)}
                                                     aria-pressed={cassaSel === n}
-                                                    className={"flex-1 min-w-[150px] min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-bold transition "
+                                                    className={"relative flex-1 min-w-[170px] min-h-[46px] flex items-center justify-center px-9 py-2.5 rounded-xl border text-xs font-bold transition "
                                                         + (cassaSel === n
                                                             ? "bg-emerald-500/35 border-emerald-300 text-white shadow-lg shadow-emerald-900/30"
                                                             : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white")}>
-                                                    <span aria-hidden="true">{cassaSel === n ? "✅" : "💶"}</span>
-                                                    <span className="truncate">{n}</span>
+                                                    <span className="absolute left-3" aria-hidden="true">{cassaSel === n ? "✅" : "💶"}</span>
+                                                    <span className="truncate text-center">{n}</span>
                                                 </button>
                                             ))}
                                         </div>
