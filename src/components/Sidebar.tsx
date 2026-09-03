@@ -457,7 +457,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                             )}
                                             {group.label === "Magazzino" && (mag.problemi + mag.ritardo) === 0 && mag.avviso > 0 && (
                                                 <span title={`${mag.avviso} trasferiment${mag.avviso === 1 ? "o" : "i"} da accettare entro pochi giorni`}
-                                                    className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,.9)]" />
+                                                    className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,.9)]" />
                                             )}
                                             {group.label === "Magazzino" && (mag.problemi + mag.ritardo + mag.avviso) === 0 && mag.inArrivo > 0 && (
                                                 <span title={`${mag.inArrivo} in arrivo da prendere in carico`}
@@ -490,8 +490,8 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                                             perché un problema batte un promemoria. */}
                                                         {/* IL RITARDO PRIMA DEL PROBLEMA: costa soldi ogni
                                                             giorno che passa, e sta al negozio che deve
-                                                            accettare. Il giallo esce solo se non c'è già
-                                                            un rosso: due allarmi accesi insieme sono due
+                                                            accettare. L'arancione esce solo se non c'è
+                                                            già un rosso: due allarmi accesi insieme sono due
                                                             allarmi che nessuno guarda. */}
                                                         {child.href === "/magazzino?tab=trasferimenti" && mag.ritardo > 0 && (
                                                             <span title={`${mag.ritardo} oltre i 6 giorni lavorativi: sta maturando 5 € al giorno`}
@@ -499,7 +499,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                                         )}
                                                         {child.href === "/magazzino?tab=trasferimenti" && mag.ritardo === 0 && mag.avviso > 0 && (
                                                             <span title={`${mag.avviso} da accettare entro pochi giorni, poi scatta il malus`}
-                                                                className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-black text-[10px] font-black flex items-center justify-center animate-pulse">{mag.avviso}</span>
+                                                                className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">{mag.avviso}</span>
                                                         )}
                                                         {child.href === "/magazzino?tab=trasferimenti" && mag.problemi > 0 && (
                                                             <span title={`${mag.problemi} trasferiment${mag.problemi === 1 ? "o" : "i"} con un problema segnalato`}
