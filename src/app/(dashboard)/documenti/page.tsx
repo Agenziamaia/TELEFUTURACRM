@@ -505,8 +505,19 @@ function Documenti() {
         if (seesAll) return null;
         const out = new Set(negoziVisibili);
         negoziVisibili.forEach(v => tuttiNegozi.forEach(n => { if (stessoMagazzino(n, v)) out.add(n); }));
+        /* I NOMI OPERATIVI DEI GEMELLI. Da 02/09 `print_jobs.negozio` porta il nome
+           dell'AGENTE/cassa ("Collatina Multi", "Collatina W3"), non quello del
+           negozio: un login ristretto alla sola radice ("Collatina") costruiva
+           `.in("negozio", ["Collatina"])` e non trovava NESSUNO dei propri scontrini,
+           che sono archiviati sotto le casse (03/09: Collatina/Magliana/Acilia
+           vedevano 0 documenti dei propri, pur avendone fatti). `pos_rt` mappa
+           agente→negozio: aggiungiamo all'ambito i nomi-cassa dei negozi visibili,
+           così il filtro server li ritrova. La tendina resta pulita (vedi `negozi`). */
+        Object.entries(perAgente).forEach(([agente, info]) => {
+            if (negoziVisibili.some(v => stessoMagazzino(v, info.negozio) || stessoMagazzino(v, agente))) out.add(agente);
+        });
         return negozioInValues(Array.from(out));
-    }, [seesAll, negoziVisibili, tuttiNegozi]);
+    }, [seesAll, negoziVisibili, tuttiNegozi, perAgente]);
 
     /* ── LA LETTURA ──────────────────────────────────────────────────────────
        Per INTERVALLO DI DATE, non «gli ultimi N»: un negozio che cerca lo
@@ -579,11 +590,18 @@ function Documenti() {
     /* I NEGOZI CHE SI POSSONO SCEGLIERE sono quelli visibili all'utente, gemelli
        compresi: chi ne ha tre ne sceglie fra tre, l'amministrazione fra tutti. */
     const negozi = useMemo(() => {
-        const s = new Set<string>(seesAll ? tuttiNegozi : (ambito || []));
         /* NON si aggiungono più i negozi trovati sui documenti: quelli sono nomi
-           di computer, e finivano nella tendina accanto a quelli veri. */
+           di computer, e finivano nella tendina accanto a quelli veri. La tendina
+           mostra i NOMI VERI (anagrafica), non i nomi-cassa: l'espansione ai gemelli
+           delle casse vive solo in `ambito` (il filtro server), non qui. */
+        const s = new Set<string>();
+        if (seesAll) { tuttiNegozi.forEach(n => s.add(n)); }
+        else {
+            negoziVisibili.forEach(v => s.add(v));
+            negoziVisibili.forEach(v => tuttiNegozi.forEach(n => { if (stessoMagazzino(n, v)) s.add(n); }));
+        }
         return Array.from(s).filter(Boolean).sort();
-    }, [seesAll, tuttiNegozi, ambito, docs]);
+    }, [seesAll, tuttiNegozi, negoziVisibili]);
 
     /* «I MIEI NEGOZI» PER CHI STA IN UFFICIO NON ESISTE. Claudia e Sandra hanno
        `primary_store = "Ufficio"`: preselezionando il loro negozio, il filtro
