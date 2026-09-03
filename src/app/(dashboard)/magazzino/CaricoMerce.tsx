@@ -48,8 +48,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectOpzioni } from "@/components/SelectPersona";
-import { PackagePlus, Trash2, Plus, X } from "lucide-react";
+import { PackagePlus, Trash2, Plus, X, FileText } from "lucide-react";
 import NuovoArticolo from "./NuovoArticolo";
+import LeggiDdt, { type RigaDdt } from "./LeggiDdt";
 
 const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 const eur = (n: number | null | undefined) => n == null ? "—"
@@ -292,6 +293,39 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
        scarta con «reparto IVA non assegnato». Merce venduta, riga assente. */
     const [nuovo, setNuovo] = useState(false);
 
+    /* ═══ IL DOCUMENTO RIEMPIE IL CARRELLO ══════════════════════════════════
+       Luca 03/09: «dobbiamo introdurre la possibilità di caricare anche la
+       merce con una DDT, che semplicemente deve aggiungere le varie quantità a
+       carrello… a quel punto posso decidere se aggiungere altri articoli come
+       avrei fatto scrivendo l'articolo nella barra di ricerca, se no vado
+       avanti e continuo il processo così come è ora».
+       Quindi: quello che arriva dal documento entra ESATTAMENTE come se lo
+       avessi cercato a mano — stesse righe, stessi interruttori, stessi
+       controlli. Da lì in poi il percorso è quello di sempre. */
+    const [daDdt, setDaDdt] = useState(false);
+    const metti = (lette: RigaDdt[]) => {
+        setRighe(r => [
+            ...lette.filter(x => x.articolo).map((x, k) => {
+                const a = x.articolo!;
+                /* UNO PER UNO se il documento porta i numeri, o se l'articolo
+                   li vuole: un telefono senza IMEI sul foglio non si carica a
+                   quantità di nascosto — si apre la riga e li si scrive. */
+                const seriali = x.letto.seriali.filter(Boolean);
+                const uno = seriali.length > 0 || a.ha_imei;
+                return {
+                    chiave: `${a.codice}|${Date.now()}|${k}|${Math.random().toString(36).slice(2, 7)}`,
+                    codice: a.codice, barcode: a.barcode, descrizione: a.descrizione,
+                    unoPerUno: uno, tipoSeriale: "imei",
+                    quantita: uno ? 0 : Math.max(0, Math.round(x.letto.quantita || 0)),
+                    seriali: uno ? (seriali.length ? seriali : [""]) : [],
+                    costo: a.costo_ultimo, azienda: aziendaDiDefault,
+                } as Riga;
+            }),
+            ...r,
+        ]);
+        setDaDdt(false);
+    };
+
     /* ═══ PASSO 3 — DI CHI È LA MERCE ═══════════════════════════════════════
        «Magari trova un modo di attribuire gli articoli a una società, anche
        selezionando più articoli insieme». Si spuntano le righe e si preme la
@@ -530,9 +564,26 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
             {/* ── 2. COSA ─────────────────────────────────────────────────── */}
             {passo === 2 && (
                 <div className="mt-3">
-                    <label className="rvCampo rvCampo-flex"><span className="rvLab">Cerca l&apos;articolo <span className="rvLabX">(nome, codice o codice a barre — spara pure col lettore)</span></span>
-                        <input value={cerca} onChange={e => setCerca(e.target.value)} className="rvIn"
-                            placeholder="almeno due lettere…" autoFocus /></label>
+                    <div className="rvBarra">
+                        <label className="rvCampo rvCampo-flex"><span className="rvLab">Cerca l&apos;articolo <span className="rvLabX">(nome, codice o codice a barre — spara pure col lettore)</span></span>
+                            <input value={cerca} onChange={e => setCerca(e.target.value)} className="rvIn"
+                                placeholder="almeno due lettere…" autoFocus /></label>
+                        {/* L'ALTRA STRADA PER RIEMPIRE IL CARRELLO, accanto alla
+                            prima e non nascosta in un menù: o si cerca articolo
+                            per articolo, o si dà in pasto il documento. */}
+                        <div className="rvCampo rvCampo-sm"><span className="rvLab">…oppure</span>
+                            <button type="button" onClick={() => { setDaDdt(v => !v); setNuovo(false); }}
+                                className={cn("rvPill", daDdt && "rvPill-on")}>
+                                <FileText size={14} className="inline-block align-[-3px] mr-1.5" />Da un documento
+                            </button>
+                        </div>
+                    </div>
+
+                    {daDdt && (
+                        <div className="mt-3">
+                            <LeggiDdt chiudi={() => setDaDdt(false)} dopo={metti} />
+                        </div>
+                    )}
 
                     {cercando && <div className="rvTab-min mt-2">cerco…</div>}
 

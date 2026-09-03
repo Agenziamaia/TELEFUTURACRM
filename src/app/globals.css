@@ -735,6 +735,65 @@ html.light .rvBox-sopra{background:#f7f8fc;border-color:rgba(30,41,82,.14);
    suo cestino. Prima era un riquadro solo in cui scriverli tutti, e a parte
    il difetto del ritorno a capo non si vedeva mai quanti pezzi si stessero
    caricando — bisognava contare le righe a occhio. */
+/* ═══ CARICARE LA MERCE DA UN DOCUMENTO ═════════════════════════════════════
+   Il pannello che legge un DDT: la scelta fra le due strade, l'attesa, e
+   l'elenco di quello che il modello ha letto. Sta dentro il carico merce,
+   quindi eredita la cassetta di Registra Vendita e aggiunge solo la forma sua. */
+.rvDdt{padding:16px 18px;border-radius:14px;border:1px solid var(--tf-w100);background:var(--tf-w20)}
+.rvDdt-t{margin-bottom:14px}
+.rvDdt-t > b{display:block;font-size:15px;font-weight:800;color:var(--tf-e2e8f0);margin-bottom:3px}
+.rvDdt-t span{display:block;font-size:12px;line-height:1.55;color:var(--tf-94a3b8);max-width:78ch}
+.rvDdt-t span b{color:var(--tf-e2e8f0);font-weight:800}
+
+/* LE DUE STRADE, affiancate e della stessa misura: sono due modi di fare la
+   stessa cosa, e uno più grande dell'altro direbbe che è quello giusto. */
+.rvDdt-due{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.rvDdt-via{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:18px 16px;
+  border-radius:14px;border:1px solid var(--tf-w100);background:var(--tf-w30);cursor:pointer;
+  text-align:left;color:var(--rv-acc);transition:background .14s,border-color .14s,transform .1s}
+.rvDdt-via:hover{background:color-mix(in srgb,var(--rv-acc) 13%,transparent);
+  border-color:color-mix(in srgb,var(--rv-acc) 42%,transparent)}
+.rvDdt-via:active{transform:scale(.99)}
+.rvDdt-via b{font-size:14px;font-weight:800;color:var(--tf-e2e8f0)}
+.rvDdt-via span{font-size:11.5px;line-height:1.5;color:var(--tf-94a3b8);font-weight:600}
+
+.rvDdt-att{display:flex;flex-direction:column;align-items:center;gap:9px;padding:40px 20px;color:var(--rv-acc)}
+.rvDdt-att b{font-size:15px;font-weight:800;color:var(--tf-e2e8f0)}
+.rvDdt-att span{font-size:12px;color:var(--tf-94a3b8);text-align:center;max-width:46ch}
+
+/* L'ELENCO DI QUELLO CHE HA LETTO. Una riga per riga del documento, con la
+   spunta per tenerla o buttarla: la quantità sta a destra e in grande, perché
+   e' il numero che si controlla guardando le scatole. */
+.rvDdt-righe{display:flex;flex-direction:column;border:1px solid var(--tf-w100);
+  border-radius:12px;overflow:hidden;background:var(--tf-w20)}
+.rvDdt-r{display:flex;align-items:center;gap:10px;padding:9px 12px;
+  border-bottom:1px solid var(--tf-w60);transition:opacity .12s}
+.rvDdt-r:last-child{border-bottom:none}
+.rvDdt-r-no{opacity:.4}
+.rvDdt-r-x{flex:none;display:flex;align-items:center}
+.rvDdt-r-c{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
+.rvDdt-r-1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rvDdt-r-2{font-size:11px;color:var(--tf-94a3b8);line-height:1.45}
+.rvDdt-r-q{flex:none;min-width:66px;text-align:right;display:flex;flex-direction:column;gap:1px}
+.rvDdt-r-q b{font-size:17px;font-weight:900;color:var(--tf-e2e8f0);font-variant-numeric:tabular-nums}
+.rvDdt-r-q span{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--tf-64748b)}
+
+.rvDdt-p{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;
+  border-top:1px solid var(--tf-w60)}
+/* il documento resta a schermo mentre si controlla l'elenco: confrontare a
+   memoria una riga con un foglio che non si vede più non e' un controllo */
+.rvDdt-mini{height:44px;width:auto;border-radius:8px;border:1px solid var(--tf-w100);object-fit:cover}
+
+html.light .rvDdt,html.light .rvDdt-righe{background:#fff;border-color:rgba(15,23,42,.14)}
+html.light .rvDdt-t > b,html.light .rvDdt-t span b,html.light .rvDdt-via b,
+html.light .rvDdt-att b,html.light .rvDdt-r-q b{color:#0f172a}
+html.light .rvDdt-t span,html.light .rvDdt-via span,html.light .rvDdt-att span,
+html.light .rvDdt-r-2{color:#4b5a75}
+html.light .rvDdt-via{background:#f7f8fc;border-color:rgba(15,23,42,.12)}
+html.light .rvDdt-r{border-bottom-color:rgba(15,23,42,.07)}
+html.light .rvDdt-r-q span{color:#64748b}
+html.light .rvDdt-p{border-top-color:rgba(15,23,42,.10)}
+
 /* ═══ LA SCHERMATA DEL NUOVO ARTICOLO ═══════════════════════════════════════
    Una griglia, non una fila di campi che va a capo dove capita: i sette campi
    hanno pesi diversi — la descrizione è lunga, il prezzo è corto — e messi in
