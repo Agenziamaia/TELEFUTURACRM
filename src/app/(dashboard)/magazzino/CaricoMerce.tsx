@@ -65,6 +65,18 @@ const TIPI_SERIALE = [
     { v: "seriale", et: "Seriale", nota: "tutto il resto" },
 ];
 
+/* IL REPARTO SI SCEGLIE LEGGENDO, NON A NUMERO. La tendina è una casella di
+   testo: quello che ci si tiene dentro è quello che si vede. Tenerci «2»
+   vorrebbe dire che dopo aver scelto «2 · IVA 22%» il campo mostra «2», che a
+   chi guarda non dice niente. Il numero lo si estrae al momento di creare —
+   e la descrizione può contenere altri «·» (c'è «7 · Usato · regime
+   margine»), quindi si prende quello che sta PRIMA del primo. */
+const etichettaReparto = (r: { reparto: number; descrizione: string }) => `${r.reparto} · ${r.descrizione}`;
+const numeroReparto = (etichetta: string) => {
+    const n = Number(String(etichetta || "").split("·")[0].trim());
+    return Number.isInteger(n) && n >= 1 && n <= 40 ? n : 0;
+};
+
 type ArticoloTrovato = {
     codice: string; descrizione: string; barcode: string | null;
     ha_imei: boolean; prezzo: number | null; costo_ultimo: number | null;
@@ -201,7 +213,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
 
     const [nuovo, setNuovo] = useState<{ codice: string; descrizione: string; haImei: boolean; costo: string; prezzo: string; reparto: string } | null>(null);
     const creaArticolo = async () => {
-        if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !nuovo.reparto) return;
+        if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto)) return;
         setBusy(true); setEsito(null);
         const num = (s: string) => s.trim() ? Number(s.replace(",", ".")) : null;
         /* PASSA DAL DATABASE, non dal browser: su `mag_articoli` chi è loggato
@@ -211,7 +223,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
         const { data, error } = await supabase.rpc("mag_crea_articolo", {
             p_codice: nuovo.codice.trim(),
             p_descrizione: nuovo.descrizione.trim(),
-            p_reparto: Number(nuovo.reparto),
+            p_reparto: numeroReparto(nuovo.reparto),
             p_ha_imei: nuovo.haImei,
             p_costo: num(nuovo.costo),
             p_prezzo: num(nuovo.prezzo),
@@ -414,8 +426,8 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                             <div className="rvBarra mt-2">
                                 <div className="rvCampo rvCampo-md"><span className="rvLab">Reparto IVA <span className="rvLabX">(senza, l&apos;articolo non esce sullo scontrino)</span></span>
                                     <SelectOpzioni className="rvIn" value={nuovo.reparto}
-                                        onChange={v => setNuovo({ ...nuovo, reparto: String(v || "").split(" ·")[0] })}
-                                        opzioni={reparti.map(r => `${r.reparto} · ${r.descrizione}`)} placeholder="scegli…" /></div>
+                                        onChange={v => setNuovo({ ...nuovo, reparto: v })}
+                                        opzioni={reparti.map(etichettaReparto)} placeholder="scegli…" /></div>
                             </div>
                             <div className="rvCampo mt-2"><span className="rvLab">Ogni pezzo ha il suo numero (IMEI, ICCID…)?</span>
                                 <div className="rvPillRow">
@@ -424,7 +436,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                                 </div>
                             </div>
                             <div className="rvPillRow mt-2">
-                                <button onClick={creaArticolo} disabled={busy || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !nuovo.reparto} className="rvAzione rvAzione-sm">Crea e aggiungi</button>
+                                <button onClick={creaArticolo} disabled={busy || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto)} className="rvAzione rvAzione-sm">Crea e aggiungi</button>
                                 <button onClick={() => setNuovo(null)} className="rvPill rvPill-sm">Annulla</button>
                             </div>
                         </div>
