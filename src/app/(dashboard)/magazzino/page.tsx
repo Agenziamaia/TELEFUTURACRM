@@ -432,7 +432,8 @@ function Magazzino() {
                 <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico il magazzino…</div>
             ) : tab === "giacenze" ? (
                 <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
-                    anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare} puoCaricare={puoCaricare} vedeValori={vedeValori}
+                    anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare} puoCaricare={puoCaricare}
+                    guardaTutto={isAdminOrAbove(user?.role)} vedeValori={vedeValori}
                     ricarica={carica} utente={user?.name || "—"} />
             ) : tab === "articoli" ? (
                 <Articoli vedeCosti={puoCaricare} puoDefinire={puoCaricare} />
@@ -498,12 +499,20 @@ function operatoreDi(a: DatiArticolo | undefined, descrizione: string, codice?: 
     return null;
 }
 
-function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, puoCaricare, vedeValori, ricarica, utente }: {
+function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, puoCaricare, guardaTutto, vedeValori, ricarica, utente }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
     mioNegozio: string; puoCancellare: boolean;
     /** carica merce: dall'amministrazione in su (Luca 03/09) */
     puoCaricare: boolean;
+    /** ENTRA GUARDANDO TUTTI I NEGOZI, non il suo (Luca 03/09:
+     *  «dall'amministrativo in su, quando entrano sulle giacenze devono avere
+     *  di default tutti i negozi selezionati e non solo ufficio»). Chi sta in
+     *  sede non ha un bancone: la sua domanda non è «cos'ho qui», è «cos'ha
+     *  il gruppo». Ha un nome suo e non riusa `puoCaricare`: oggi sono la
+     *  stessa lista di ruoli, ma sono due domande diverse e un giorno una
+     *  delle due cambierà. */
+    guardaTutto: boolean;
     /** vede i due riquadri col valore del magazzino? (rotellina Permessi) */
     vedeValori: boolean;
     ricarica: () => void; utente: string;
@@ -518,7 +527,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     /* PIÙ NEGOZI INSIEME (Luca 31/08): «devo poter selezionare anche più
        negozi contemporaneamente». Lista vuota = tutti, che è la stessa cosa
        ma si scrive una volta sola invece di spuntarne quindici. */
-    const [scelti, setScelti] = useState<string[]>(mioNegozio && negozi.includes(mioNegozio) ? [mioNegozio] : []);
+    /* nessuno scelto = TUTTI (`nelloScopo`): è lo stesso stato del pulsante
+       «🌐 Tutti i negozi», non un caso a parte */
+    const [scelti, setScelti] = useState<string[]>(
+        !guardaTutto && mioNegozio && negozi.includes(mioNegozio) ? [mioNegozio] : []);
 
     const [azienda, setAzienda] = useState("");
     /* GLI STATI SONO PULSANTI, E SI SOMMANO (Luca 31/08). Entrando si vede
@@ -1156,7 +1168,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         : id === quadro;
 
     const azzeraFiltri = () => {
-        setScelti(mieiNegozi.length ? mieiNegozi : []);
+        /* «rimette tutto com'è entrando» dev'essere vero anche per chi entra
+           su tutti i negozi: se no il Reset lo chiuderebbe sull'ufficio, cioè
+           gli cambierebbe la vista invece di riportarlo dov'era. */
+        setScelti(guardaTutto ? [] : (mieiNegozi.length ? mieiNegozi : []));
         setQuadro("disponibile"); setVista("giacenze");
         setAzienda(""); setOperatori([]); setCerca(""); setDataStorica(""); setFamiglia("");
     };
@@ -1172,13 +1187,18 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         && mieiNegozi.every(n => scelti.includes(n));
     /* GIÀ SCELTI ALL'INGRESSO: la domanda normale, dietro al bancone, è
        «cos'ho qui» — non «cos'ha il gruppo». Una volta sola: se poi uno
-       allarga a tutti i negozi, non gli si richiude sotto le mani. */
+       allarga a tutti i negozi, non gli si richiude sotto le mani.
+       IN SEDE LA DOMANDA È L'OPPOSTA e si entra su tutti: un amministrativo
+       ha come negozio «Ufficio», quindi questa riga gli preselezionava
+       l'ufficio — cioè quasi niente — e ogni volta doveva allargare a mano. */
     const primaVolta = useRef(true);
     useEffect(() => {
-        if (!primaVolta.current || !mieiNegozi.length) return;
+        if (!primaVolta.current) return;
+        if (guardaTutto) { primaVolta.current = false; return; }   // già «tutti»
+        if (!mieiNegozi.length) return;
         primaVolta.current = false;
         setScelti(mieiNegozi);
-    }, [mieiNegozi]);
+    }, [mieiNegozi, guardaTutto]);
 
     return (
         <div className="space-y-4">
