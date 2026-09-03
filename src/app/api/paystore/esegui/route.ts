@@ -36,7 +36,8 @@ export async function POST(request: Request) {
     if (!r) return NextResponse.json({ error: "ricarica non trovata" }, { status: 404 });
 
     /* è una persona che ha premuto il pulsante: la riga lo deve dire */
-    const esito = await eseguiRicarica(r as RigaRicarica, { daPersona: true });
+    const { data: chi } = await supabase.from("app_users").select("full_name").eq("id", g.sess.id).maybeSingle();
+    const esito = await eseguiRicarica(r as RigaRicarica, { daPersona: true, chi: (chi as { full_name?: string } | null)?.full_name || undefined });
     if (!esito.ok) {
         return NextResponse.json(
             { error: esito.errore, definitivo: esito.definitivo, correlationId: esito.correlationId },

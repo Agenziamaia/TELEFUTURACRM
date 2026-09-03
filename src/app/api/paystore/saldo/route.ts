@@ -35,22 +35,57 @@ export async function GET(request: Request) {
     const righe = (data || []) as { negozio: string; azienda: string; identificativo: string | null }[];
     if (!righe.length) return NextResponse.json({ ok: true, saldi: [], nessunaCredenziale: true });
 
-    const saldi = await Promise.all(righe.map(async (r) => {
+    type Letto = {
+        negozio: string; azienda: string; identificativo: string | null;
+        saldo: number | null; borsellino: string | null; aggiornatoIl: string | null; errore: string | null;
+    };
+    const letti: Letto[] = await Promise.all(righe.map(async (r): Promise<Letto> => {
         const c = await credenzialeDi(r.negozio, r.azienda);
-        if (!c.ok) return { ...r, errore: c.errore, saldo: null as number | null };
+        if (!c.ok) return { ...r, errore: c.errore, saldo: null, borsellino: null, aggiornatoIl: null };
         const s = await saldo(c.cred);
         return s.ok
-            ? { ...r, saldo: Number(s.dati?.balance ?? 0), aggiornatoIl: s.dati?.asOfUtc || null, errore: null }
-            : { ...r, saldo: null, errore: s.descrizione || s.errore };
+            ? {
+                ...r, saldo: Number(s.dati?.balance ?? 0), aggiornatoIl: s.dati?.asOfUtc || null, errore: null,
+                /* ⚠️ CHI POSSIEDE IL CREDITO, non chi lo chiede. È la chiave di
+                   tutto quello che c'è sotto. */
+                borsellino: String(s.dati?.customerId ?? s.dati?.wallet ?? ""),
+            }
+            : { ...r, saldo: null, borsellino: null, aggiornatoIl: null, errore: s.descrizione || s.errore || null };
     }));
 
-    const conSaldo = saldi.filter((s) => s.saldo != null);
+    /* ═══ I BORSELLINI SONO CONDIVISI ══════════════════════════════════════
+       Luca 03/09: «credo che il borsellino sia sbagliato, non mi torna che
+       abbiamo quell'importo; tra l'altro i borsellini sono CONDIVISI tra
+       società, quindi dovrebbero essercene 2».
+
+       ⚠️ E IL TOTALE ERA FALSO. Sedici credenziali non sono sedici borsellini:
+       PayStore risponde a ognuna col saldo del borsellino a cui è agganciata, e
+       se dieci negozi ne condividono uno, sommare le dieci risposte conta
+       quello stesso credito dieci volte. Il numero che usciva era gonfiato di
+       quanto le credenziali sono più dei borsellini.
+       Il saldo si raggruppa per `customerId`: un borsellino, una riga, e
+       accanto i negozi che ci attingono. */
+    const perBorsellino = new Map<string, { borsellino: string; saldo: number; aggiornatoIl: string | null; negozi: { negozio: string; azienda: string }[] }>();
+    for (const l of letti) {
+        if (l.saldo == null || !l.borsellino) continue;
+        const v = perBorsellino.get(l.borsellino) || { borsellino: l.borsellino, saldo: l.saldo, aggiornatoIl: l.aggiornatoIl ?? null, negozi: [] };
+        /* se due letture dello stesso borsellino danno cifre diverse (una è di
+           un istante prima) si tiene la più bassa: su un plafond, sbagliare per
+           difetto è l'unico verso che non fa erogare più di quanto c'è */
+        v.saldo = Math.min(v.saldo, l.saldo);
+        v.negozi.push({ negozio: l.negozio, azienda: l.azienda });
+        perBorsellino.set(l.borsellino, v);
+    }
+    const borsellini = [...perBorsellino.values()].sort((a, b) => b.saldo - a.saldo);
+    const muti = letti.filter((l) => l.saldo == null);
+
     return NextResponse.json({
-        ok: true, saldi,
-        totale: conSaldo.reduce((t, s) => t + (s.saldo || 0), 0),
-        /* ⚠️ QUANTI NON HANNO RISPOSTO: senza questo numero il totale sembra
-           il credito di tutti, mentre è il credito di quelli che hanno
-           risposto. */
-        muti: saldi.length - conSaldo.length,
+        ok: true,
+        borsellini,
+        /* ⚠️ IL TOTALE SOMMA I BORSELLINI, NON LE CREDENZIALI. */
+        totale: borsellini.reduce((t, b) => t + b.saldo, 0),
+        /* chi non ha risposto si dice: un saldo mancante e un saldo vuoto sono
+           due cose diverse, e il totale è il credito di chi ha risposto */
+        muti: muti.map((m) => ({ negozio: m.negozio, azienda: m.azienda, errore: m.errore })),
     });
 }

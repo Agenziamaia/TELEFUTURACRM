@@ -2686,3 +2686,34 @@ html.light .ctbSel,html.light .ctbNum{background:#fff;border-color:#cbd5e1;color
 .psQuando{font-size:10px;color:var(--tf-64748b);margin-top:2px;text-align:right;
   font-variant-numeric:tabular-nums;white-space:nowrap}
 html.light .psQuando{color:#64748b}
+
+/* ═══ LA SCHEDA DI UNA RICARICA ═══════════════════════════════════════════ */
+.psScheda{width:100%;max-width:940px;max-height:88vh;overflow-y:auto;
+  background:var(--tf-12141f);border:1px solid rgba(129,140,248,.28);border-radius:20px;
+  padding:20px 22px;box-shadow:0 22px 60px rgba(0,0,0,.55)}
+.psScheda-t{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--tf-w60)}
+.psScheda-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.psBlocco{background:var(--tf-w30);border:1px solid var(--tf-w60);border-radius:14px;padding:13px 15px}
+.psBlocco-largo{grid-column:1/-1}
+.psDato{display:flex;justify-content:space-between;gap:14px;font-size:12px;padding:4px 0;
+  border-bottom:1px solid rgba(255,255,255,.04)}
+.psDato:last-child{border-bottom:none}
+.psDato span:first-child{color:var(--tf-8892b0);font-weight:600;flex-shrink:0}
+.psDato span:last-child{color:var(--tf-e2e8f0);text-align:right}
+.psCliente{margin-top:8px;padding-top:8px;border-top:1px dashed var(--tf-w100)}
+/* il diario: una riga per movimento, il tipo dà il colore alla barretta */
+.psDiario{display:flex;flex-direction:column;gap:1px;margin-top:6px}
+.psEv{display:grid;grid-template-columns:96px 1fr 130px;gap:10px;align-items:baseline;
+  font-size:11.5px;padding:6px 8px;border-radius:8px;border-left:3px solid var(--tf-w100)}
+.psEv:nth-child(even){background:rgba(255,255,255,.03)}
+.psEv-q{color:var(--tf-64748b);font-variant-numeric:tabular-nums}
+.psEv-t{color:var(--tf-e2e8f0)}
+.psEv-c{color:var(--tf-8892b0);text-align:right;font-size:10.5px}
+.psEv-invio{border-left-color:#34d399}
+.psEv-modifica{border-left-color:#818cf8}
+.psEv-stato{border-left-color:#f8b516}
+.psEv-riconciliata{border-left-color:#a78bfa}
+html.light .psScheda{background:#fff;border-color:#c7d2fe}
+html.light .psBlocco{background:#f8fafc;border-color:#e2e8f0}
+html.light .psDato span:last-child{color:#0f172a}

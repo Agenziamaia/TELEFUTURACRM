@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { RefreshCw, ChevronLeft, ChevronRight, Plus, Power, Trash2, Check } from "lucide-react";
+import { RefreshCw, ChevronLeft, ChevronRight, Plus, Power, Trash2, Check, Loader2 } from "lucide-react";
 import { cn } from "@/utils";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { OPERATORI_PAYSTORE } from "../../registra-vendita/PayStore";
@@ -187,6 +187,11 @@ export function PayStoreAdminView() {
        le viste: prima, sulla vista di oggi, premere non faceva assolutamente
        niente perché non c'era niente da nascondere per costruzione. */
     const [mostraChiuse, setMostraChiuse] = useState<boolean | null>(null);
+    /* ⚠️ LA RIGA SI APRE, NON SI SFOGLIA. Su una ricarica che non è andata la
+       domanda non è mai «quanto era»: è «cosa c'era intorno» — quale vendita,
+       quale cliente, chi l'ha corretta e quante volte l'abbiamo mandata. Tutto
+       questo in una tabella non ci sta, e in una tabella larga meno che mai. */
+    const [aperta, setAperta] = useState<string | null>(null);
     /* ⚠️ QUANTE SE NE DISEGNANO, non quante ne arrivano. Il server manda tutte
        le righe del periodo — a trenta giorni sono un paio di migliaia — e la
        pagina ne disegna un blocco per volta, dicendo sempre quante ne restano.
@@ -918,7 +923,10 @@ export function PayStoreAdminView() {
                                         <tr className="text-slate-500 text-[10px] uppercase tracking-widest">
                                             <th className="text-left font-bold py-1.5">Quando</th>
                                             <th className="text-left font-bold">Operatore</th>
-                                            <th className="text-left font-bold">Taglio</th>
+                                            {/* ⚠️ LA COLONNA «TAGLIO» È STATA TOLTA (Luca 03/09): «non
+                                                serve, il dato del brand lo abbiamo a sinistra e l'importo a
+                                                destra». Diceva «VODAFONE 10 euro» fra una colonna col marchio
+                                                Vodafone e una con 10,00 €: la stessa cosa, tre volte. */}
                                             <th className="text-left font-bold">Numero</th>
                                             <th className="text-right font-bold">Importo</th>
                                             <th className="text-left font-bold pl-3">Negozio</th>
@@ -936,7 +944,7 @@ export function PayStoreAdminView() {
                                             fondevano e la riga restava separata da due fili di colori
                                             diversi */}
                                         {righe.slice(0, quante).map((r) => (
-                                            <tr key={r.id}>
+                                            <tr key={r.id} onClick={() => setAperta(r.id)} style={{ cursor: "pointer" }}>
                                                 <td className="py-1.5 text-slate-400 whitespace-nowrap">{new Date(r.creata_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                                                 <td className="text-slate-200 font-semibold">
                                                     {/* ⚠️ IL NOME LO DECIDE IL CODICE OPERATORE, non quello
@@ -944,23 +952,8 @@ export function PayStoreAdminView() {
                                                         scritto dal flusso normale e «WINDTRE» scritto dal
                                                         recupero, e nell'elenco sembravano due operatori. */}
                                                     <MarchioRiga op={r.operatore} />
-                                                </td>
-                                                <td className="text-slate-400">
-                                                    {/* ⚠️ NON UN TRATTINO MUTO. Luca 02/09: «ci sono
-                                                        delle ricariche dove non è selezionato il taglio».
-                                                        Misurate: nessuna nasce così da una vendita al banco —
-                                                        sono righe RICOSTRUITE dopo il fatto (dallo scontrino o
-                                                        dalla vendita), di cui si conosce l'importo e non il
-                                                        tasto premuto. Quelle il cui importo corrisponde a un
-                                                        taglio del listino ora lo prendono da lì; restano solo
-                                                        gli importi COMPOSTI (23 €, 26 €), che un taglio non
-                                                        ce l'hanno perché sono somme. Dirlo è meglio che
-                                                        lasciare un trattino che sembra un difetto. */}
-                                                    {r.taglio || (
-                                                        <span className="rvBadge rvBadge-empty" title={r.nota || "riga ricostruita dopo la vendita: si conosce l'importo, non il taglio premuto. Di solito perché l'importo è una somma di più tagli, che nel listino non esiste come pezzo singolo."}>
-                                                            taglio non registrato
-                                                        </span>
-                                                    )}
+                                                    {/* il segnalino stava nella colonna «Taglio», tolta: qui
+                                                        dice la stessa cosa accanto al marchio */}
                                                     {r.con_attivazione && <span className="psConSim" title="ricarica della SIM appena venduta: il numero è quello dell'attivazione">📶</span>}
                                                 </td>
                                                 <td className="font-mono text-slate-300">
@@ -997,6 +990,10 @@ export function PayStoreAdminView() {
                                         ))}
                                     </tbody>
                                 </table>
+                                {/* la scheda della riga aperta: sta qui perché è qui che vive
+                                    l'elenco, e da qui si ricarica quando una correzione cambia
+                                    qualcosa */}
+                                {aperta && <SchedaRicarica id={aperta} onChiudi={() => setAperta(null)} onCambiato={() => void carica()} />}
                                 {/* ⚠️ QUANTE NE MANCANO, SCRITTO. Un elenco che si
                                     ferma senza dirlo è un elenco che mente: qui le
                                     righe ci sono tutte, se ne disegnano un blocco
@@ -1772,4 +1769,196 @@ function CredenzialiPayStore() {
             </div>
         </div>
     );
+}
+
+/* ═══ LA SCHEDA DI UNA RICARICA ════════════════════════════════════════════
+   Luca 03/09: «la possibilità di cliccare su ogni riga e vedere tutte le
+   informazioni: la vendita collegata nel caso non fosse una semplice ricarica,
+   il cliente collegato coi suoi dati, eventuali cambiamenti, eventuali errori
+   generati e risottomissioni, con l'utente, il giorno e l'orario».
+
+   ⚠️ È QUI CHE SI CORREGGE, E SOLO DA QUI. Cambiare operatore o numero su una
+   ricarica già venduta è un gesto da amministrazione: il numero sbagliato manda
+   il credito a una persona sbagliata, l'operatore sbagliato lo manda a un
+   gestore che quel taglio non ce l'ha. Ogni correzione resta scritta col nome
+   di chi l'ha fatta. */
+function SchedaRicarica({ id, onChiudi, onCambiato }: { id: string; onChiudi: () => void; onCambiato: () => void }) {
+    type Ev = { quando: string; chi: string | null; tipo: string; testo: string };
+    type Dett = {
+        ricarica: Record<string, unknown>;
+        vendita: Record<string, unknown> | null;
+        cliente: { id: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; cf_piva: string | null; cellulare: string | null; email: string | null } | null;
+        insieme: { id: string; brand: string; categoria: string; prodotto: string | null; stato: string | null }[];
+        sorelle: { id: string; operatore: string; numero: string; importo: number; stato: string }[];
+        eventi: Ev[]; puoCorreggere: boolean;
+    };
+    const [d, setD] = useState<Dett | null>(null);
+    const [ko, setKo] = useState("");
+    const [op, setOp] = useState(""); const [num, setNum] = useState("");
+    const [salvo, setSalvo] = useState(false);
+
+    const carica = useCallback(async () => {
+        try {
+            const r = await fetch(`/api/paystore/ricarica?id=${id}`).then((x) => x.json());
+            if (!r?.ok) throw new Error(r?.error || "non riesco a leggere");
+            setD(r); setOp(String(r.ricarica.operatore || "")); setNum(String(r.ricarica.numero || ""));
+        } catch (e) { setKo((e as Error).message); }
+    }, [id]);
+    useEffect(() => { void carica(); }, [carica]);
+
+    const correggi = async () => {
+        setSalvo(true); setKo("");
+        try {
+            const r = await fetch("/api/paystore/ricarica", {
+                method: "PATCH", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, operatore: op, numero: num }),
+            }).then((x) => x.json());
+            if (!r?.ok) throw new Error(r?.error || "non salvata");
+            await carica(); onCambiato();
+        } catch (e) { setKo((e as Error).message); }
+        finally { setSalvo(false); }
+    };
+
+    const r = d?.ricarica as Record<string, any> | undefined;
+    const cambiato = !!r && (op !== String(r.operatore || "") || num !== String(r.numero || ""));
+    const partita = !!r && (r.stato === "ok_automatico" || r.stato === "ok_manuale");
+    const quando = (x: string | null | undefined) => x
+        ? new Date(x).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" })
+        : "—";
+
+    return createPortal(
+        <div className="rvFattaSfondo" onClick={onChiudi}>
+            <div className="psScheda" onClick={(e) => e.stopPropagation()}>
+                {!d ? <div className="p-8 text-center text-slate-500 text-sm">
+                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> leggo…
+                </div> : (<>
+                    <div className="psScheda-t">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <MarchioRiga op={String(r!.operatore)} />
+                                <span className="text-xl font-black text-white">{eurC(Number(r!.importo))}</span>
+                                <span className="font-mono text-slate-400 text-[13px]">{String(r!.numero || "senza numero")}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1">
+                                {String(r!.negozio || "—")}{r!.azienda ? ` · ${SOCIETA[String(r!.azienda)] || r!.azienda}` : ""}
+                                {r!.venditore ? ` · venduta da ${r!.venditore}` : ""} · {quando(String(r!.creata_il))}
+                            </div>
+                        </div>
+                        <button onClick={onChiudi} className="rvPill rvPill-sm">✕ chiudi</button>
+                    </div>
+
+                    {ko && <div className="rvNota rvNota-ko"><div className="rvNota-s">{ko}</div></div>}
+
+                    <div className="psScheda-g">
+                        {/* ── CORREZIONE ─────────────────────────────────────── */}
+                        <div className="psBlocco">
+                            <div className="rvLab">Correggere</div>
+                            {partita ? (
+                                <div className="rvNota-s">
+                                    Questa ricarica è <b>già stata erogata</b>: correggerla adesso cambierebbe il
+                                    racconto, non il credito. Se serve rifarla, rimettila prima in sospeso dal registro.
+                                </div>
+                            ) : !d.puoCorreggere ? (
+                                <div className="rvNota-s">La correggono l&apos;amministrazione e la direzione.</div>
+                            ) : (<>
+                                <div className="rvNota-s mb-2">
+                                    Se il negozio ha sbagliato gestore o numero, si sistema qui e poi si rimanda.
+                                    ⚠️ La chiave di sicurezza viene azzerata: il prossimo invio parte davvero da capo,
+                                    e non ripesca l&apos;esito del tentativo sbagliato.
+                                </div>
+                                <div className="rvPillRow items-end">
+                                    <label className="rvCampo"><span className="rvLab">Gestore</span>
+                                        <select value={op} onChange={(e) => setOp(e.target.value)} className="ctbSel" style={{ minWidth: 150 }}>
+                                            {OPERATORI_PAYSTORE.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                                        </select></label>
+                                    <label className="rvCampo"><span className="rvLab">Numero</span>
+                                        <input value={num} inputMode="numeric" onChange={(e) => setNum(e.target.value.replace(/\D/g, ""))}
+                                            className="ctbNum" style={{ maxWidth: 150, textAlign: "left" }} /></label>
+                                    <button onClick={() => void correggi()} disabled={!cambiato || salvo}
+                                        className={cn("rvPill", cambiato && "rvPill-on rvT-verde")}>
+                                        {salvo ? "salvo…" : "✓ Salva la correzione"}
+                                    </button>
+                                </div>
+                            </>)}
+                        </div>
+
+                        {/* ── LA VENDITA E IL CLIENTE ────────────────────────── */}
+                        <div className="psBlocco">
+                            <div className="rvLab">Da dove viene</div>
+                            {d.vendita ? (<>
+                                <div className="psDato"><span>Vendita</span><span>
+                                    <a href={`/documenti?q=${String(d.vendita.id)}`} className="text-indigo-300 hover:underline">
+                                        {String(d.vendita.brand || "")} · {String(d.vendita.prodotto || d.vendita.categoria || "")}
+                                    </a></span></div>
+                                <div className="psDato"><span>Registrata</span><span>{String(d.vendita.data_registrazione || "—")}</span></div>
+                            </>) : (
+                                <div className="rvNota-s">Ricarica al banco, senza una vendita collegata.</div>
+                            )}
+                            {d.cliente && (
+                                <div className="psCliente">
+                                    <div className="psDato"><span>Cliente</span><span>
+                                        <a href={`/clienti?q=${encodeURIComponent(d.cliente.cf_piva || d.cliente.id)}`} className="text-indigo-300 hover:underline font-semibold">
+                                            {d.cliente.ragione_sociale || `${d.cliente.nome || ""} ${d.cliente.cognome || ""}`.trim() || d.cliente.id}
+                                        </a></span></div>
+                                    {d.cliente.cf_piva && <div className="psDato"><span>CF / P.IVA</span><span className="font-mono">{d.cliente.cf_piva}</span></div>}
+                                    {d.cliente.cellulare && <div className="psDato"><span>Cellulare</span><span className="font-mono">{d.cliente.cellulare}</span></div>}
+                                </div>
+                            )}
+                            {!!d.insieme.length && (
+                                <div className="mt-2">
+                                    <div className="rvLab">Venduta insieme a</div>
+                                    {d.insieme.map((x) => (
+                                        <div key={x.id} className="psDato"><span>{x.brand}</span><span>{x.prodotto || x.categoria}</span></div>
+                                    ))}
+                                </div>
+                            )}
+                            {!!d.sorelle.length && (
+                                <div className="mt-2">
+                                    <div className="rvLab">Altre ricariche dello stesso scontrino</div>
+                                    {d.sorelle.map((x) => (
+                                        <div key={x.id} className="psDato">
+                                            <span>{nomeOp(x.operatore)} · {x.numero}</span><span>{eurC(x.importo)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ── COM'È ANDATA ───────────────────────────────────── */}
+                        <div className="psBlocco">
+                            <div className="rvLab">Com&apos;è andata</div>
+                            <div className="psDato"><span>Stato</span><span>{STATI[String(r!.stato)]?.testo || String(r!.stato)}</span></div>
+                            <div className="psDato"><span>Scontrino</span><span>{String(r!.scontrino_stato || "non risulta")}</span></div>
+                            {!!r!.tentativi && <div className="psDato"><span>Invii a PayStore</span><span>{String(r!.tentativi)}</span></div>}
+                            {!!r!.rif_fornitore && <div className="psDato"><span>Operazione PayStore</span><span className="font-mono">{String(r!.rif_fornitore)}</span></div>}
+                            {!!r!.inviata_il && <div className="psDato"><span>Erogata il</span><span>{quando(String(r!.inviata_il))}</span></div>}
+                            {!!r!.ambiente && <div className="psDato"><span>Ambiente</span><span>{String(r!.ambiente)}</span></div>}
+                            {!!r!.errore && <div className="rvNota rvNota-ko" style={{ marginTop: 8 }}><div className="rvNota-s">{String(r!.errore)}</div></div>}
+                            {!!r!.nota && <div className="rvNota rvNota-info" style={{ marginTop: 8 }}><div className="rvNota-s">{String(r!.nota)}</div></div>}
+                        </div>
+
+                        {/* ── IL DIARIO ──────────────────────────────────────── */}
+                        <div className="psBlocco psBlocco-largo">
+                            <div className="rvLab">Cosa è successo, in ordine</div>
+                            {d.eventi.length ? (
+                                <div className="psDiario">
+                                    {d.eventi.map((e, i) => (
+                                        <div key={i} className={cn("psEv", `psEv-${e.tipo}`)}>
+                                            <div className="psEv-q">{quando(e.quando)}</div>
+                                            <div className="psEv-t">{e.testo}</div>
+                                            <div className="psEv-c">{e.chi || "—"}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="rvNota-s">
+                                    Nessun movimento registrato. ⚠️ Il diario è nato il 03/09: quello che è successo
+                                    prima non c&apos;è, e non è che non sia successo.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </>)}
+            </div>
+        </div>, document.body);
 }

@@ -2,6 +2,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { ricaricaTelefonica, operazione, listini, prodotti, nuovaChiaveIdempotenza, inCollaudo } from "@/lib/paystore";
 import type { Credenziale } from "@/lib/paystore";
 import { credenzialeDi } from "@/lib/paystoreCredenziali";
+import { annota } from "@/lib/paystoreEventi";
 
 /* ═══ ESEGUIRE UNA RICARICA ════════════════════════════════════════════════
    Il gesto che eroga il credito, in un posto solo. Lo usano il pulsante
@@ -88,7 +89,13 @@ async function trovaListino(operatore: string, importo: number, cred: Credenzial
     return { id: t.priceListId };
 }
 
-export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number; daPersona?: boolean }): Promise<EsitoEsecuzione> {
+export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number; daPersona?: boolean; chi?: string }): Promise<EsitoEsecuzione> {
+    /* ⚠️ OGNI INVIO LASCIA UNA RIGA, riuscito o no. La ricarica porta solo
+       l'ULTIMO tentativo: senza diario, tre risottomissioni sullo stesso numero
+       sono indistinguibili da una, e quando qualcuno chiede «ma quante volte
+       l'avete mandata?» non c'è risposta. */
+    const diario = (testo: string, dati?: Record<string, unknown>) =>
+        annota(riga.id, "invio", testo, opz?.chi || (opz?.daPersona ? "a mano" : "motore"), dati);
     if (riga.stato === "ok_automatico" || riga.stato === "ok_manuale") {
         return { ok: false, errore: "questa ricarica risulta già fatta: se serve rifarla, rimettila prima in sospeso", definitivo: true, stato: 400 };
     }
@@ -201,6 +208,10 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
                 ? `PROVA in collaudo: operazione ${d.operationId}, ricevuta ${d.receiptId}. Nessun credito erogato.`
                 : `${opz?.daPersona ? "eseguita a mano dal pannello" : "eseguita dal motore"} via API con il plafond di ${cr.identificativo}${esito.replay ? " (risposta già ricevuta, non è stata rifatta)" : ""}`,
         }).eq("id", riga.id);
+        await diario(collaudo
+            ? `prova in collaudo: operazione ${d.operationId}, nessun credito erogato`
+            : `${riga.importo} € di ${riga.operatore} sul ${numero} — riuscita (operazione ${d.operationId}, plafond di ${cr.identificativo})`,
+            { operationId: d.operationId, receiptId: d.receiptId, saldoDopo: d.balanceAfter, collaudo });
         return { ok: true, collaudo, replay: !!esito.replay, operationId: d.operationId, receiptId: d.receiptId, saldo: d.balanceAfter };
     }
 
@@ -210,6 +221,7 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
             stato: "fallita",
             errore: `${esito.errore}${esito.descrizione ? ": " + esito.descrizione : ""}`,
         }).eq("id", riga.id);
+        await diario(`rifiutata da PayStore: ${esito.descrizione || esito.errore}`, { correlationId: esito.correlationId, definitivo: true });
         return { ok: false, errore: esito.descrizione || esito.errore, definitivo: true, stato: 422, correlationId: esito.correlationId };
     }
 
@@ -219,6 +231,7 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
     await supabase.from("paystore_ricariche").update({
         errore: `esito non ricevuto (${esito.errore}): riprovare o riconciliare`,
     }).eq("id", riga.id);
+    await diario(`esito non ricevuto (${esito.errore}): potrebbe essere partita`, { correlationId: esito.correlationId, definitivo: false });
     return {
         ok: false, definitivo: false, stato: 503, correlationId: esito.correlationId,
         errore: "Non ho ricevuto l'esito da PayStore. La ricarica POTREBBE essere partita: riprova fra poco — il secondo tentativo usa la stessa chiave e non ne fa una seconda.",
