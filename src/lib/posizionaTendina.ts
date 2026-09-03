@@ -41,7 +41,11 @@ export type PosTendina = { top?: number; bottom?: number; left: number; width: n
  *  la decide il contenuto, e con `top` bisognerebbe conoscerla prima di
  *  disegnare. */
 export function posizionaTendina(campo: Element | null, r: DOMRect): PosTendina {
-    const MIN = 180, MAX = 288;                 // sotto i 180px non ci sta niente
+    /* ⚠️ 288px NON BASTANO A UNA TENDINA CON LA RICERCA DENTRO: intestazione
+       (40) + casella (52) lasciano meno di 200px alla lista, cioè quattro voci
+       su quattordici negozi. Il tetto sale a 420, che resta comodamente dentro
+       una finestra modale ma dà respiro quando lo spazio c'è. */
+    const MIN = 180, MAX = 420;                 // sotto i 180px non ci sta niente
     const area = areaDisponibile(campo);
     const sotto = area.bottom - r.bottom - 8;
     const sopra = r.top - area.top - 8;

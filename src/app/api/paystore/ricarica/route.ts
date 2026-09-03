@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isAdminOrAbove } from "@/lib/roles";
 import { annota, nomeDi } from "@/lib/paystoreEventi";
 import { NOMI_OPERATORE, nomeOperatoreCorto } from "@/lib/paystore";
+import { stessoMagazzino } from "@/lib/negoziNomi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,10 +53,16 @@ export async function GET(request: Request) {
     let vendita: unknown = null;
     let insieme: unknown[] = [];
     let cliente: unknown = null;
+    /* come si è arrivati alle compagne, perché chi guarda deve poterlo pesare */
+    let comeTrovate = "";
     const contractId = String(ric.contract_id || "");
+    /* ⚠️ «NON LO SO» NON SI SCRIVE «ERA SOLA». Una riga senza vendita collegata
+       — caricata a mano, o arrivata prima che il legame esistesse — non ha
+       compagne perché non ha una vendita, non perché è stata venduta da sola. */
+    if (!contractId) comeTrovate = "questa riga non è agganciata a nessuna vendita";
     if (contractId) {
         const { data: c } = await supabaseAdmin.from("contracts")
-            .select("id, data, brand, categoria, prodotto, stato, negozio, venditore, client_id, data_registrazione, dettagli")
+            .select("id, data, brand, categoria, prodotto, stato, negozio, venditore, client_id, data_registrazione, dettagli, created_at")
             .eq("id", contractId).maybeSingle();
         vendita = c || null;
         const cli = (c as { client_id?: string } | null)?.client_id;
@@ -68,13 +75,42 @@ export async function GET(request: Request) {
                 .eq("id", cli).maybeSingle();
             cliente = cl || null;
         }
-        /* le altre righe della stessa vendita: è «venduta accompagnata» */
-        const { data: altre } = await supabaseAdmin.from("contracts")
-            .select("id, brand, categoria, prodotto, stato")
-            .eq("client_id", (c as { client_id?: string } | null)?.client_id || "__nessuno__")
-            .eq("data_registrazione", (c as { data_registrazione?: string } | null)?.data_registrazione || "1970-01-01")
-            .neq("id", contractId).limit(20);
-        insieme = altre || [];
+        /* ═══ COSA C'ERA NELLO STESSO SCONTRINO ════════════════════════════
+           ⚠️ NON BASTA IL CLIENTE. Prima si cercavano le righe con lo stesso
+           `client_id` e la stessa data: ma le vendite al banco senza anagrafica
+           portano TUTTE lo stesso cliente finto — misurato, `CL-VENDITA-DIRETTA`
+           ha 1.183 righe su 35 giorni — così una ricarica venduta DA SOLA si
+           ritrovava accanto tutte le vendite anonime della giornata. Luca 03/09:
+           «non è possibile che questa ricarica sia stata venduta insieme ad
+           altre trecentomila cose».
+
+           Ma nemmeno l'orario basta da solo: misurato, solo l'88% delle vendite
+           a più righe le scrive entro quindici secondi, e il resto ha code
+           lunghe fino a ore. Quindi si usa il segnale che c'è:
+             · cliente VERO → cliente e data, com'era: è la vendita, per davvero;
+             · cliente finto → stesso negozio e quindici secondi, l'unico
+               appiglio rimasto quando l'anagrafica non c'è.
+           E sopra tutto vale il conteggio dello scontrino, più in basso: se il
+           documento dice «una riga», compagne non ce ne sono e basta. */
+        const anonima = /DIRETTA|ANONIM/i.test(String(cli || ""));
+        const q = supabaseAdmin.from("contracts")
+            .select("id, brand, categoria, prodotto, stato, created_at, negozio")
+            .neq("id", contractId).limit(30);
+        if (!anonima && cli) {
+            const { data: altre } = await q
+                .eq("client_id", cli)
+                .eq("data_registrazione", String((c as { data_registrazione?: string } | null)?.data_registrazione || "1970-01-01"));
+            insieme = altre || [];
+            comeTrovate = "stessa vendita (cliente e giorno)";
+        } else {
+            const nato = new Date(String((c as { created_at?: string } | null)?.created_at || ric.creata_il)).getTime();
+            const { data: altre } = await q
+                .eq("negozio", String((c as { negozio?: string } | null)?.negozio || "__nessuno__"))
+                .gte("created_at", new Date(nato - 15000).toISOString())
+                .lte("created_at", new Date(nato + 15000).toISOString());
+            insieme = altre || [];
+            comeTrovate = "vendita al banco: righe battute nello stesso momento";
+        }
     }
 
     /* le altre ricariche battute nello stesso scontrino */
@@ -82,12 +118,54 @@ export async function GET(request: Request) {
         .select("id, operatore, operatore_nome, numero, importo, stato")
         .eq("contract_id", contractId || "__nessuno__").neq("id", id).limit(20);
 
+    /* ⚠️ E IL DOCUMENTO SI DEVE POTER APRIRE (Luca 03/09: «ti avevo chiesto la
+       possibilità di andare direttamente allo scontrino, e non vedo nessun
+       pulsante»). Si cerca come lo cerca il registro: stessa SEDE — l'insegna
+       sullo scontrino è «Magliana W3», la ricarica dice «Magliana» — e la
+       finestra fra cinque minuti prima e uno dopo. */
+    type Job = { id: string; created_at: string; status: string; negozio: string; kind: string; meta: Record<string, unknown> | null };
+    let scontrino: (Job & { certo: boolean }) | null = null;
+    {
+        /* ⚠️ SE IL DOCUMENTO PORTA IL CONTRATTO, non si indovina niente. È il
+           caso migliore e va provato per primo. */
+        if (contractId) {
+            const { data: dritto } = await supabaseAdmin.from("print_jobs")
+                .select("id, created_at, status, negozio, kind, meta")
+                .eq("meta->>contrattoId", contractId).order("created_at").limit(1);
+            const d = ((dritto || []) as Job[])[0];
+            if (d) scontrino = { ...d, certo: true };
+        }
+        if (!scontrino) {
+            const t = new Date(String(ric.creata_il)).getTime();
+            const { data: jobs } = await supabaseAdmin.from("print_jobs")
+                .select("id, created_at, status, negozio, kind, meta")
+                .in("kind", ["fiscal_receipt", "fiscal"])
+                .gte("created_at", new Date(t - 300000).toISOString())
+                .lte("created_at", new Date(t + 60000).toISOString());
+            const miei = ((jobs || []) as Job[]).filter((j) => stessoMagazzino(j.negozio, String(ric.negozio || "")));
+            /* più d'uno non si sceglie a caso: si dà il più vicino nel tempo, e
+               si dice che è un accostamento, non una certezza */
+            const vicino = miei.sort((a, b) =>
+                Math.abs(new Date(a.created_at).getTime() - t) - Math.abs(new Date(b.created_at).getTime() - t))[0];
+            if (vicino) scontrino = { ...vicino, certo: false };
+        }
+    }
+
+    /* ⚠️ E LO SCONTRINO HA L'ULTIMA PAROLA SULLE COMPAGNE. Il documento porta
+       quante righe sono state battute: se ne dichiara UNA, quella ricarica è
+       stata venduta da sola — qualunque cosa suggerisca l'incrocio qui sopra. */
+    const righeScontrino = Number(scontrino?.meta?.items ?? NaN);
+    if (scontrino?.certo && righeScontrino === 1 && insieme.length) {
+        insieme = [];
+        comeTrovate = "lo scontrino ha una riga sola: venduta da sola";
+    }
+
     const { data: eventi } = await supabaseAdmin.from("paystore_eventi")
         .select("quando, chi, tipo, testo").eq("ricarica_id", id).order("quando", { ascending: false }).limit(100);
 
     return NextResponse.json({
-        ok: true, ricarica: ric, vendita, cliente,
-        insieme, sorelle: sorelle || [], eventi: eventi || [],
+        ok: true, ricarica: ric, vendita, cliente, scontrino,
+        insieme, comeTrovate, righeScontrino: Number.isFinite(righeScontrino) ? righeScontrino : null, sorelle: sorelle || [], eventi: eventi || [],
         /* chi guarda deve sapere se può correggere, se no vede campi che non
            rispondono */
         puoCorreggere: isAdminOrAbove(g.ruolo),

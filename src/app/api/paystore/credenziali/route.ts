@@ -3,6 +3,7 @@ import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isAdminOrAbove } from "@/lib/roles";
 import { cifraSegreto } from "@/lib/totp";
+import { saldo } from "@/lib/paystore";
 import { credenzialeDi } from "@/lib/paystoreCredenziali";
 
 export const runtime = "nodejs";
@@ -142,7 +143,56 @@ export async function POST(req: Request) {
             esiti.push({ societa: r.societa!, identificativo: r.identificativo!, negozio: null, esito: "nessun negozio corrisponde: lasciata fuori" });
             continue;
         }
-        if (b.prova) { esiti.push({ societa: r.societa!, identificativo: r.identificativo!, negozio, esito: "pronta" }); continue; }
+        /* ═══ LA CREDENZIALE SI PROVA PRIMA DI FIDARSI ════════════════════
+           ⚠️ MISURATO IL 03/09: la terna di Collatina · Telefutura 2 era stata
+           incollata TAGLIATA — identificativo di 29 caratteri invece di 30 —
+           e nessuno se n'è accorto per un giorno. Dal pannello sembrava
+           perfetta: negozio riconosciuto, società giusta, riga verde. Il
+           negozio se n'è accorto al banco, con la cliente davanti, quando la
+           ricarica è tornata indietro con «invalid_client».
+           Adesso si bussa a PayStore con la terna appena ricevuta: se non
+           entra, si dice subito e non si finge che sia a posto. Il controllo
+           sulla forma resta come primo filtro, perché è gratis e coglie
+           l'errore più comune — l'incollata a metà. */
+        const cid = r.clientId!.trim();
+        const forma = !/^ps_(live|test)_[A-Za-z0-9_-]+$/.test(cid)
+            ? "l'identificativo non ha la forma di una chiave PayStore (ps_live_… o ps_test_…)"
+            : cid.length !== 30
+                ? `l'identificativo è lungo ${cid.length} caratteri invece di 30: sembra incollato a metà`
+                : "";
+        const cred = { clientId: cid, clientSecret: r.secret!.trim(), signingKey: r.signingKey!.trim() };
+        /* la prova vera: il saldo mette alla prova token E firma in un colpo */
+        const provata = await saldo(cred);
+        const entra = provata.ok
+            ? ""
+            : /invalid_client|401/i.test(String(provata.errore || provata.descrizione || ""))
+                ? "PayStore rifiuta questa terna (invalid_client): identificativo o segreto sbagliati, o account non abilitato"
+                : `PayStore non l'ha accettata: ${provata.descrizione || provata.errore}`;
+
+        if (b.prova) {
+            esiti.push({
+                societa: r.societa!, identificativo: r.identificativo!, negozio,
+                esito: forma || entra || "pronta — e PayStore la accetta",
+            });
+            continue;
+        }
+        /* ⚠️ UNA TERNA CHE NON ENTRA NON SI SALVA ATTIVA. Salvarla accesa vuol
+           dire lasciare un negozio convinto di poter ricaricare: si mette da
+           parte, spenta, così si vede che c'è ed è da rifare. */
+        if (forma || entra) {
+            const { error: e2 } = await supabaseAdmin.from("paystore_credenziali").upsert({
+                negozio, azienda: az, identificativo: r.identificativo!.trim(),
+                client_id: cid,
+                secret_cifrato: cifraSegreto(r.secret!.trim()),
+                signing_cifrata: cifraSegreto(r.signingKey!.trim()),
+                attivo: false, creato_da: g.sess.id, aggiornato_il: new Date().toISOString(),
+            }, { onConflict: "negozio,azienda" });
+            esiti.push({
+                societa: r.societa!, identificativo: r.identificativo!, negozio,
+                esito: `NON attivata: ${forma || entra}${e2 ? " (e nemmeno salvata: " + e2.message + ")" : " — salvata spenta, da rifare"}`,
+            });
+            continue;
+        }
         const { error } = await supabaseAdmin.from("paystore_credenziali").upsert({
             negozio, azienda: az, identificativo: r.identificativo!.trim(),
             client_id: r.clientId!.trim(),

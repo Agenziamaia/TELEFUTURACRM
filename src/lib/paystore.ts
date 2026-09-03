@@ -92,7 +92,20 @@ async function accessToken(c: Credenziale): Promise<string> {
             body: new URLSearchParams({ grant_type: "client_credentials", client_id: c.clientId, client_secret: c.clientSecret }),
         });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j?.access_token) throw new Error(`token non ottenuto (${r.status}): ${j?.error || "risposta illeggibile"}`);
+        if (!r.ok || !j?.access_token) {
+            /* ⚠️ «INVALID_CLIENT» NON È UN PROBLEMA DELLA RICARICA. È PayStore
+               che rifiuta il LOGIN: il numero, il gestore e il taglio non sono
+               nemmeno stati guardati. Scriverlo com'è — «token non ottenuto
+               (401): invalid_client» — manda a cercare il guasto dove non c'è.
+               Luca 03/09, davanti a questo errore: «il numero è attivo in
+               Vodafone ed è giusto, come mai va in ko?». Appunto.
+               Il messaggio deve dire la cosa vera e cosa si fa. */
+            const err = String(j?.error || "");
+            if (r.status === 401 || /invalid_client/i.test(err)) {
+                throw new Error("PayStore non riconosce le credenziali di questo negozio (invalid_client): la ricarica non è partita e il numero non c'entra. Vanno ricaricate da Amministrazione → PayStore → Credenziali.");
+            }
+            throw new Error(`token non ottenuto (${r.status}): ${err || "risposta illeggibile"}`);
+        }
         token.set(k, { valore: j.access_token, scadeIl: Date.now() + Math.max(30, Number(j.expires_in || 300) - 30) * 1000 });
         return String(j.access_token);
     })().finally(() => { tokenInCorso.delete(k); });

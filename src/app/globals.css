@@ -2924,3 +2924,17 @@ html.light .psQuando{color:#64748b}
 html.light .psScheda{background:#fff;border-color:#c7d2fe}
 html.light .psBlocco{background:#f8fafc;border-color:#e2e8f0}
 html.light .psDato span:last-child{color:#0f172a}
+
+/* ═══ IL BOTTONCINO CHE COPIA UN NUMERO ════════════════════════════════════
+   Sta dentro una riga cliccabile, quindi deve farsi vedere senza rubare la
+   scena: grigio e semitrasparente da fermo, acceso al passaggio del mouse.
+   ⚠️ `line-height:1` e le misure fisse servono a non allargare la riga: un
+   bottone che cresce di due pixel sposta l'intera colonna del numero. */
+.psCopia{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+    border-radius:6px;border:1px solid rgb(255 255 255 / .10);background:rgb(255 255 255 / .04);
+    color:#64748b;line-height:1;font-size:11px;flex:0 0 auto;transition:all .12s ease;cursor:pointer}
+.psCopia:hover{color:#c7d2fe;border-color:rgb(129 140 248 / .45);background:rgb(99 102 241 / .18)}
+.psCopia-ok{color:#6ee7b7;border-color:rgb(52 211 153 / .5);background:rgb(16 185 129 / .18)}
+.psCopia-no{color:#fda4af;border-color:rgb(251 113 133 / .5);background:rgb(244 63 94 / .18)}
+/* al tocco su telefono l'hover non esiste: si tiene sempre leggibile */
+@media (hover:none){.psCopia{color:#94a3b8;background:rgb(255 255 255 / .07)}}

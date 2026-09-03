@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { RefreshCw, ChevronLeft, ChevronRight, Plus, Power, Trash2, Check, Loader2 } from "lucide-react";
+import { RefreshCw, ChevronLeft, ChevronRight, Plus, Power, Trash2, Check, Loader2, Copy } from "lucide-react";
 import { cn } from "@/utils";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { OPERATORI_PAYSTORE } from "../../registra-vendita/PayStore";
@@ -115,6 +115,51 @@ type Dati = {
 /* i codici delle due società, scritti come li conosce chi legge */
 const SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" };
 
+/* ═══ COPIARE IL NUMERO SENZA APRIRE NIENTE ════════════════════════════════
+   Luca 03/09: «a fianco ai numeri mettici un bottoncino che clicco e mi copia
+   il numero, senza aprirmi il dettaglio della ricarica».
+   Serve tutti i giorni: il numero va incollato nel portale PayStore, in una
+   chat, in una ricerca — e selezionarlo a mano dentro una riga cliccabile vuol
+   dire aprire la scheda ogni volta.
+
+   ⚠️ `stopPropagation` NON BASTA DA SOLO: la riga apre la scheda sul `click`,
+   e il gesto di copia parte da qui — se non si ferma la risalita, si copia E si
+   apre. Si ferma anche il `mousedown`, perché è lì che la riga prende il fuoco.
+
+   ⚠️ E LA COPIA PUÒ FALLIRE: `navigator.clipboard` esiste solo in pagina
+   sicura, e su un CRM aperto in http su rete locale non c'è. Il ripiego con la
+   selezione nascosta funziona ovunque, e se fallisce anche quello si dice. */
+function CopiaNumero({ numero }: { numero: string }) {
+    const [fatto, setFatto] = useState<"" | "ok" | "no">("");
+    const copia = async (e: React.MouseEvent) => {
+        e.stopPropagation(); e.preventDefault();
+        const testo = String(numero || "").replace(/\s/g, "");
+        let riuscito = false;
+        try {
+            if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(testo); riuscito = true; }
+        } catch { /* si prova il ripiego qui sotto */ }
+        if (!riuscito) {
+            try {
+                const t = document.createElement("textarea");
+                t.value = testo; t.style.position = "fixed"; t.style.opacity = "0";
+                document.body.appendChild(t); t.select();
+                riuscito = document.execCommand("copy");
+                document.body.removeChild(t);
+            } catch { riuscito = false; }
+        }
+        setFatto(riuscito ? "ok" : "no");
+        setTimeout(() => setFatto(""), 1400);
+    };
+    return (
+        <button type="button" onClick={copia} onMouseDown={(e) => e.stopPropagation()}
+            title={fatto === "ok" ? "copiato" : fatto === "no" ? "non sono riuscito a copiarlo" : `copia ${numero}`}
+            aria-label={`copia il numero ${numero}`}
+            className={cn("psCopia", fatto === "ok" && "psCopia-ok", fatto === "no" && "psCopia-no")}>
+            {fatto === "ok" ? "✓" : fatto === "no" ? "✕" : <Copy className="w-3 h-3" />}
+        </button>
+    );
+}
+
 /* Gli stati come li ha detti Luca: «da fare sarà lo stato di tutte le
    ricariche che scontrineremo fino a quando non colleghiamo le API; poi
    aggiungiamo la possibilità di definire lo stato come effettuata e andata a
@@ -139,7 +184,11 @@ const STATI: Record<string, { testo: string; colore: string; sfondo: string }> =
     sospeso: { testo: "in sospeso", colore: "text-amber-300", sfondo: "bg-amber-500/15 border-amber-400/40" },
     ok_automatico: { testo: "ok automatico", colore: "text-emerald-300", sfondo: "bg-emerald-500/15 border-emerald-400/40" },
     ok_manuale: { testo: "ok manuale", colore: "text-teal-300", sfondo: "bg-teal-500/12 border-teal-400/35" },
-    fallita: { testo: "NON partita", colore: "text-rose-300", sfondo: "bg-rose-500/15 border-rose-400/40" },
+    /* ⚠️ «NON PARTITA» NON SI CAPIVA (Luca 03/09: «non riesco a capire lo stato
+       non partito a cosa si riferisce»). Vuol dire che il credito NON è uscito:
+       PayStore l'ha rifiutata, o non siamo riusciti a mandarla. Il perché sta
+       sulla riga, e adesso lo dice il suggerimento. */
+    fallita: { testo: "credito NON erogato", colore: "text-rose-300", sfondo: "bg-rose-500/15 border-rose-400/40" },
     annullata: { testo: "annullata", colore: "text-slate-400", sfondo: "bg-white/5 border-white/15" },
 };
 const ORDINE_STATI = [...STATI_RICARICA];
@@ -166,6 +215,12 @@ export function PayStoreAdminView() {
     /* i negozi in una tendina multiselezione: null = tutti (la convenzione del
        FiltroMulti che il CRM usa già in Ricerca Vendite e nel Calendario) */
     const [negoziSel, setNegoziSel] = useState<string[] | null>(null);
+    /* ⚠️ LA SOCIETÀ È UN FILTRO A SÉ, NON UN NEGOZIO. Luca 03/09: «alla destra
+       di quella tendina mettimi un altro filtro che mi filtra Telefutura o
+       Telefutura 2». Non si può ricavare dal negozio: quasi tutte le insegne
+       hanno una cassa per società, e la stessa Magliana vende sotto entrambe.
+       "" = tutte e due. */
+    const [societa, setSocieta] = useState<string>("");
     /* «senza scontrino» e «rimaste indietro»: due pulsanti che filtrano la
        lista, non due elenchi da leggere */
     const [allarme, setAllarme] = useState("");
@@ -249,7 +304,7 @@ export function PayStoreAdminView() {
     /* ⚠️ CAMBIANDO FILTRO O PERIODO SI RIPARTE DA 200. `setQuante` sapeva solo
        crescere: dopo quattro «mostrane altre 500» ogni cambio di mese
        ridisegnava duemiladuecento righe in un colpo. */
-    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stati, origine, allarme, operatore, cerca]);
+    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, societa, stati, origine, allarme, operatore, cerca]);
     useEffect(() => { setGiornoAperto(null); }, [periodo.da, periodo.a]);
     const carica = useCallback(async () => {
         setCaricando(true); setErr(null);
@@ -315,13 +370,14 @@ export function PayStoreAdminView() {
         cerca: (r: Riga) => !cercaN || soloCifre(r.numero).includes(cercaN),
         stato: (r: Riga) => !!cercaN || toccate.has(r.id) || stati.has(r.stato),
         negozio: (r: Riga) => !!cercaN || !negoziSel || negoziSel.includes(String(r.negozio || "")),
+        societa: (r: Riga) => !!cercaN || !societa || String(r.azienda || "") === societa,
         origine: (r: Riga) => !!cercaN || !origine || String(r.con_attivazione === true) === origine,
         allarme: (r: Riga) => !!cercaN || !allarme
             || (allarme === "scontrino" && r.scontrino_stato === "errore")
             || (allarme === "indietro" && rimastaIndietro(r)),
     };
     const tutte = d.ultime;
-    const righe = tutte.filter((r) => F.cerca(r) && F.stato(r) && F.negozio(r) && F.origine(r) && F.allarme(r));
+    const righe = tutte.filter((r) => F.cerca(r) && F.stato(r) && F.negozio(r) && F.societa(r) && F.origine(r) && F.allarme(r));
     /** quante righe resterebbero premendo questo pulsante, con quello che è
      *  già premuto adesso */
     const quanteCon = (tranne: (keyof typeof F)[], cond: (r: Riga) => boolean) =>
@@ -387,7 +443,7 @@ export function PayStoreAdminView() {
        calcola sul periodo intero, e le righe di prima non ce le abbiamo:
        confrontare «solo Magliana, oggi» con «tutti i negozi, ieri» sarebbe un
        numero che sembra un paragone e non lo è. */
-    const filtriAccesi = !!(negoziSel || stato || origine || allarme);
+    const filtriAccesi = !!(negoziSel || societa || stato || origine || allarme);
 
     const unGiornoSolo = perGiornoV.length === 1;
     const aOre = unGiornoSolo || giornoAperto != null;
@@ -754,6 +810,27 @@ export function PayStoreAdminView() {
                             </div>
 
                             <div className="rvCampo">
+                                <span className="rvLab">Società</span>
+                                <div className="rvPillRow">
+                                    {(["T1", "T2"] as const).map((x) => {
+                                        const n = quanteCon(["societa"], (r) => String(r.azienda || "") === x);
+                                        const on = societa === x;
+                                        return (
+                                            <button key={x} aria-pressed={on}
+                                                /* si preme per accendere, si ripreme per tornare a tutte e
+                                                   due: due pastiglie non hanno bisogno di un terzo pulsante
+                                                   «tutte» che occupa spazio per dire niente */
+                                                onClick={() => setSocieta((v) => (v === x ? "" : x))}
+                                                title={`${n} ricarich${n === 1 ? "a" : "e"} di ${SOCIETA[x]}`}
+                                                className={cn("rvPill rvPill-tinta", x === "T1" ? "rvT-ciano" : "rvT-viola", on && "rvPill-on")}>
+                                                {SOCIETA[x]}{on ? " ✓" : ""}<span className="rvPillN">{n}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="rvCampo">
                                 <span className="rvLab">Com&apos;è andata</span>
                                 <div className="rvPillRow">
                                     {ORDINE_STATI.map((x) => {
@@ -806,11 +883,11 @@ export function PayStoreAdminView() {
                                             </button>
                                         );
                                     })}
-                                    {(negoziSel || stato || origine || allarme || operatore) && (
+                                    {(negoziSel || societa || stato || origine || allarme || operatore) && (
                                         <button /* ⚠️ NON rispegne «mostra le già fatte»: un pulsante che promette
                                                 di togliere filtri e fa vedere MENO righe di prima è la cosa
                                                 più confusa che possa fare. Quello è un filtro che allarga. */
-                                            onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
+                                            onClick={() => { setNegoziSel(null); setSocieta(""); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
                                             className="rvPill rvPill-via">✕ togli i filtri</button>
                                     )}
                                 </div>
@@ -891,6 +968,7 @@ export function PayStoreAdminView() {
                                         allarme === "scontrino" ? "senza scontrino" : allarme === "indietro" ? "rimaste indietro" : null,
                                         origine ? (origine === "true" ? "con attivazione" : "sciolte") : null,
                                         negoziSel ? (negoziSel.length === 1 ? negoziSel[0] : `${negoziSel.length} negozi`) : null,
+                                        societa ? SOCIETA[societa] : null,
                                     ].filter(Boolean).join(" · ")}
                                 </span>}
                             </h3>
@@ -974,7 +1052,8 @@ export function PayStoreAdminView() {
                                                         chi guarda: è stampato nella descrizione della riga. Il
                                                         campo a mano resta per i casi in cui lo scontrino non
                                                         c'è — ma è l'eccezione, non la regola. */}
-                                                    {r.numero ? r.numero : <NumeroMancante r={r} onCambiato={() => { setToccate((t) => new Set(t).add(r.id)); void carica(); }} />}
+                                                    {r.numero ? <span className="inline-flex items-center gap-1.5">{r.numero}<CopiaNumero numero={r.numero} /></span>
+                                                        : <NumeroMancante r={r} onCambiato={() => { setToccate((t) => new Set(t).add(r.id)); void carica(); }} />}
                                                 </td>
                                                 <td className="text-right font-bold text-white tabular-nums">{eurC(r.importo)}</td>
                                                 <td className="pl-3 text-slate-400">{r.negozio || "—"}</td>
@@ -1284,7 +1363,11 @@ function StatoRicarica({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
                 const sopra = window.innerHeight - b.bottom < ALTEZZA_MENU;
                 setPos({ x: b.right, y: sopra ? b.top - 4 : b.bottom + 4, sopra });
             }} disabled={lavoro}
-                title={r.stato_da ? `${STATI[r.stato]?.testo} — ${r.stato_da}, ${r.stato_il ? new Date(r.stato_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}` : "clicca per cambiare"}
+                title={[
+                    r.stato === "fallita" ? "Il credito NON è uscito: PayStore l'ha rifiutata o non siamo riusciti a mandarla." : null,
+                    r.errore || null,
+                    r.stato_da ? `${STATI[r.stato]?.testo} — ${r.stato_da}${r.stato_il ? ", " + new Date(r.stato_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}` : null,
+                ].filter(Boolean).join("\n") || "clicca per cambiare"}
                 className={cn("px-2 py-0.5 rounded-lg border text-[11px] font-bold whitespace-nowrap", st.sfondo, st.colore)}>
                 {st.testo} ▾
             </button>
@@ -1826,6 +1909,9 @@ function SchedaRicarica({ id, onChiudi, onCambiato }: { id: string; onChiudi: ()
         vendita: Record<string, unknown> | null;
         cliente: { id: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; cf_piva: string | null; cellulare: string | null; email: string | null } | null;
         insieme: { id: string; brand: string; categoria: string; prodotto: string | null; stato: string | null }[];
+        scontrino: { id: string; created_at: string; status: string; negozio: string; kind: string; certo: boolean; meta: Record<string, unknown> | null } | null;
+        comeTrovate: string;
+        righeScontrino: number | null;
         sorelle: { id: string; operatore: string; numero: string; importo: number; stato: string }[];
         eventi: Ev[]; puoCorreggere: boolean;
     };
@@ -1931,23 +2017,65 @@ function SchedaRicarica({ id, onChiudi, onCambiato }: { id: string; onChiudi: ()
                             </>) : (
                                 <div className="rvNota-s">Ricarica al banco, senza una vendita collegata.</div>
                             )}
+                            {/* ⚠️ IL DOCUMENTO SI APRE DA QUI (Luca 03/09). Quando una
+                                ricarica non torna, la prima cosa che si guarda è lo
+                                scontrino: averlo a due clic di distanza — sezione
+                                Documenti, cerca il giorno, cerca il negozio — vuol dire
+                                non guardarlo. */}
+                            {d.scontrino ? (
+                                <div className="psDato"><span>Scontrino</span><span>
+                                    <a href={`/documenti?doc=${d.scontrino.id}&giorno=${String(d.scontrino.created_at).slice(0, 10)}`}
+                                        target="_blank" rel="noreferrer"
+                                        className="text-indigo-300 hover:underline font-semibold">
+                                        🧾 apri il documento
+                                    </a>
+                                    <span className="text-slate-500 text-[11px]">
+                                        {" "}· {d.scontrino.negozio} · {new Date(d.scontrino.created_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" })}
+                                        {d.righeScontrino ? ` · ${d.righeScontrino} rig${d.righeScontrino === 1 ? "a" : "he"}` : ""}
+                                        {d.scontrino.status !== "done" ? " · NON uscito" : ""}
+                                        {/* ⚠️ SI DICE SE È UNA CERTEZZA O UN ACCOSTAMENTO. Quando il
+                                            documento porta scritto il contratto siamo sicuri; quando lo
+                                            si è preso per vicinanza di orario, no — e chi legge deve
+                                            saperlo prima di trarne conclusioni. */}
+                                        {!d.scontrino.certo ? " · accostato per orario, da confermare" : ""}
+                                    </span>
+                                </span></div>
+                            ) : (
+                                <div className="psDato"><span>Scontrino</span>
+                                    <span className="text-slate-500">nessun documento agganciato</span></div>
+                            )}
                             {d.cliente && (
                                 <div className="psCliente">
+                                    {/* ⚠️ «VENDITA DIRETTA» NON È UN CLIENTE: è il segnaposto
+                                        delle vendite al banco senza anagrafica, condiviso da
+                                        1.183 righe. Farne un collegamento porta a una scheda
+                                        che non esiste. */}
                                     <div className="psDato"><span>Cliente</span><span>
-                                        <a href={`/clienti?q=${encodeURIComponent(d.cliente.cf_piva || d.cliente.id)}`} className="text-indigo-300 hover:underline font-semibold">
-                                            {d.cliente.ragione_sociale || `${d.cliente.nome || ""} ${d.cliente.cognome || ""}`.trim() || d.cliente.id}
-                                        </a></span></div>
+                                        {/DIRETTA|ANONIM/i.test(String(d.cliente.id))
+                                            ? <span className="text-slate-500">venduta al banco, senza anagrafica</span>
+                                            : <a href={`/clienti?q=${encodeURIComponent(d.cliente.cf_piva || d.cliente.id)}`} className="text-indigo-300 hover:underline font-semibold">
+                                                {d.cliente.ragione_sociale || `${d.cliente.nome || ""} ${d.cliente.cognome || ""}`.trim() || d.cliente.id}
+                                            </a>}
+                                    </span></div>
                                     {d.cliente.cf_piva && <div className="psDato"><span>CF / P.IVA</span><span className="font-mono">{d.cliente.cf_piva}</span></div>}
                                     {d.cliente.cellulare && <div className="psDato"><span>Cellulare</span><span className="font-mono">{d.cliente.cellulare}</span></div>}
                                 </div>
                             )}
-                            {!!d.insieme.length && (
+                            {/* ⚠️ E SI DICE COME LE ABBIAMO TROVATE. Su una vendita al
+                                banco senza anagrafica l'accostamento è per orario, non una
+                                certezza: scriverlo è la differenza fra un'informazione e
+                                un'affermazione. */}
+                            {d.insieme.length ? (
                                 <div className="mt-2">
                                     <div className="rvLab">Venduta insieme a</div>
                                     {d.insieme.map((x) => (
                                         <div key={x.id} className="psDato"><span>{x.brand}</span><span>{x.prodotto || x.categoria}</span></div>
                                     ))}
+                                    {!!d.comeTrovate && <div className="text-[11px] text-slate-500 mt-1">{d.comeTrovate}</div>}
                                 </div>
+                            ) : (
+                                <div className="psDato"><span>Venduta insieme a</span>
+                                    <span className="text-slate-500">{d.comeTrovate || "niente: era sola"}</span></div>
                             )}
                             {!!d.sorelle.length && (
                                 <div className="mt-2">

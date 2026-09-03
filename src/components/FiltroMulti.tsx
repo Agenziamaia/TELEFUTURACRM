@@ -87,21 +87,32 @@ export function FiltroMulti({ values, onChange, opzioni, className = "", disable
 
     const menuBody = pos ? (
         <div ref={menu}
-            className="select-persona-menu fixed z-[4000] rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 overflow-y-auto"
+            /* ⚠️ UNA SOLA BARRA DI SCORRIMENTO, E LA LISTA SI PRENDE QUEL CHE AVANZA.
+               Luca 03/09: «questa tendina del negozio è buggata» — e lo era: il
+               riquadro esterno era alto `maxH` e scorreva, ma dentro la lista aveva
+               una sua altezza fissa (`max-h-64`, 256px) e scorreva a sua volta.
+               Sommando intestazione, casella di ricerca e lista si superava sempre
+               l'altezza disponibile, così restava visibile UNA riga e mezza dentro
+               due scorrimenti sovrapposti.
+               Adesso è una colonna: intestazione e ricerca stanno ferme, la lista
+               prende lo spazio che resta. `min-h-0` non è decorativo — senza, un
+               figlio in flex si rifiuta di rimpicciolirsi sotto il suo contenuto e
+               il riquadro torna a sbordare. */
+            className="select-persona-menu fixed z-[4000] rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 overflow-hidden flex flex-col"
             style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxH }}>
             <button type="button"
                 onMouseDown={(e) => { e.preventDefault(); onChange(tutte ? [] : null); }}
-                className="w-full text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider text-indigo-300 hover:bg-indigo-500/20 border-b border-white/10">
+                className="shrink-0 w-full text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider text-indigo-300 hover:bg-indigo-500/20 border-b border-white/10">
                 {tutte ? "Deseleziona tutto" : "Seleziona tutto"}
             </button>
             {opzioni.length > 8 && (
-                <div className="p-2 border-b border-white/10">
+                <div className="shrink-0 p-2 border-b border-white/10">
                     <input value={testo} onChange={(e) => setTesto(e.target.value)}
                         placeholder="Scrivi per filtrare…" autoFocus
                         className="glass-input w-full text-sm" />
                 </div>
             )}
-            <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-white/5">
                 {filtrate.length > 0 ? filtrate.map((n) => {
                     const sel = spuntata(n);
                     return (
