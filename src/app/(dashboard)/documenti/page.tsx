@@ -476,15 +476,26 @@ function Documenti() {
     const [perAgente, setPerAgente] = useState<Record<string, { negozio: string; azienda: string }>>({});
     const [nomiSoc, setNomiSoc] = useState<Record<string, string>>({});
     useEffect(() => {
-        supabase.from("pos_rt").select("negozio, azienda, agente, ragione_sociale").then(({ data }) => {
+        supabase.from("pos_rt").select("negozio, azienda, agente, ragione_sociale, piva").then(({ data }) => {
             const m: Record<string, { negozio: string; azienda: string }> = {};
             const nomi: Record<string, string> = {};
-            ((data ?? []) as { negozio: string; azienda: string; agente: string | null; ragione_sociale: string | null }[])
+            ((data ?? []) as { negozio: string; azienda: string; agente: string | null; ragione_sociale: string | null; piva: string | null }[])
                 .forEach(r => {
                     if (r.agente) m[r.agente] = { negozio: r.negozio, azienda: r.azienda };
-                    /* «T1» e «T2» sono codici nostri: a schermo va il nome che il
-                       cliente legge sullo scontrino. */
-                    if (r.azienda && r.ragione_sociale) nomi[r.azienda] = r.ragione_sociale;
+                    /* ═══ «RAGIONE_SOCIALE» IN pos_rt NON È UNA RAGIONE SOCIALE ═══
+                       ⚠️ È l'etichetta della CASSA. Su dieci righe T1, nove
+                       contengono cose come «Telefutura (Custom) - Merulana» o
+                       «Telefutura - Magliana W3», con la partita IVA vuota:
+                       una sola, Donna, porta il nome vero. Questa mappa era
+                       chiavata solo sul codice società, quindi per T1 vinceva
+                       l'ULTIMA riga letta — e l'ordine non era nemmeno deciso.
+                       Risultato visto da Luca il 03/09: ogni documento di
+                       Baleniere mostrava «Telefutura (Custom) - Acilia», come se
+                       una vendita di un negozio appartenesse a un altro. Erano
+                       tutti e dieci i negozi di Telefutura, 350 documenti.
+                       Il nome vero è quello delle righe che hanno la PARTITA
+                       IVA: una società senza partita IVA non è una società. */
+                    if (r.azienda && r.ragione_sociale && r.piva) nomi[r.azienda] = r.ragione_sociale;
                 });
             setPerAgente(m); setNomiSoc(nomi);
         });
@@ -625,7 +636,11 @@ function Documenti() {
     }, [miei]);
 
     /** «Telefutura 2 S.R.L.», non «T2». */
-    const nomeSoc = useCallback((c: string | null) => (c ? (nomiSoc[c] || c) : ""), [nomiSoc]);
+    /* ⚠️ E SE LA PARTITA IVA NON C'È DA NESSUNA PARTE, si scrive il nome, non
+       il codice: «T1» su uno schermo che guarda l'amministrazione non dice
+       niente a nessuno. */
+    const NOME_SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" };
+    const nomeSoc = useCallback((c: string | null) => (c ? (nomiSoc[c] || NOME_SOCIETA[c] || c) : ""), [nomiSoc]);
     const societaInElenco = useMemo(
         () => Array.from(new Set((docs || []).map(d => nomeSoc(d.azienda)).filter(Boolean))).sort(), [docs, nomeSoc]);
 
@@ -710,13 +725,16 @@ function Documenti() {
         const chiave = (d: Doc): string | number => {
             switch (sort.col) {
                 case 1: return d.negozio || "";
+                /* la società è entrata come colonna 2: da qui in giù gli indici
+                   sono scalati di uno, e devono restare allineati a COLONNE */
+                case 2: return nomeSoc(d.azienda) || "";
                 /* «n. 12» dopo «n. 3», non prima: come testo l'ordine e'
                    quello dell'alfabeto, e su un elenco di scontrini non vuol
                    dire niente. */
-                case 2: return d.numero ? Number(d.numero) || d.numero : (d.matricola || "");
-                case 3: return d.righe.map(r => r.descrizione).join(" ");
-                case 4: return d.operatore || "";
-                case 5: return d.totale ?? -1;
+                case 3: return d.numero ? Number(d.numero) || d.numero : (d.matricola || "");
+                case 4: return d.righe.map(r => r.descrizione).join(" ");
+                case 5: return d.operatore || "";
+                case 6: return d.totale ?? -1;
                 default: return d.quando;
             }
         };
@@ -725,12 +743,15 @@ function Documenti() {
             const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "it");
             return sort.desc ? -c : c;
         });
-    }, [base, tipo, sort]);
+    }, [base, tipo, sort, nomeSoc]);
 
     const esporta = () => {
         const righeCsv = [
-            ["Data", "Ora", "Negozio", "Tipo", "Numero", "Tutti i numeri usciti", "Tentativi", "Matricola", "Totale €", "Cliente", "Operatore", "Esito", "Voci"].join(";"),
-            ...righe.map(d => [gg(d.quando), ora(d.quando), d.negozio,
+            /* ⚠️ ANCHE NEL FILE C'È LA SOCIETÀ. È la prima cosa che si cerca
+               quando si divide un elenco fra due partite IVA, ed è esattamente
+               il motivo per cui questo file esiste. */
+            ["Data", "Ora", "Negozio", "Società", "Tipo", "Numero", "Tutti i numeri usciti", "Tentativi", "Matricola", "Totale €", "Cliente", "Operatore", "Esito", "Voci"].join(";"),
+            ...righe.map(d => [gg(d.quando), ora(d.quando), d.negozio, nomeSoc(d.azienda),
                 d.storno ? "Annullo" : d.fiscale ? "Fiscale" : "Non fiscale",
                 d.numero || "", d.numeriEmessi.join(" + "), String(d.tentativi),
                 d.matricola || "",
@@ -831,7 +852,12 @@ function Documenti() {
         { id: "scontrino" as const, icona: "🧾", et: "Scontrini", n: conta.scontrini, val: conta.valScontrini, tinta: "rvT-verde" },
         { id: "fattura" as const, icona: "📄", et: "Fatture", n: conta.fatture, val: conta.valFatture, tinta: "rvT-ciano" },
     ];
-    const COLONNE = ["Quando", "Punto vendita", "Documento", "Contenuto", "Operatore", "Totale"];
+    /* ⚠️ NEGOZIO E SOCIETÀ SONO DUE COSE, E VANNO IN DUE COLONNE. Luca 03/09:
+       «è un po' confusionario, ci deve essere la colonna negozio e la colonna
+       società, devono essere separate e chiare». Stavano incolonnate una sotto
+       l'altra nella stessa cella, e la seconda si leggeva come una precisazione
+       della prima — cioè «Baleniere, cioè Acilia». */
+    const COLONNE = ["Quando", "Negozio", "Società", "Documento", "Contenuto", "Operatore", "Totale"];
 
     /* IL DETTAGLIO, che si apre DENTRO la riga: un pannello in fondo alla
        tabella, con trecento righe caricate, compare a migliaia di pixel dalla
@@ -1128,15 +1154,15 @@ function Documenti() {
                             <thead>
                                 <tr>
                                     {COLONNE.map((c, i) => (
-                                        <th key={i} className={cn("rvTab-ord", i === 5 && "rvTab-eur")}
-                                            onClick={() => setSort(s => ({ col: i, desc: s.col === i ? !s.desc : i === 0 || i === 5 }))}>
+                                        <th key={i} className={cn("rvTab-ord", i === 6 && "rvTab-eur")}
+                                            onClick={() => setSort(s => ({ col: i, desc: s.col === i ? !s.desc : i === 0 || i === 6 }))}>
                                             {c}{sort.col === i ? <i>{sort.desc ? "↓" : "↑"}</i> : null}
                                         </th>))}
                                 </tr>
                             </thead>
                             <tbody>
                                 {!righe.length && (
-                                    <tr><td colSpan={6} className="rvTab-vuoto">
+                                    <tr><td colSpan={7} className="rvTab-vuoto">
                                         {tipo === "fattura"
                                             ? "Le fatture non sono ancora emesse dal CRM: qui non comparirà niente finché non ci sarà la parte che le crea."
                                             : "Nessun documento con questi filtri. Prova ad allargare le date: l'elenco parte da oggi."}
@@ -1162,7 +1188,19 @@ function Documenti() {
                                                     <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>
                                                     {gg(d.quando)} <b>{ora(d.quando)}</b>
                                                 </td>
-                                                <td className="rvTab-min">{d.negozio}{d.azienda ? <><br /><span className="rvBadge rvBadge-acc">{nomeSoc(d.azienda)}</span></> : null}</td>
+                                                                <td className="rvTab-min">{d.negozio}</td>
+                                                <td className="rvTab-min">
+                                                    {d.azienda
+                                                        ? <span className="rvBadge rvBadge-acc">{nomeSoc(d.azienda)}</span>
+                                                        /* ⚠️ VUOTO NON È «NESSUNA SOCIETÀ»: è un documento
+                                                            che non l'ha registrata. Un trattino lo dice senza
+                                                            far credere che sia stato emesso da nessuno. */
+                                                        /* `rvTab-vuoto` no: è lo stile del messaggio a
+                                                            tutta larghezza quando la tabella è vuota, e
+                                                            dentro una cella centrerebbe il trattino
+                                                            spostandolo dalla colonna. */
+                                                        : <span className="text-slate-600">—</span>}
+                                                </td>
                                                 <td className="rvTab-min">
                                                     {/* ⚠️ SE SONO USCITI IN DUE, SI VEDONO IN DUE. Mostrare solo
                                                         l'ultimo faceva sparire dall'elenco — e dalla ricerca — il
@@ -1219,7 +1257,7 @@ function Documenti() {
                                                 <td className="rvTab-eur">{eur(d.totale)}</td>
                                             </tr>
                                             {apertaQui && (
-                                                <tr className="rvTab-det"><td colSpan={6}>{dettaglio(d)}</td></tr>
+                                                <tr className="rvTab-det"><td colSpan={7}>{dettaglio(d)}</td></tr>
                                             )}
                                         </Fragment>
                                     );
