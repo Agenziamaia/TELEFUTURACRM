@@ -64,7 +64,7 @@ const MAGAZZINO_UFFICIO = "Ufficio";
 import {
     SITUAZIONI, PERIODI, STATI_DDT, STATI_RIGA, TIPI_DDT, RIGHE_APERTE,
     aperto, inRitardo, fermo, giorniInViaggio, eCessione, daFatturare, tipoDi,
-    nellaSituazione, estremi, pezziDi, valoreRiga, cosaMancaPerEmettere, nomeCorto, soloConNegozio,
+    nellaSituazione, estremi, pezziDi, valoreRiga, cosaMancaPerEmettere, nomeCorto, soloConNegozio, guastoDdt,
     type Ddt, type RigaDdt, type Situazione, type Periodo,
 } from "@/lib/trasferimenti";
 
@@ -2594,7 +2594,9 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
     const puoAnnullareUsato = (d: Ddt) => puoCaricare && d.stato === "usato";
 
     /* ── LE AZIONI A SCHERMO ─────────────────────────────────────────────── */
-    type Azione = { d: Ddt; modo: "accetta" | "rifiuta" | "annulla" | "annullaUsato" | "fattura" | "differenza"; riga?: RigaDdt };
+    /* la regola sta in `trasferimenti.ts`: qui solo il nome corto */
+    const guasto = guastoDdt;
+    type Azione = { d: Ddt; modo: "accetta" | "problema" | "risolvi" | "annulla" | "annullaUsato" | "fattura" | "differenza"; riga?: RigaDdt };
     const [azione, setAzione] = useState<Azione | null>(null);
     const [quante, setQuante] = useState<Record<string, number>>({});
     const [motivo, setMotivo] = useState("");
@@ -2628,7 +2630,24 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
             const rs = righeDi(d.id);
             let avvisi: string[] = [];
             if (modo === "accetta") ({ avvisi } = await prendiInCarico(d, rs, quante, motivo, utente));
-            else if (modo === "rifiuta") avvisi = await rimandaIndietro(d, rs, "rifiutato", motivo, utente);
+            /* ⚠️ «PROBLEMA» NON RIMANDA INDIETRO NIENTE (Luca 03/09). Il vecchio
+               «Respingi» faceva una cosa grossa e irreversibile: riportava la
+               merce al mittente e CHIUDEVA il documento — e da lì non c'era più
+               nessun bottone che lo riaprisse. Ma la ragione vera per cui un
+               negozio preme quel tasto, nove volte su dieci, è «non l'ho
+               trovata»: e la merce magari era lì.
+               Adesso si alza una bandierina: il trasferimento resta in viaggio,
+               resta ACCETTABILE, e intanto lo sanno in tre — chi l'ha mandato,
+               chi doveva riceverlo e l'amministrazione. Il rientro della merce
+               resta possibile e lo fa il MITTENTE con «Annulla», che è il gesto
+               di chi ha deciso, non di chi ha solo constatato. */
+            else if (modo === "problema" || modo === "risolvi") {
+                const { error } = await supabase.rpc("mag_ddt_problema", {
+                    p_ddt_id: d.id, p_nota: motivo, p_chiudi: modo === "risolvi",
+                    p_come: modo === "risolvi" ? motivo : null,
+                });
+                if (error) throw new Error(error.message);
+            }
             else if (modo === "annulla") avvisi = await rimandaIndietro(d, rs, "annullato", motivo, utente);
             else if (modo === "annullaUsato") {
                 /* niente `rimandaIndietro`: un usato non ha giacenze da
@@ -2793,6 +2812,14 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                 {d.stato === "accettato" && d.accettato_da && <div className="rvTab-min">{d.accettato_da} · {gg(d.accettato_il)}</div>}
                 {d.stato === "parziale" && d.motivo && <div className="rvTab-min">{d.motivo}</div>}
                 {(d.stato === "annullato" || d.stato === "rifiutato") && d.motivo && <div className="rvTab-min">{d.motivo}</div>}
+                {/* IL PROBLEMA SI VEDE NELLA RIGA (Luca 03/09): il pallino rosso del
+                    menù porta in questa lista, e senza un segno qui dentro non si
+                    capisce QUALE trasferimento sia. */}
+                {guasto(d) && (
+                    <div className="rvBadge rvBadge-ko" title={`${d.problema_nota || ""}${d.problema_da ? ` — ${d.problema_da}` : ""}`}>
+                        ⚠️ problema{d.problema_nota ? `: ${String(d.problema_nota).slice(0, 40)}${String(d.problema_nota).length > 40 ? "…" : ""}` : ""}
+                    </div>
+                )}
             </>
         );
     };
@@ -2985,7 +3012,12 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                                         prende. Il codice per rimandare tutto indietro c'era già ma
                                                         non aveva un bottone: senza, l'unica strada era accettare
                                                         tutto e poi disfare. */}
-                                                    {puoAccettare(d) && <button onClick={() => apriAzione(d, "rifiuta")} className="rvPill rvPill-sm">↩️ Respingi</button>}
+                                                    {/* «PROBLEMA!» invece di «Respingi» (Luca 03/09): segnala,
+                                                        non chiude. E se un problema c'è già, il bottone diventa
+                                                        quello che lo risolve — sulla stessa riga, dov'è nato. */}
+                                                    {puoAccettare(d) && !guasto(d) && <button onClick={() => apriAzione(d, "problema")} className="rvPill rvPill-sm rvPill-no">⚠️ Problema!</button>}
+                                                    {guasto(d) && (puoAccettare(d) || puoAnnullare(d) || puoCaricare) &&
+                                                        <button onClick={() => apriAzione(d, "risolvi")} className="rvPill rvPill-sm rvPill-si">✓ Risolto</button>}
                                                     {puoAnnullare(d) && <button onClick={() => apriAzione(d, "annulla")} className="rvPill rvPill-sm">🚫 Annulla</button>}
                                                     {puoAnnullareUsato(d) && <button onClick={() => apriAzione(d, "annullaUsato")} className="rvPill rvPill-sm">🚫 Annulla</button>}
                                                     {puoCaricare && daFatturare(d) && <button onClick={() => apriAzione(d, "fattura")} className="rvPill rvPill-sm rvPill-no">🧾 Fattura</button>}
@@ -3151,19 +3183,37 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                 </>
                             ) : (
                                 <>
-                                    <div className="rvFatta-o rvFatta-att-o">{azione.modo === "rifiuta" ? "↩️" : "🚫"}</div>
-                                    <h3>{azione.modo === "rifiuta" ? "Respingere tutta la merce?" : "Annullare il documento?"}</h3>
+                                    <div className="rvFatta-o rvFatta-att-o">
+                                        {azione.modo === "problema" ? "⚠️" : azione.modo === "risolvi" ? "✓" : "🚫"}</div>
+                                    <h3>{azione.modo === "problema" ? "Segnalare un problema?"
+                                        : azione.modo === "risolvi" ? "Il problema è risolto?"
+                                            : "Annullare il documento?"}</h3>
                                     <p>
                                         DDT n.{azione.d.numero} · {azione.d.da_negozio} → {azione.d.a_negozio}<br />
-                                        {azione.modo === "annullaUsato"
-                                            ? <>È il documento di un <b>telefono usato</b>: non ci sono giacenze da riportare indietro, il telefono lo segui nella sua scheda.<br /></>
-                                            : <>Tutto quello che sta ancora viaggiando torna <b>{azione.d.da_negozio}</b>.<br /></>}
-                                        Il documento non si cancella: resta col suo numero, marcato {azione.modo === "rifiuta" ? "respinto" : "annullato"}
-                                        {azione.modo === "annullaUsato" && azione.d.azienda_da !== azione.d.azienda_a ? ", e esce dall'elenco «da fatturare»" : ""}.
+                                        {/* SEGNALARE NON CHIUDE NIENTE, e va detto qui: chi preme si
+                                            aspetta di «respingere», e invece la merce resta sua da
+                                            prendere in carico appena la trova. */}
+                                        {azione.modo === "problema"
+                                            ? <>Il trasferimento <b>resta com&apos;è</b>: se la merce salta fuori la puoi accettare lo stesso.
+                                                Intanto lo vedono <b>{azione.d.da_negozio}</b>, questo negozio e l&apos;amministrazione,
+                                                con un pallino rosso sul menù.<br /></>
+                                            : azione.modo === "risolvi"
+                                                ? <>Il pallino rosso si spegne per tutti. Il documento resta dov&apos;era: se la merce
+                                                    è arrivata va comunque <b>accettata</b>.<br />
+                                                    {azione.d.problema_nota ? <>Era stato segnalato: «{azione.d.problema_nota}»{azione.d.problema_da ? ` — ${azione.d.problema_da}` : ""}.<br /></> : null}</>
+                                                : azione.modo === "annullaUsato"
+                                                    ? <>È il documento di un <b>telefono usato</b>: non ci sono giacenze da riportare indietro, il telefono lo segui nella sua scheda.<br /></>
+                                                    : <>Tutto quello che sta ancora viaggiando torna <b>{azione.d.da_negozio}</b>.<br /></>}
+                                        {azione.modo === "problema" || azione.modo === "risolvi" ? null : <>
+                                            Il documento non si cancella: resta col suo numero, marcato annullato
+                                            {azione.modo === "annullaUsato" && azione.d.azienda_da !== azione.d.azienda_a ? ", e esce dall'elenco «da fatturare»" : ""}.
+                                        </>}
                                     </p>
-                                    <label className="rvCampo"><span className="rvLab">Perché</span>
+                                    <label className="rvCampo"><span className="rvLab">{azione.modo === "risolvi" ? "Com'è andata a finire" : "Cos'è successo"}</span>
                                         <input value={motivo} onChange={e => setMotivo(e.target.value)} autoFocus className="rvIn"
-                                            placeholder={azione.modo === "rifiuta" ? "merce danneggiata, non è quella che avevo chiesto…" : azione.modo === "annullaUsato" ? "il telefono non è mai partito, destinazione sbagliata…" : "spedizione sbagliata, ci ripensiamo…"} /></label>
+                                            placeholder={azione.modo === "problema" ? "mancano 3 pezzi, la scatola è arrivata aperta, non l'ho mai vista…"
+                                                : azione.modo === "risolvi" ? "era in magazzino dietro, l'ha ritirata il corriere il giorno dopo…"
+                                                    : azione.modo === "annullaUsato" ? "il telefono non è mai partito, destinazione sbagliata…" : "spedizione sbagliata, ci ripensiamo…"} /></label>
                                 </>
                             )}
                         <div className="rvBarra rvBarra-c mt-4 justify-end">
@@ -3179,12 +3229,19 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                                        e prendere un errore invece di una spiegazione */
                                     : azione.modo === "annullaUsato" ? motivo.trim().length < 5
                                         : !motivo.trim())}
-                                className={cn("rvAzione", azione.modo === "accetta" ? (differenzeInCorso ? "rvAzione-att" : undefined) : azione.modo === "fattura" ? "rvAzione-att" : "rvAzione-no")}>
+                                className={cn("rvAzione",
+                                    azione.modo === "accetta" ? (differenzeInCorso ? "rvAzione-att" : undefined)
+                                        : azione.modo === "fattura" ? "rvAzione-att"
+                                            /* «risolto» è l'unico verde: chiude una cosa, non ne apre una */
+                                            : azione.modo === "risolvi" ? undefined
+                                                : azione.modo === "problema" ? "rvAzione-att" : "rvAzione-no")}>
                                 {inCorso && <Loader2 className="w-4 h-4 animate-spin inline-block align-[-3px] mr-2" />}
                                 {azione.modo === "accetta" ? (differenzeInCorso ? "Prendo in carico con differenze" : "Prendo in carico")
                                     : azione.modo === "fattura" ? (rifRiga.trim() ? "Segna fatturata" : "Segna non dovuta")
                                         : azione.modo === "annulla" || azione.modo === "annullaUsato" ? "Sì, annulla"
-                                            : azione.modo === "differenza" ? "Chiudi la riga" : "Sì, respingi"}
+                                            : azione.modo === "differenza" ? "Chiudi la riga"
+                                                : azione.modo === "risolvi" ? "Sì, è risolto"
+                                                    : "Segnala il problema"}
                             </button>
                         </div>
                     </div>

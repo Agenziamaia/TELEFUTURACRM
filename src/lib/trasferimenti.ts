@@ -107,6 +107,13 @@ export type Ddt = {
     destinatario_cap: string | null; destinatario_citta: string | null;
     destinatario_provincia: string | null;
     fattura_stato: string | null; fattura_rif: string | null; fattura_il: string | null;
+    /* ⚠️ IL PROBLEMA È UNA BANDIERINA, NON UNO STATO (Luca 03/09). Il negozio
+       che riceve può dire «questa merce non l'ho trovata» senza chiudere
+       niente: il trasferimento resta in viaggio e resta accettabile, perché
+       nove volte su dieci la merce era lì e non se n'erano accorti. Intanto
+       lo sanno in tre — chi manda, chi riceve, l'amministrazione. */
+    problema_il: string | null; problema_da: string | null; problema_nota: string | null;
+    problema_chiuso_il: string | null; problema_chiuso_da: string | null; problema_chiuso_come: string | null;
     valore: number | null;
 };
 
@@ -257,6 +264,13 @@ export function haDifferenze(righe: RigaDdt[]): boolean {
  *  tendine, nei modali e sul documento. */
 export const nomeCorto = (rs: string | null | undefined) =>
     String(rs || "").replace(/\s*(s\.?r\.?l\.?|s\.?p\.?a\.?|s\.?a\.?s\.?|s\.?n\.?c\.?)\s*$/i, "").trim();
+
+/** C'È UN PROBLEMA APERTO SU QUESTO TRASFERIMENTO? Una sola regola, perché
+ *  la usano la tabella, il pallino del menù e il pulsante: segnalato e non
+ *  ancora risolto. Che il documento sia in viaggio o parziale lo garantisce
+ *  già la funzione che lo segnala. */
+export const guastoDdt = (d: { problema_il?: string | null; problema_chiuso_il?: string | null } | null | undefined) =>
+    !!(d && d.problema_il && !d.problema_chiuso_il);
 
 /** Quanti pezzi porta una riga (un seriale è sempre uno). */
 export const pezziDi = (r: RigaDdt) => (r.seriale ? 1 : Number(r.quantita) || 0);

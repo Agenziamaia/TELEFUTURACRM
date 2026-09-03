@@ -88,6 +88,33 @@ function useFeriePendenti(userId: string | undefined, role: string | undefined):
     return n;
 }
 
+/** I DUE PALLINI DEL MAGAZZINO (Luca 03/09). Due numeri, due colori, due
+ *  domande diverse:
+ *   · VIOLA — «sta arrivando roba»: documenti in viaggio verso il mio negozio
+ *     che aspettano di essere presi in carico. È un promemoria.
+ *   · ROSSO — «qualcosa non torna»: trasferimenti che mi riguardano con un
+ *     problema aperto. È una chiamata, e infatti lampeggia.
+ *  Il rosso arriva a tutti e tre — chi manda, chi riceve e l'amministrazione —
+ *  ed è il motivo per cui il conteggio lo fa il server: da qui non si saprebbe
+ *  quali negozi sono «miei». */
+function useMagazzino(userId: string | undefined): { inArrivo: number; problemi: number } {
+    const [v, setV] = useState({ inArrivo: 0, problemi: 0 });
+    useEffect(() => {
+        if (!userId) { setV({ inArrivo: 0, problemi: 0 }); return; }
+        let vivo = true;
+        const load = async () => {
+            try {
+                const r = await fetch("/api/magazzino/avvisi", { cache: "no-store" }).then((x) => x.json());
+                if (vivo && r?.ok) setV({ inArrivo: Number(r.inArrivo || 0), problemi: Number(r.problemi || 0) });
+            } catch { /* pallino best-effort */ }
+        };
+        load();
+        const stop = visibleInterval(load, 120000);
+        return () => { vivo = false; stop(); };
+    }, [userId]);
+    return v;
+}
+
 /** Pallino PAYSTORE (Luca 02/09): le ricariche «in sospeso», cioè quelle il
  *  cui processo non si è concluso — scontrino mancante o messo in pausa, o
  *  API non ancora collegata — e che quindi qualcuno deve caricare a mano.
@@ -174,6 +201,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
     const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
     const feriePendenti = useFeriePendenti(user?.id, user?.role);
+    const mag = useMagazzino(user?.id);
 
     // NON LETTI per CANALE -> tre badge distinti sulla voce "Chat":
     // chat interna (indaco), WhatsApp (verde), mail (azzurro). WhatsApp/mail
@@ -409,6 +437,18 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                         <span className="flex items-center gap-3">
                                             <Icon className="w-5 h-5 text-slate-500" />
                                             {group.label}
+                                            {/* IL ROSSO SI VEDE DA FUORI (Luca 03/09: «anche se non
+                                                apro Magazzino lo vedo che c'è un pallino rosso che
+                                                bipa»). Sull'hub non si scrive il numero — lo si
+                                                legge entrando — si dice solo CHE c'è. */}
+                                            {group.label === "Magazzino" && mag.problemi > 0 && (
+                                                <span title={`${mag.problemi} trasferiment${mag.problemi === 1 ? "o" : "i"} con un problema`}
+                                                    className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,.9)]" />
+                                            )}
+                                            {group.label === "Magazzino" && mag.problemi === 0 && mag.inArrivo > 0 && (
+                                                <span title={`${mag.inArrivo} in arrivo da prendere in carico`}
+                                                    className="w-2 h-2 rounded-full bg-violet-500" />
+                                            )}
                                         </span>
                                         {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
                                     </button>
@@ -431,6 +471,17 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                                     >
                                                         <ChildIcon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500")} />
                                                         {child.name}
+                                                        {/* SULLA VOCE IL NUMERO, perché lì la domanda è
+                                                            «quanti»: il rosso lampeggia e sta prima,
+                                                            perché un problema batte un promemoria. */}
+                                                        {child.href === "/magazzino?tab=trasferimenti" && mag.problemi > 0 && (
+                                                            <span title={`${mag.problemi} trasferiment${mag.problemi === 1 ? "o" : "i"} con un problema segnalato`}
+                                                                className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">{mag.problemi}</span>
+                                                        )}
+                                                        {child.href === "/magazzino?tab=trasferimenti" && mag.inArrivo > 0 && (
+                                                            <span title={`${mag.inArrivo} in arrivo: da prendere in carico`}
+                                                                className={cn("min-w-[18px] h-[18px] px-1 rounded-full bg-violet-500 text-white text-[10px] font-bold flex items-center justify-center", mag.problemi > 0 ? "ml-1" : "ml-auto")}>{mag.inArrivo}</span>
+                                                        )}
                                                         {child.href === "/collaboratori?tab=ferie" && feriePendenti > 0 && (
                                                             <span title={`${feriePendenti} richieste ferie in attesa`} className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center animate-pulse">{feriePendenti}</span>
                                                         )}
