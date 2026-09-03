@@ -35,8 +35,49 @@
 // (RM*), ma il CRM usa reparto 7 → andrà mappato 7→4 quando si venderà usato a
 // fiscale (per registratore: su Custom dept 4 non è RM). Non urgente ora.
 const REPARTO_MAP: Record<string, Record<number, number>> = {
-  // Vuoto = identità per tutti. Si aggiunge un negozio SOLO se una diagnostica
-  // dimostra che QUEL registratore mappa i reparti diversamente.
+  /* ═══ MAGLIANA MULTI — registratore 99IEB077017 (192.168.1.106) ══════════
+     ⚠️ TAMPONE, NON UNA SCELTA DI DESIGN. Questa macchina è l'UNICA del parco
+     programmata fuori standard: è il registratore storico dell'insegna Multi
+     (876 chiusure Z) e ha una numerazione tutta sua. Le altre quattordici —
+     Epson nuovi e vecchi, e i Custom — hanno tutte 1=ESENTE, 2=CELLULARI 22%,
+     7=USATO, cioè esattamente quello che il CRM si aspetta (verificato il
+     03/09/2026 sulle chiusure di Collatina T2, Garbatella e Baleniere).
+
+     COSA HA COMBINATO (3.038,90 € dall'1 al 3 settembre, già trasmessi):
+     le ricariche e le SIM (reparto 1) uscivano al 22% invece che in art. 74,
+     gli usati (reparto 7) al 22% invece che in regime del margine, e gli
+     accessori (reparto 2) al 4% invece che al 22%.
+
+     LA PROVA, e non è dedotta da un config_cassa.ini: nove scontrini
+     diagnostici da un centesimo battuti il 03/09/2026 alle 21:08-21:09 su
+     quella macchina (documenti 0877-0001…0009), uno per reparto, letti sulla
+     lettera IVA stampata riga per riga:
+        1 → 22%   2 → 4%    3 → RM (regime del margine)   4 → NS (non soggetta)
+        5 → 5%    6 → 22%   7 → 22%   8 → 22%   9 → 22%
+       10 → EE (esente)     11 → NS   12 → NI (non imponibile)
+
+     ⛔ DA TOGLIERE quando il tecnico riprogramma il misuratore (la verifica
+     periodica è in scadenza: l'avviso è uscito la sera del 03/09, documento
+     0876-0002). Il giorno in cui quella cassa torna in riga con le altre,
+     QUESTA MAPPA VA CANCELLATA lo stesso giorno: lasciata accesa, ribalta gli
+     scontrini al contrario. È la lezione dei malus Sky — una regola accesa e
+     dimenticata fa danni uguali e opposti a quelli che ha riparato.
+
+     NON MAPPATO: il reparto 5 del CRM («Esclusa», natura N1) — su questa
+     macchina un N1 non esiste. Lo usa un solo articolo (SIM ATTIVAZIONE
+     ILIAD), che è comunque classificato male: va corretto in anagrafica a
+     reparto 1, non inventato qui un reparto che il registratore non ha. */
+  "Magliana Multi": {
+    1: 4,    // Non soggetta (art. 74: ricariche, SIM)  → NS
+    2: 1,    // IVA 22% (accessori, assistenza, telefoni) → 22%
+    3: 2,    // IVA 4%                                   → 4%
+    4: 3,    // Regime del margine                       → RM
+    6: 2,    // IVA 4% (2)                               → 4%
+    7: 3,    // Usato · regime del margine               → RM
+    8: 4,    // C/VOD · non soggetta                     → NS
+    9: 12,   // Non imponibile                           → NI
+    10: 4,   // Esente VOD · non soggetta                → NS
+  },
 };
 
 /** Traduce il reparto logico del CRM nel reparto fisico del registratore del negozio.

@@ -1,0 +1,81 @@
+USATI SENZA SCHEDA IN GESTIONE USATI - 3 settembre 2026
+==============================================================
+
+Questi telefoni erano SOLO in magazzino: ci sono entrati con l'importazione
+dal vecchio gestionale, e in Gestione Usati non esistono.
+
+Il 3 settembre sono usciti dal magazzino, dove non dovevano stare. Ma
+finche' non hanno una scheda in Gestione Usati non si possono vendere:
+sparando l'IMEI al banco esce "non trovato".
+
+COSA FARE: chi e' in negozio guardi sullo scaffale. Quelli che ci sono
+davvero vanno inseriti in Gestione Usati (Acquisto usato), e da li' si
+vendono normalmente. Degli altri non c'e' niente da fare: erano rimasugli
+del vecchio gestionale.
+
+
+Acilia · T2
+-----------
+  IPHONE-14-PRO-128GB-NERO                   IMEI 351083736457178
+  MOTOROLA MOTO G05 128GB VERDE              IMEI 354125561628055
+  Samsung S22 256GB                          IMEI 352596763802452
+  SAMSUNG S23-256 GB-NERO                    IMEI 354268748546814
+  zte blade a76                              IMEI 864846073134166
+  zte blade a76                              IMEI 864846075578659
+  ZTE BLADE A76 56 128GB                     IMEI 864846076081059
+  zte blade a76 5g 128gb                     IMEI 864846072608442
+
+Baleniere · T1
+--------------
+  IPHONE 15 128GB TURCHESE                   IMEI 350944990046695
+  Motorola One Zoom 128GB                    IMEI 354155101726739
+  SAMSUNG S25 ULTRA                          IMEI 356278281562569
+
+Castani · T1
+------------
+  SAMSUNG Galaxy Core Prime VE - BIANCO      IMEI 352147074980775
+  SAMSUNG GALAXY J3 2017 - BLU - 16 GB       IMEI 353644091706778
+
+Collatina · T2
+--------------
+  Apple Watch SE2 2024                       IMEI SD34XK5J3QN
+  GALAXY Z FLIP8                             IMEI 355351500422074
+  LG-P700                                    IMEI 352248054394514
+  SAMSUNG GRAND NEO PLUS                     IMEI 357224060511487
+
+Donna · T1
+----------
+  IPHONE 16 ULTRAMARINE 128GB                IMEI 359062142933982
+  samsung-s23ultra-256gb-NERO                IMEI 35592881639809
+  ZTE BLADE A51 32GB                         IMEI 861188050556720
+  zte blade a76 5g                           IMEI 864846076050419
+  ZTE BLADE A76 5G 128GB                     IMEI 864846075697251
+
+Garbatella · T2
+---------------
+  IPHONE 13 MINI - 128 GB NERO               IMEI 350424815413321
+  IPHONE 14 PRO MAX-256 GB-NERO              IMEI 355281431994695
+  moto g05                                   IMEI 354125562385036
+  TCL 403 NERO 32 GB                         IMEI 351490263921304
+
+Libia · T1
+----------
+  Samsung A12 64GB                           IMEI 350396268245469
+
+Magliana · T2
+-------------
+  IPHONE 13 PRO MAX 128GB                    IMEI 353282625085979
+  IPHONE 15 PRO MAX - 256 GB - NERO          IMEI 356388810243443
+  IPHONE-16-128GB-NERO                       IMEI 355542339347629
+  MOTOROLA-G06-64GB-BLUE                     IMEI 351186225154832
+  samnsung galaxy watch 46mm                 IMEI SM-R800
+  TCL 501                                    IMEI 358819430119223
+  VODAFONE MIFI HOME                         IMEI 860921063143149
+  Watch GT 46mm                              IMEI UDFGA19408002146
+
+Merulana · T1
+-------------
+  zte blade a76 128gb                        IMEI 864846073565823
+
+
+TOTALE: 36 telefoni

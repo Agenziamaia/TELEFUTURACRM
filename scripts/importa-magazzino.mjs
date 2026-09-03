@@ -178,6 +178,31 @@ if((Number(gia.m)+Number(gia.u))>0 && !flag("forza")){
 }
 if(flag("prova")){ console.log(`\n${Y}${B}Prova: non ho scritto niente.${X}\n`); await db.end(); process.exit(0); }
 
+/* ═══ GLI USATI NON ENTRANO IN MAGAZZINO ═══════════════════════════════════
+   Il 03/09 abbiamo tolto dallo stock 149 telefoni usati che erano entrati
+   proprio da qui: il file del gestionale li contiene sempre, e questo script
+   li caricava come merce qualunque. Il database adesso li rifiuta con un
+   trigger — ma lo script inserisce a lotti dentro UNA transazione sola, quindi
+   un solo usato nel file farebbe fallire il carico INTERO di quel negozio.
+   Si scartano qui, prima, e si dice quanti e quali: uno scarto raccontato è
+   informazione, un abort silenzioso è una serata persa. */
+const codiciUsati = new Set((await db.query(
+  `select codice from mag_articoli where usato is true`)).rows.map(r=>r.codice));
+const eUsato = (x) => codiciUsati.has(x.codice)
+  || /^ritusato/i.test(String(x.codice||""))
+  || String(x.gruppo||"").toUpperCase()==="USATO";
+const scartatiUsati = { pezzi: pezzi.filter(eUsato), quantita: quantita.filter(eUsato) };
+pezzi = pezzi.filter(x=>!eUsato(x));
+quantita = quantita.filter(x=>!eUsato(x));
+if(scartatiUsati.pezzi.length || scartatiUsati.quantita.length){
+  console.log(`\n${Y}Lasciati fuori ${scartatiUsati.pezzi.length} pezzi e ${scartatiUsati.quantita.length} righe a quantità: sono USATI.${X}`);
+  console.log(`I telefoni usati vivono in Gestione Usati, non in magazzino. Se qualcuno di questi ti serve,`);
+  console.log(`va inserito lì — non qui. I primi:`);
+  [...scartatiUsati.pezzi.slice(0,5), ...scartatiUsati.quantita.slice(0,5)]
+    .forEach(x=>console.log(`   · ${x.codice||"—"} ${x.descrizione||""} ${x.seriale?"· "+x.seriale:""}`));
+  console.log("");
+}
+
 await db.query("begin");
 try{
   const conPezzi=quantita.filter(x=>x.quantita>0);
