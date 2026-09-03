@@ -292,65 +292,11 @@ export async function scaricaVendita(
     return esito;
 }
 
-/** Carico di merce in arrivo (bolla del fornitore o inventario iniziale). */
-export async function caricaMerce(
-    righe: { codice: string; quantita: number; costo?: number | null }[],
-    negozio: string, operatore?: string | null, nota?: string,
-): Promise<{ ok: number; errore?: string }> {
-    const buone = (righe || []).filter((r) => r.codice && Number(r.quantita) > 0);
-    if (!buone.length) return { ok: 0 };
-    const { error } = await supabase.from("mag_movimenti").insert(
-        buone.map((r) => ({
-            codice: r.codice, negozio, tipo: "carico", quantita: Number(r.quantita),
-            costo_unitario: r.costo ?? null, operatore: operatore || null, nota: nota || null,
-        })),
-    );
-    return error ? { ok: 0, errore: error.message } : { ok: buone.length };
-}
-
-/** L'INVENTARIO: «contati, sono 7». Scrive la differenza come rettifica, così
- *  la giacenza arriva a 7 SENZA cancellare la storia di come ci era arrivata. */
-export async function rettificaConteggio(
-    codice: string, negozio: string, contati: number, operatore?: string | null, nota?: string,
-    azienda?: string | null,
-): Promise<{ ok: boolean; delta: number; errore?: string }> {
-    /* ⚠️ DUE TRAPPOLE, tutte e due chiuse qui (revisione 02/09; la funzione oggi
-       non è ancora chiamata da nessuno, e va sistemata PRIMA che lo sia).
-       ① LA GIACENZA È PER ARTICOLO × NEGOZIO × SOCIETÀ, non per articolo ×
-          negozio: in 186 casi lo stesso codice nello stesso negozio ha due
-          righe. `maybeSingle()` su due righe non torna la prima — torna un
-          ERRORE e `data` nullo, quindi `attuale` finiva a 0 e la rettifica
-          scriveva un delta pari all'intero conteggio: una duplicazione secca.
-       ② IL MAGAZZINO È DEL LOCALE. Con `.eq("negozio")` un inventario fatto a
-          «Collatina Multi» non vedeva i pezzi, che stanno sotto «Collatina W3»:
-          `attuale = 0`, delta sbagliato, e nasceva una SECONDA riga di giacenza
-          sull'insegna che non ha quella merce. */
-    const { data: righeGiac } = await supabase.from("mag_giacenze")
-        .select("negozio, azienda, quantita").eq("codice", codice);
-    const nelLocale = ((righeGiac ?? []) as { negozio: string; azienda: string | null; quantita: number }[])
-        .filter((r) => stessoMagazzino(r.negozio, negozio) && (!azienda || r.azienda === azienda));
-    if (nelLocale.length > 1) {
-        return { ok: false, delta: 0, errore: `«${codice}» in questo punto vendita esiste per ${nelLocale.length} società `
-            + `(${nelLocale.map((r) => r.azienda || "senza società").join(", ")}): dimmi di quale stai contando i pezzi.` };
-    }
-    /* SI RETTIFICA LA RIGA CHE ESISTE DAVVERO: se la merce sta sotto l'insegna
-       gemella, il movimento va scritto lì, se no il conteggio giusto crea una
-       giacenza nel posto sbagliato e ne restano due. */
-    const riga = nelLocale[0];
-    if (riga) { negozio = riga.negozio; azienda = riga.azienda; }
-    const attuale = Number(riga?.quantita) || 0;
-    const delta = Number(contati) - attuale;
-    if (delta === 0) {
-        await supabase.from("mag_giacenze").update({ contata_il: new Date().toISOString(), contata_da: operatore || null })
-            .eq("negozio", negozio).eq("codice", codice);
-        return { ok: true, delta: 0 };
-    }
-    const { error } = await supabase.from("mag_movimenti").insert({
-        codice, negozio, azienda: azienda ?? null, tipo: "rettifica", quantita: delta, operatore: operatore || null,
-        nota: nota || `inventario: contati ${contati}, il sistema diceva ${attuale}`,
-    });
-    if (error) return { ok: false, delta, errore: error.message };
-    await supabase.from("mag_giacenze").update({ contata_il: new Date().toISOString(), contata_da: operatore || null })
-        .eq("negozio", negozio).eq("codice", codice);
-    return { ok: true, delta };
-}
+/* ⚠️ QUI C'ERANO `caricaMerce` E `rettificaConteggio`, E NON LE CHIAMAVA
+   NESSUNO — verificato su tutto `src/` il 04/09. Erano le uniche due strade
+   per cui il BROWSER poteva scrivere un movimento di tipo `carico` o
+   `rettifica`, cioè le due sole che fanno comparire merce dal nulla.
+   Codice morto che tiene aperta una porta non è codice morto: è una porta.
+   Il carico della merce si fa dal carico merce (`mag_carico_merce`, che
+   controlla il ruolo nel database); la rettifica dal cestino delle Giacenze,
+   che ora la policy `tf_mag_mov_tipi` riserva all'amministrazione. */
