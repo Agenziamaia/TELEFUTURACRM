@@ -200,6 +200,11 @@ export function PayStoreAdminView() {
        scritto sulle pastiglie: tre accese, due spente, e si cambia premendo.
        Vale per QUALUNQUE periodo — oggi, ieri, sette giorni, un mese — senza
        regole diverse a seconda del giorno. */
+    /* ⚠️ CERCARE UN NUMERO È LA DOMANDA PIÙ FREQUENTE DI TUTTE, e finora non
+       c'era: quando un cliente telefona dicendo «non mi è arrivata la
+       ricarica», l'unico appiglio è il suo numero — e senza questo campo si
+       scorrevano duecento righe a occhio. */
+    const [cerca, setCerca] = useState("");
     const DA_SISTEMARE = ["sospeso", "fallita", "annullata"];
     const [stati, setStati] = useState<Set<string>>(() => new Set(DA_SISTEMARE));
     /* ⚠️ LA RIGA SI APRE, NON SI SFOGLIA. Su una ricarica che non è andata la
@@ -244,7 +249,7 @@ export function PayStoreAdminView() {
     /* ⚠️ CAMBIANDO FILTRO O PERIODO SI RIPARTE DA 200. `setQuante` sapeva solo
        crescere: dopo quattro «mostrane altre 500» ogni cambio di mese
        ridisegnava duemiladuecento righe in un colpo. */
-    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stati, origine, allarme, operatore]);
+    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stati, origine, allarme, operatore, cerca]);
     useEffect(() => { setGiornoAperto(null); }, [periodo.da, periodo.a]);
     const carica = useCallback(async () => {
         setCaricando(true); setErr(null);
@@ -299,16 +304,24 @@ export function PayStoreAdminView() {
        pastiglie: quello che si vede è quello che è acceso.
        `toccate` resta: una riga su cui si è appena agito NON deve sparire sotto
        le dita mentre la si guarda. */
+    /* le cifre e basta: chi cerca scrive «333 12 34 567» o «+39 333…», e un
+       confronto letterale non troverebbe niente */
+    const soloCifre = (x: string) => String(x || "").replace(/\D/g, "");
+    const cercaN = soloCifre(cerca);
     const F = {
-        stato: (r: Riga) => toccate.has(r.id) || stati.has(r.stato),
-        negozio: (r: Riga) => !negoziSel || negoziSel.includes(String(r.negozio || "")),
-        origine: (r: Riga) => !origine || String(r.con_attivazione === true) === origine,
-        allarme: (r: Riga) => !allarme
+        /* ⚠️ IL NUMERO VINCE SUGLI ALTRI FILTRI. Chi cerca un numero lo cerca
+           perché un cliente ha chiamato: se lo stato o il negozio lo tenessero
+           fuori, la risposta sarebbe «non risulta» su una ricarica che c'è. */
+        cerca: (r: Riga) => !cercaN || soloCifre(r.numero).includes(cercaN),
+        stato: (r: Riga) => !!cercaN || toccate.has(r.id) || stati.has(r.stato),
+        negozio: (r: Riga) => !!cercaN || !negoziSel || negoziSel.includes(String(r.negozio || "")),
+        origine: (r: Riga) => !!cercaN || !origine || String(r.con_attivazione === true) === origine,
+        allarme: (r: Riga) => !!cercaN || !allarme
             || (allarme === "scontrino" && r.scontrino_stato === "errore")
             || (allarme === "indietro" && rimastaIndietro(r)),
     };
     const tutte = d.ultime;
-    const righe = tutte.filter((r) => F.stato(r) && F.negozio(r) && F.origine(r) && F.allarme(r));
+    const righe = tutte.filter((r) => F.cerca(r) && F.stato(r) && F.negozio(r) && F.origine(r) && F.allarme(r));
     /** quante righe resterebbero premendo questo pulsante, con quello che è
      *  già premuto adesso */
     const quanteCon = (tranne: (keyof typeof F)[], cond: (r: Riga) => boolean) =>
@@ -711,6 +724,23 @@ export function PayStoreAdminView() {
                                 di più per come è statica» — e l'ha voluto SOPRA. Qui restano
                                 solo i filtri che tagliano l'elenco: dove, com'è andata, da
                                 dove arriva, e i due allarmi. */}
+                            {/* ⚠️ IL PRIMO CAMPO DELLA FASCIA, e non per gusto: quando un
+                                cliente telefona «non mi è arrivata la ricarica», l'unica cosa
+                                che ha in mano è il suo numero. Cercarlo deve costare un gesto,
+                                non lo scorrimento di duecento righe. */}
+                            <div className="rvCampo">
+                                <span className="rvLab">Numero del cliente</span>
+                                <div className="rvPillRow items-center">
+                                    <input value={cerca} inputMode="numeric" placeholder="333 1234567"
+                                        onChange={(e) => setCerca(e.target.value)}
+                                        className="an-data glass-input px-3 py-2 rounded-lg text-[13px] font-mono"
+                                        style={{ width: 150 }} />
+                                    {cerca && (
+                                        <button onClick={() => setCerca("")} className="rvPill rvPill-sm rvPill-via">✕</button>
+                                    )}
+                                </div>
+                            </div>
+
                             <div className="rvCampo">
                                 <span className="rvLab">Dove</span>
                                 {/* i negozi sono quattordici: una tendina, non quattordici
@@ -826,9 +856,11 @@ export function PayStoreAdminView() {
                             Premi un riquadro o una pastiglia per vedere solo quelle: il numero dice quante righe
                             vedrai. Questi filtri valgono per <b>tutta la pagina</b> — i quattro numeri, i grafici e
                             l'elenco raccontano sempre la stessa cosa.
-                            {" "}L'unica eccezione è <b>nascondere le completate</b>, che tiene fuori dall'elenco quelle
-                            già a posto ma non dai totali: se le togliesse anche da lì, l'incassato calerebbe man mano
-                            che le ricariche vengono fatte.
+                            {" "}Di partenza sono accesi i tre stati <b>da sistemare</b>: le già fatte si aggiungono
+                            premendo la loro pastiglia.
+                            {" "}Cercando un <b>numero</b>, invece, gli altri filtri si sospendono: chi cerca un numero
+                            lo fa perché un cliente ha chiamato, e una risposta «non risulta» su una ricarica che
+                            esiste sarebbe la cosa peggiore.
                         </div>
                     </div>
 
@@ -848,14 +880,19 @@ export function PayStoreAdminView() {
                                 {/* ⚠️ COSA SI STA GUARDANDO, scritto per esteso: gli stati
                                     accesi si dicono sempre, perché di partenza tre sono accesi e
                                     due no — e chi non lo sa si chiede dove sono finite le altre. */}
-                                <span className="text-[11px] font-semibold text-amber-300/90">
+                                {cercaN && (
+                                    <span className="text-[11px] font-semibold text-indigo-300">
+                                        {" · "}numero che contiene {cercaN} — gli altri filtri sono sospesi
+                                    </span>
+                                )}
+                                {!cercaN && <span className="text-[11px] font-semibold text-amber-300/90">
                                     {" · "}{[
                                         [...ORDINE_STATI].filter((x) => stati.has(x)).map((x) => STATI[x].testo).join(", "),
                                         allarme === "scontrino" ? "senza scontrino" : allarme === "indietro" ? "rimaste indietro" : null,
                                         origine ? (origine === "true" ? "con attivazione" : "sciolte") : null,
                                         negoziSel ? (negoziSel.length === 1 ? negoziSel[0] : `${negoziSel.length} negozi`) : null,
                                     ].filter(Boolean).join(" · ")}
-                                </span>
+                                </span>}
                             </h3>
                             {/* ⚠️ DI COSA PARLA QUESTO NUMERO. Con le già fatte nascoste
                                 qui si leggeva 778 € mentre il quadrato «Incassato» diceva
