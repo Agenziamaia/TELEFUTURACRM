@@ -367,9 +367,15 @@ export function nellaSituazione(
         /* OLTRE I TERMINI: sei giorni lavorativi per accettare. Senza i giorni
            veri — la prima frazione di secondo, prima che arrivino — si ripiega
            su `fermo()`, che sui giorni di calendario è sempre più prudente:
-           meglio mostrarne uno in meno che uno in più. */
+           meglio mostrarne uno in meno che uno in più.
+           ⚠️ SI CONTANO LE CHIAVI, non si guarda se l'oggetto esiste: `{}` è
+           vero in JavaScript, quindi con la mappa VUOTA (il patto non letto,
+           la richiesta ancora in volo) usciva sempre `0 > 6` = falso, e il
+           riquadro contava zero per sempre. Il ripiego non entrava mai. */
         case "fermi": return aperto(d) && !guastoDdt(d)
-            && (giorniLav ? (giorniLav[d.id] ?? 0) > giorniMax : fermo(d, ora));
+            && (giorniLav && Object.keys(giorniLav).length
+                ? (giorniLav[d.id] ?? 0) > giorniMax
+                : fermo(d, ora));
     }
 }
 

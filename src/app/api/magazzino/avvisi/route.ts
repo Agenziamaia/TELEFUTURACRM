@@ -66,7 +66,10 @@ export async function GET(req: Request) {
        cron che qualcuno deve ricordarsi di guardare. La funzione è
        idempotente — un episodio per documento e per persona — quindi quindici
        browser che chiedono insieme scrivono le stesse righe, non quindici. */
-    await supabase.rpc("mag_matura_ritardi");
+    /* SE IL MOTORE SI ROMPE LO SI DEVE SAPERE: prima l'errore veniva buttato
+       via e il malus semplicemente smetteva di maturare, in silenzio. */
+    const { error: errMaturazione } = await supabase.rpc("mag_matura_ritardi");
+    if (errMaturazione) console.error("[avvisi] maturazione ritardi fallita:", errMaturazione.message);
 
     const { data: dd, error } = await supabase.from("mag_ddt")
         .select("da_negozio, a_negozio, stato, creato_il, problema_il, problema_chiuso_il")
@@ -75,7 +78,7 @@ export async function GET(req: Request) {
     if (error) return NextResponse.json({ ok: false, inArrivo: 0, problemi: 0, ritardo: 0, avviso: 0 }, { status: 200 });
 
     /* LA SCALA DEL PATTO (Luca 03/09): sei giorni lavorativi per accettare, dal
-       quarto lampeggia giallo, dal settimo diventa rosso e costa 5 €/giorno.
+       quarto lampeggia arancione, dal settimo diventa rosso e costa 5 €/giorno.
        I giorni li conta il database — sa quali negozi aprono la domenica e
        quali sono i festivi — e li si chiede in blocco per non fare una query
        per documento. */
