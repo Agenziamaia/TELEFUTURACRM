@@ -108,8 +108,20 @@ export function DisponibilitaFerie() {
            office del call center ma è assunto a tempo determinato, e le ferie
            ce le ha eccome. */
     const FUORI_RUOLI = ["caller", "direttore_cc", "dev", "direttore_generale"];
-    const fuori = (u: { role: string | null; contract_type: string | null }) =>
-        FUORI_RUOLI.includes(String(u.role || "")) || /amministrator/i.test(String(u.contract_type || ""));
+    /* ⚠️ I COLLABORATORI ESTERNI (Luca 03/09): «Olivieri e Berdini sono
+       esclusi perché sono partite IVA che però non stanno nei negozi, quindi
+       sono collaboratori esterni che non hanno ferie nemmeno da accordi».
+       Si va per ID e non per regola dedotta dai dati, perché una regola
+       sbagliava: Cutrupi non ha un negozio in scheda ma sta sui punti vendita
+       tutti i giorni, e Olivieri ce l'ha ma è l'Agenzia, che è un ufficio.
+       Un elenco di nomi che si legge è meglio di una formula che sbaglia. */
+    const FUORI_PERSONE: string[] = [
+        "d65cc2b1-b109-4ab2-9f53-ea8c0fc40519",   // Antonio Olivieri
+        "e2bd7241-9589-4657-81ce-14cfbf610f2b",   // Claudio Berdini
+    ];
+    const fuori = (u: { id?: string; role: string | null; contract_type: string | null }) =>
+        FUORI_RUOLI.includes(String(u.role || "")) || FUORI_PERSONE.includes(String(u.id || ""))
+        || /amministrator/i.test(String(u.contract_type || ""));
     const out: Riga[] = utenti.filter((u) => !fuori(u)).map((u) => {
             const pf = fermo.get(u.id) || null;
             /* LE FERIE PRESE DOPO IL PUNTO FERMO. Il cedolino di luglio conta
