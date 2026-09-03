@@ -812,6 +812,17 @@ html.light .rvFatta-o{color:#0f7a4d;background:rgba(15,122,77,.10);border-color:
 .rvAzione:disabled{filter:grayscale(.65);opacity:.5;cursor:not-allowed;box-shadow:none}
 .rvAzione-att{background:linear-gradient(135deg,#7c4900,#98590a);box-shadow:0 6px 18px rgba(154,91,0,.30)}
 .rvAzione-viola{background:linear-gradient(135deg,#4c1d95,#5b21b6);box-shadow:0 6px 18px rgba(91,33,182,.30)}
+/* IL COLORE DEL CRM (Luca 03/09: «mettilo in colori stile CRM»). L'indaco è
+   quello del menù di sinistra e della parola «CRM» nel logo: è il colore che
+   chi lavora qui ha davanti tutto il giorno. Il verde resta di Excel, che è
+   verde per conto suo, e i due accanto si distinguono al primo sguardo senza
+   che nessuno debba leggerli. Bianco su questo fondo: 8,3:1. */
+.rvAzione-crm{background:linear-gradient(135deg,#4338ca,#4f46e5);box-shadow:0 6px 18px rgba(79,70,229,.30)}
+/* UN PULSANTE PIENO CHE È GIÀ APERTO. Le pastiglie hanno `-on`, i pulsanti
+   pieni no: senza, il Carico merce restava identico col pannello aperto e
+   col pannello chiuso, e l'unico modo di sapere dov'eri era guardare più in
+   basso. Si abbassa e si spegne, come un tasto premuto. */
+.rvAzione-giu{filter:brightness(.82);box-shadow:inset 0 2px 6px rgba(0,0,0,.35);transform:translateY(1px)}
 /* la riga di riepilogo in fondo: allegati, attribuzione, nota */
 /* il campo del PREZZO nel carrello: rosso finché manca, verde quando c'è.
    Erano tre copie a mano con il bordo da 2px e l'angolo a 6. */

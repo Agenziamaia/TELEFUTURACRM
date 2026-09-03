@@ -1169,24 +1169,36 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     sono merce che si sposta fra due posti che ce l'hanno già. */}
                 <div className="rvBoxTop rvBoxTop-c">
                     <div className="rvBoxT">🔎 Cosa guardo</div>
+                    {/* IN TESTATA CI STANNO LE DUE AZIONI CHE FANNO QUALCOSA AL
+                        MONDO (Luca 03/09: «qui lasciami solo excel e il carico
+                        merci»): una fa entrare merce, l'altra porta fuori un file.
+                        Il Reset non è di questa famiglia — non produce niente,
+                        rimette i filtri com'erano — e infatti è sceso in fondo ai
+                        filtri, accanto a quello che azzera.
+                        E LA STESSA FORMA, perché sono la stessa cosa: due
+                        pulsanti pieni. Il Carico porta il colore del CRM, quello
+                        del menù di sinistra; l'Excel resta verde perché è Excel.
+                        Prima uno era una pastiglia vuota e l'altro un pulsante
+                        pieno: due pesi diversi per due comandi che pesano uguale. */}
                     <div className="rvAzioniTop">
                         {puoCaricare && (
                             <button onClick={() => setApriCarico(v => !v)}
-                                className={cn("rvPill rvPill-sm", apriCarico && "rvPill-on")}>
+                                className={cn("rvAzione rvAzione-sm rvAzione-crm", apriCarico && "rvAzione-giu")}>
                                 <PackagePlus size={14} className="inline-block align-[-3px] mr-1.5" /> Carico merce
                             </button>
                         )}
-                        <button onClick={azzeraFiltri} className="rvPill rvPill-sm"
-                            title="Rimette tutto com'è entrando: i miei negozi, disponibili e in arrivo">
-                            ↺ Reset
-                        </button>
                         <button onClick={esporta} disabled={vistaVenduto ? !vendutiInCategoria.length : vistaTrasf ? !inViaggioInCategoria?.length : !righe.length} className="rvAzione rvAzione-sm">
                             <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                         </button>
                     </div>
                 </div>
-                {apriCarico && puoCaricare && (
-                    <CaricoMerce negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
+                {/* RESTA MONTATO ANCHE DA CHIUSO, ed è voluto: il pannello si
+                    apre in sovrapposizione (Luca 03/09) e chi lo chiude a metà
+                    carico ritrova il carrello com'era invece di ricominciare.
+                    È anche il motivo per cui chiudere non chiede conferma —
+                    non c'è niente da perdere. */}
+                {puoCaricare && (
+                    <CaricoMerce aperto={apriCarico} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
                         utente={utente} dopo={ricarica} chiudi={() => setApriCarico(false)} />
                 )}
 
@@ -1531,12 +1543,26 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                 </div>
                             </>
                         )}
-                        {/* «↺ Reset» ed «Excel» sono saliti nella testata del
-                            riquadro: erano le due cose che il `rvSpazio` spingeva a
-                            destra dopo un buco di 644px, o che a 1366 finivano su
-                            una riga tutta loro. Con loro se n'è andato anche il
-                            `rvSpazio`: qui non c'è più niente da spingere via,
-                            perché i campi si allargano da soli. */}
+                        {/* IL RESET STA DOVE STANNO I FILTRI (Luca 03/09), in
+                            fondo alla fascia che li raccoglie: è l'unico comando
+                            che non produce niente — rimette soltanto le domande
+                            com'erano — e in testata, accanto a «Carico merce» ed
+                            «Excel», sembrava una terza cosa dello stesso peso.
+                            Qui invece è l'ultima voce di quello che azzera, e chi
+                            arriva in fondo ai filtri lo trova esattamente dove
+                            gli serve. */}
+                        {/* il pulsante NON si allarga come un campo: dentro un
+                            `rvCampo` i figli si stirano, e un pulsante largo 250px
+                            in fondo a una riga di caselle non si legge più come un
+                            comando. La `rvPillRow` gli ridà la sua misura. */}
+                        <div className="rvCampo"><span className="rvLab">&nbsp;</span>
+                            <div className="rvPillRow">
+                                <button onClick={azzeraFiltri} className="rvPill"
+                                    title="Rimette tutto com'è entrando: i miei negozi, disponibili e in arrivo">
+                                    ↺ Azzera i filtri
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 {/* la nota della fotografia sta DENTRO il ramo che la usa
