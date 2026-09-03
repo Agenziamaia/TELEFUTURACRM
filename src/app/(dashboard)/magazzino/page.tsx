@@ -87,7 +87,13 @@ type Unita = {
    internet, wearable, tablet e servizi si distinguono TUTTI dal sottogruppo —
    il gruppo, in quel catalogo, è il listino del fornitore. Leggerlo senza
    sarebbe stato un magazzino tutto «Altro». */
-type DatiArticolo = { descrizione: string; prezzo: number | null; costo_ultimo?: number | null; gruppo: string | null; sottogruppo: string | null; marca: string | null };
+/* UN ARTICOLO HA DUE CODICI (Luca 03/09): quello interno e il codice a barre.
+   `barcode` non stava in questa mappa, quindi in tutto il magazzino il
+   secondo codice non si vedeva e non si cercava — cercare `8032325401189`
+   non trovava niente, mentre l'articolo c'era eccome, con quel codice a
+   barre e col codice interno `0THO60SMOU7004`. Ce l'hanno 13.257 articoli
+   attivi su 17.083. */
+type DatiArticolo = { descrizione: string; barcode?: string | null; prezzo: number | null; costo_ultimo?: number | null; gruppo: string | null; sottogruppo: string | null; marca: string | null };
 type Articolo = {
     codice: string; barcode: string | null; descrizione: string;
     gruppo: string | null; sottogruppo: string | null; marca: string | null;
@@ -360,7 +366,7 @@ function Magazzino() {
         const anag = new Map<string, DatiArticolo>();
         for (let i = 0; i < codici.length; i += 300) {
             const { data } = await supabase.from("mag_articoli")
-                .select("codice,descrizione,prezzo,costo_ultimo,gruppo,sottogruppo,marca").in("codice", codici.slice(i, i + 300));
+                .select("codice,descrizione,barcode,prezzo,costo_ultimo,gruppo,sottogruppo,marca").in("codice", codici.slice(i, i + 300));
             (data ?? []).forEach((a: DatiArticolo & { codice: string }) =>
                 /* IL COSTO VA MESSO DENTRO, se no il riquadro «Valore a costo» conta
                    solo i pezzi con seriale: la select lo chiedeva, la mappa lo
@@ -368,7 +374,7 @@ function Magazzino() {
                    `undefined`. TypeScript non protestava perché nel tipo il
                    campo è opzionale. Misurato: 106.622 € che non comparivano —
                    300.525 mostrati contro 407.147 veri. */
-                anag.set(a.codice, { descrizione: a.descrizione, prezzo: a.prezzo, costo_ultimo: a.costo_ultimo, gruppo: a.gruppo, sottogruppo: a.sottogruppo, marca: a.marca }));
+                anag.set(a.codice, { descrizione: a.descrizione, barcode: a.barcode, prezzo: a.prezzo, costo_ultimo: a.costo_ultimo, gruppo: a.gruppo, sottogruppo: a.sottogruppo, marca: a.marca }));
         }
         setAnagrafica(anag);
         setQuantita(righeQ.map(r => ({
@@ -652,6 +658,8 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
        negli altri negozi, che può richiedere». */
     type Riga = {
         chiave: string; codice: string; descrizione: string;
+        /** il SECONDO codice: quello a barre, quello che spara il lettore */
+        barcode: string | null;
         giacenza: number; inArrivo: number; altrove: number;
         /** quanto vale se lo vendo ai prezzi di listino */ valore: number;
         /** quanto mi è costato */ costo: number;
@@ -694,6 +702,11 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         const m = new Map<string, Riga>();
         const nuova = (codice: string, descrizione: string): Riga => ({
             chiave: `${codice}|${descrizione}`, codice: codice || "—", descrizione,
+            /* IL SECONDO CODICE, che è quello che il negozio ha davanti quando
+               prende in mano la scatola: `8032325401189` sulla confezione,
+               `0THO60SMOU7004` solo nel gestionale. Cercandolo non si trovava
+               niente, perché in questa riga non c'era. */
+            barcode: anagrafica.get(codice)?.barcode ?? null,
             giacenza: 0, inArrivo: 0, altrove: 0, valore: 0, costo: 0,
             operatore: operatoreDi(anagrafica.get(codice), descrizione, codice),
             /* LA STESSA REGOLA DI ARTICOLI, non una seconda: se qui un display
@@ -790,7 +803,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         if (cerca.trim()) {
             const q = cerca.trim().toLowerCase();
             const qs = q.replace(/[\s./-]/g, "");
-            out = out.filter(r => `${r.codice} ${r.descrizione}`.toLowerCase().includes(q)
+            /* SI CERCA SU TUTT'E DUE I CODICI (Luca 03/09): «quando sono su
+               magazzino mi deve dare visibilità di entrambi i codici, tanto è
+               che il codice 8032325401189 non me lo trova». Non lo trovava
+               perché qui si guardavano solo codice e descrizione, mentre
+               quello è il codice a BARRE — cioè l'unico che uno legge sulla
+               scatola, e l'unico che spara il lettore. */
+            out = out.filter(r => `${r.codice} ${r.barcode || ""} ${r.descrizione}`.toLowerCase().includes(q)
                 || (qs.length >= 4 && r.pezzi.some(p => p.seriale.toLowerCase().replace(/[\s./-]/g, "").includes(qs))));
         }
         // «solo disponibili» = quello che c'è QUI; «tutti» tiene anche ciò che
@@ -922,7 +941,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                che non poteva valutarlo. */
             if (u.venduto_il) { if (da && u.venduto_il < da) return false; if (a && u.venduto_il > a) return false; }
             else if (da || a) return false;
-            if (q && !(`${u.codice || ""} ${u.descrizione}`.toLowerCase().includes(q)
+            if (q && !(`${u.codice || ""} ${anagrafica.get(u.codice || "")?.barcode || ""} ${u.descrizione}`.toLowerCase().includes(q)
                 || (qs.length >= 4 && u.seriale.toLowerCase().replace(/[\s./-]/g, "").includes(qs)))) return false;
             return true;
         }).map(u => ({
@@ -959,13 +978,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
         const dove = scelti.length ? scelti.join("+").replace(/\s+/g, "") : "tutti";
         const oggi = new Date().toISOString().slice(0, 10);
         if (vistaVenduto) {
-            const dati: CellaXlsx[][] = vendutiOrdinati.map(v => [v.seriale, v.codice, v.descrizione,
+            const dati: CellaXlsx[][] = vendutiOrdinati.map(v => [v.seriale, v.codice, anagrafica.get(v.codice || "")?.barcode || "", v.descrizione,
                 etichettaFamiglia(famDi(v.codice, v.descrizione)).nome, v.operatore || "—",
                 v.negozio, v.venduto_il ? v.venduto_il.slice(0, 10) : "—", v.venduto_da || "—",
                 v.costo == null ? "" : Math.round(v.costo * 100) / 100,
                 v.prezzo == null ? "" : Math.round(v.prezzo * 100) / 100]);
             scaricaXlsx(`venduto_${dove}_${dal || "inizio"}_${al || oggi}.xlsx`,
-                ["IMEI / seriale", "Codice", "Descrizione", "Categoria", "Operatore", "Negozio", "Venduto il", "Venduto da", "A listino €", "Venduto a €"],
+                ["IMEI / seriale", "Codice", "Codice a barre", "Descrizione", "Categoria", "Operatore", "Negozio", "Venduto il", "Venduto da", "A listino €", "Venduto a €"],
                 dati, "Venduto");
             return;
         }
@@ -984,9 +1003,12 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                 dati, "In viaggio");
             return;
         }
-        const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.descrizione, etichettaFamiglia(r.famiglia).nome, r.operatore || "—", r.giacenza, r.altrove, r.inArrivo, Math.round(r.valore * 100) / 100]);
+        /* ANCHE L'EXCEL PORTA TUTT'E DUE I CODICI: chi lo apre per confrontarlo
+           con un file del fornitore, o per cercare una scatola, cerca il codice
+           a BARRE — quello scritto sopra — non il codice interno. */
+        const dati: CellaXlsx[][] = righe.map(r => [r.codice, r.barcode || "", r.descrizione, etichettaFamiglia(r.famiglia).nome, r.operatore || "—", r.giacenza, r.altrove, r.inArrivo, Math.round(r.valore * 100) / 100]);
         scaricaXlsx(`giacenze_${dove}_${oggi}.xlsx`,
-            ["Codice", "Descrizione", "Categoria", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
+            ["Codice", "Codice a barre", "Descrizione", "Categoria", "Operatore", "Giacenza", "Altrove", "In arrivo", "Valore €"], dati, "Giacenze");
     };
 
     const colonne = ["Codice", "Descrizione", "Categoria", "Giacenza", "Altrove", "In arrivo", "Valore"];
@@ -1763,8 +1785,17 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                 <Fragment key={r.chiave}>
                                     <tr onClick={() => apribile && setAperta(apertaQui ? null : r.chiave)}
                                         className={cn("rvTab-riga", apribile && "rvTab-cl", apertaQui && "rvTab-on")}>
+                                        {/* TUTT'E DUE I CODICI, uno sotto l'altro: sopra
+                                            quello interno del gestionale, sotto quello a
+                                            barre della scatola. Si mostra solo se dice
+                                            qualcosa di nuovo — 2.042 articoli hanno il
+                                            codice a barre uguale al codice, e ripeterlo
+                                            due volte sarebbe rumore. */}
                                         <td className="rvTab-cod">
                                             {apribile && <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>}{r.codice}
+                                            {r.barcode && r.barcode !== r.codice && (
+                                                <div className="rvTab-min" title="Codice a barre — è quello sulla scatola">{r.barcode}</div>
+                                            )}
                                         </td>
                                         <td className="rvTab-nome">
                                             {r.descrizione}
@@ -2405,10 +2436,12 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
         if (!q) return null;
         const s = new Set<string>();
         righe.forEach(r => {
-            if (`${r.descrizione} ${r.seriale || ""} ${r.codice || ""}`.toLowerCase().includes(q)) s.add(r.ddt_id);
+            /* anche qui i codici sono due (Luca 03/09): chi cerca una scatola
+               in viaggio legge il codice a barre che ha sopra */
+            if (`${r.descrizione} ${r.seriale || ""} ${r.codice || ""} ${anagrafica.get(r.codice || "")?.barcode || ""}`.toLowerCase().includes(q)) s.add(r.ddt_id);
         });
         return s;
-    }, [cerca, righe]);
+    }, [cerca, righe, anagrafica]);
 
     const passaFiltri = useCallback((d: Ddt) => {
         const q = cerca.trim().toLowerCase();
@@ -2497,11 +2530,11 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
         const per = new Map(visibili.map(d => [d.id, d]));
         return righe
             .filter(r => per.has(r.ddt_id))
-            .filter(r => !q || `${r.descrizione} ${r.seriale || ""} ${r.codice || ""}`.toLowerCase().includes(q)
+            .filter(r => !q || `${r.descrizione} ${r.seriale || ""} ${r.codice || ""} ${anagrafica.get(r.codice || "")?.barcode || ""}`.toLowerCase().includes(q)
                 || `n.${per.get(r.ddt_id)!.numero} ${r.negozio_da} ${r.negozio_a}`.toLowerCase().includes(q))
             .map(r => ({ ...r, ddt: per.get(r.ddt_id)! }))
             .sort((a, b) => b.creato_il.localeCompare(a.creato_il));
-    }, [righe, visibili, cerca]);
+    }, [righe, visibili, cerca, anagrafica]);
 
     /* ── COSA MANCA PERCHÉ UN DDT SIA VALIDO ────────────────────────────── */
     const manca = useMemo(() => cosaMancaPerEmettere(
@@ -3291,12 +3324,12 @@ function NuovoTrasferimento({ unita, quantita, negozi, negoziPartenza, negDati, 
        ogni società sta in una insegna, la partenza resta univoca. */
     const disponibili = useMemo(() => unita.filter(u =>
         u.stato === "disponibile" && stessoMagazzino(u.negozio, da) && (!soc || u.azienda === soc)
-        && (!q || `${u.descrizione} ${u.seriale} ${u.codice || ""}`.toLowerCase().includes(q))),
-        [unita, da, soc, q]);
+        && (!q || `${u.descrizione} ${u.seriale} ${u.codice || ""} ${anagrafica.get(u.codice || "")?.barcode || ""}`.toLowerCase().includes(q))),
+        [unita, da, soc, q, anagrafica]);
     const sfusi = useMemo(() => quantita.filter(g =>
         stessoMagazzino(g.negozio, da) && (!soc || g.azienda === soc) && Number(g.quantita) > 0
-        && (!q || `${g.descrizione} ${g.codice}`.toLowerCase().includes(q))),
-        [quantita, da, soc, q]);
+        && (!q || `${g.descrizione} ${g.codice} ${anagrafica.get(g.codice)?.barcode || ""}`.toLowerCase().includes(q))),
+        [quantita, da, soc, q, anagrafica]);
     /* ⚠️ LA CHIAVE COMPRENDE L'INSEGNA (revisione ostile 02/09). Da quando i
        pezzi arrivano da tutto il locale, lo stesso codice può comparire due
        volte — ad Acilia «Earbuds» sta 23 volte al Multi e 19 al VS, stessa

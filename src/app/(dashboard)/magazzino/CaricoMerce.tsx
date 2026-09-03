@@ -92,6 +92,7 @@ type ArticoloTrovato = {
 type Riga = {
     chiave: string;
     codice: string;
+    barcode: string | null;
     descrizione: string;
     /** come si conta QUESTA riga. Parte da `mag_articoli.ha_imei`, ma si può
      *  cambiare: l'anagrafica non sa tutto (v. `unoPerUno` più sotto). */
@@ -215,7 +216,7 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
     const aggiungi = (a: ArticoloTrovato) => {
         setRighe(r => [...r, {
             chiave: `${a.codice}|${Date.now()}|${Math.random().toString(36).slice(2, 7)}`,
-            codice: a.codice, descrizione: a.descrizione,
+            codice: a.codice, barcode: a.barcode, descrizione: a.descrizione,
             unoPerUno: !!a.ha_imei, tipoSeriale: "imei",
             quantita: a.ha_imei ? 0 : 1, seriali: [],
             costo: a.costo_ultimo, azienda: aziendaDiDefault,
@@ -508,7 +509,14 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                             {trovati.map(a => (
                                 <div key={a.codice} className="rvDettR">
                                     <span className="rvTab-nome">{a.descrizione}</span>
+                                    {/* TUTT'E DUE I CODICI (Luca 03/09): quello interno del
+                                        gestionale e quello a barre della scatola — che è
+                                        l'unico che uno ha davvero sotto gli occhi quando
+                                        prende in mano il pacco. */}
                                     <span className="rvTab-cod">{a.codice}</span>
+                                    {a.barcode && a.barcode !== a.codice && (
+                                        <span className="rvTab-cod" title="Codice a barre — quello sulla scatola">{a.barcode}</span>
+                                    )}
                                     {a.ha_imei && <span className="rvBadge rvBadge-acc">IMEI</span>}
                                     {a.marca && <span className="rvTab-min">{a.marca}</span>}
                                     <span className="rvSpazio" />
@@ -593,6 +601,9 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                                 <div key={r.chiave} className="rvDettR">
                                     <span className="rvTab-nome">{r.descrizione}</span>
                                     <span className="rvTab-cod">{r.codice}</span>
+                                    {r.barcode && r.barcode !== r.codice && (
+                                        <span className="rvTab-cod" title="Codice a barre">{r.barcode}</span>
+                                    )}
 
                                     {/* COME SI CONTA QUESTA RIGA. L'anagrafica propone, l'operatore
                                         decide: `ha_imei` l'ho dedotto dalla storia dei pezzi, e la
