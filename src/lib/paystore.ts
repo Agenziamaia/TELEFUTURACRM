@@ -243,6 +243,20 @@ export const prodotti = (serviceId: number, cred?: Credenziale | null) => chiama
 export const listini = (productId: number, cred?: Credenziale | null) => chiama<Listino[]>("GET", `/catalog/pricelists?productId=${productId}`, { cred });
 export const operazione = (operationId: number, cred?: Credenziale | null) => chiama<Operazione>("GET", `/operations/${operationId}`, { cred });
 
+/** Le operazioni fatte in un periodo, per questo plafond.
+ *
+ *  ⚠️ SERVE A UNA DOMANDA CHE IL CRM DA SOLO NON SA RISPONDERE: «questa
+ *  ricarica l'ha già caricata il negozio al terminale?». Una riga «in sospeso»
+ *  dice che NOI non l'abbiamo fatta, non che non sia stata fatta — e premere
+ *  «rifai» su una già erogata vuol dire pagarla due volte.
+ *
+ *  ⚠️ E SE PAYSTORE NON HA QUESTO ELENCO, LO SI DEVE SAPERE. `chiama` torna un
+ *  404 «definitivo»: chi chiama lo riporta com'è, invece di far finta che le
+ *  operazioni siano zero — che sarebbe la risposta più pericolosa possibile,
+ *  perché vorrebbe dire «nessuna è stata fatta, rifalle tutte». */
+export const elencoOperazioni = (da: string, a: string, cred?: Credenziale | null) =>
+    chiama<Operazione[]>("GET", `/operations?from=${da}&to=${a}&pageSize=500`, { cred });
+
 /** Fa partire una ricarica telefonica.
  *
  *  ⚠️ `idempotencyKey` NON si genera qui: la deve dare chi chiama, e deve

@@ -35,7 +35,8 @@ export async function POST(request: Request) {
         .eq("id", b.id).maybeSingle();
     if (!r) return NextResponse.json({ error: "ricarica non trovata" }, { status: 404 });
 
-    const esito = await eseguiRicarica(r as RigaRicarica);
+    /* è una persona che ha premuto il pulsante: la riga lo deve dire */
+    const esito = await eseguiRicarica(r as RigaRicarica, { daPersona: true });
     if (!esito.ok) {
         return NextResponse.json(
             { error: esito.errore, definitivo: esito.definitivo, correlationId: esito.correlationId },

@@ -93,7 +93,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null; scontrino_stato: string | null; tentativi?: number | null; tentata_il?: string | null; rif_fornitore?: string | null; ambiente?: string | null };
+type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null; scontrino_stato: string | null; tentativi?: number | null; tentata_il?: string | null; rif_fornitore?: string | null; ambiente?: string | null; inviata_il?: string | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;
@@ -1254,6 +1254,25 @@ function StatoRicarica({ r, onCambiato }: { r: Riga; onCambiato: () => void }) {
                 className={cn("px-2 py-0.5 rounded-lg border text-[11px] font-bold whitespace-nowrap", st.sfondo, st.colore)}>
                 {st.testo} ▾
             </button>
+            {/* ⚠️ QUANDO È STATA FATTA, DENTRO LA STESSA CASELLA (Luca 03/09).
+                Il registro diceva «ok manuale» e basta: su una ricarica il
+                MOMENTO è mezzo dato — serve a incrociarla con lo scontrino,
+                col turno di chi era al banco e con la telefonata del cliente
+                che dice «non mi è arrivata». Sta sotto la pastiglia e non
+                aggiunge una colonna a una tabella già larga. */}
+            {(() => {
+                const q = r.inviata_il || (r.stato !== "sospeso" ? r.stato_il : null);
+                if (!q) return null;
+                const d = new Date(q);
+                const oggi = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+                const suo = d.toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
+                return (
+                    <div className="psQuando" title={d.toLocaleString("it-IT", { timeZone: "Europe/Rome" })}>
+                        {suo === oggi ? "" : d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", timeZone: "Europe/Rome" }) + " "}
+                        {d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" })}
+                    </div>
+                );
+            })()}
             {pos && createPortal(
                 <>
                     <div className="fixed inset-0 z-[2000]" onClick={() => setPos(null)} />
@@ -1492,6 +1511,21 @@ function CredenzialiPayStore() {
     type Saldo = { negozio: string; azienda: string; identificativo: string | null; saldo: number | null; errore: string | null };
     const [saldi, setSaldi] = useState<{ saldi: Saldo[]; totale: number; muti: number } | null>(null);
     const [chiedoSaldi, setChiedoSaldi] = useState(false);
+    type Ric = { inSospeso: number; operazioniTrovate: number; daFareDavvero: number; problemi: string[]; giaFatte: { id: string; negozio: string|null; numero: string; importo: number; operationId: number }[]; segnate?: number };
+    const [ricEsito, setRicEsito] = useState<Ric | null>(null);
+    const [ric, setRic] = useState(false);
+    const riconcilia = async (applica: boolean) => {
+        setRic(true); setKo("");
+        try {
+            const r = await fetch("/api/paystore/riconcilia", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ applica }),
+            }).then((x) => x.json());
+            if (!r?.ok) throw new Error(r?.error || "non riuscita");
+            setRicEsito(r);
+        } catch (e) { setKo((e as Error).message); }
+        finally { setRic(false); }
+    };
     const guardaSaldi = async () => {
         setChiedoSaldi(true); setKo("");
         try {
@@ -1560,6 +1594,13 @@ function CredenzialiPayStore() {
                     className="rvPill rvPill-tinta rvT-verde">
                     {chiedoSaldi ? "leggo…" : "💰 Quanto credito c'è"}
                 </button>
+                {/* ⚠️ LA DOMANDA CHE IL REGISTRO DA SOLO NON SA RISPONDERE:
+                    «questa ricarica il negozio l'ha già caricata a mano?».
+                    Una riga in sospeso dice che NOI non l'abbiamo fatta. */}
+                <button onClick={() => void riconcilia(false)} disabled={ric}
+                    className="rvPill rvPill-tinta rvT-indaco">
+                    {ric ? "chiedo…" : "🔎 Quali ha già fatto PayStore"}
+                </button>
                 <label className="rvPill rvPill-tinta rvT-indaco" style={{ cursor: "pointer" }}>
                     👁 Guarda cosa farebbe
                     <input type="file" accept=".xlsx,.xls" hidden disabled={busy}
@@ -1572,6 +1613,49 @@ function CredenzialiPayStore() {
                 </label>
             </div>
             {ko && <div className="rvNota rvNota-ko"><div className="rvNota-s">{ko}</div></div>}
+
+            {ricEsito && (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
+                    <div className="rvLab">Cosa risulta a PayStore</div>
+                    {ricEsito.segnate != null ? (
+                        <div className="rvNota rvNota-info"><div className="rvNota-t">✓ {ricEsito.segnate} segnate come già fatte</div>
+                            <div className="rvNota-s">Restano {ricEsito.daFareDavvero} davvero da fare.</div></div>
+                    ) : (
+                        <div className={cn("rvNota", ricEsito.giaFatte.length ? "rvNota-att" : "rvNota-info")}>
+                            <div className="rvNota-t">
+                                {ricEsito.giaFatte.length
+                                    ? `⚠️ ${ricEsito.giaFatte.length} di queste PayStore le ha GIÀ fatte`
+                                    : "✓ Nessuna di queste risulta già fatta da PayStore"}
+                            </div>
+                            <div className="rvNota-s">
+                                Su {ricEsito.inSospeso} in sospeso, PayStore riporta {ricEsito.operazioniTrovate} operazioni
+                                riuscite nel periodo. {ricEsito.daFareDavvero} risultano davvero da fare.
+                                {!!ricEsito.giaFatte.length && <> Premendo «rifai» su quelle già fatte si erogherebbe il credito <b>una seconda volta</b>: qui si marcano invece come fatte.</>}
+                            </div>
+                        </div>
+                    )}
+                    {!!ricEsito.problemi?.length && (
+                        <div className="rvNota rvNota-ko"><div className="rvNota-t">Non ho potuto chiedere a tutti</div>
+                            <div className="rvNota-s">{ricEsito.problemi.join(" · ")}</div></div>
+                    )}
+                    {!!ricEsito.giaFatte?.length && ricEsito.segnate == null && (
+                        <>
+                            <table className="psTab text-[12px]"><tbody>
+                                {ricEsito.giaFatte.slice(0, 20).map((g) => (
+                                    <tr key={g.id}>
+                                        <td className="text-white font-semibold">{g.negozio}</td>
+                                        <td className="font-mono text-slate-400">{g.numero}</td>
+                                        <td className="text-right text-emerald-300">{eurC(g.importo)}</td>
+                                        <td className="text-[11px] text-slate-500">operazione {g.operationId}</td>
+                                    </tr>
+                                ))}
+                            </tbody></table>
+                            <button onClick={() => void riconcilia(true)} disabled={ric}
+                                className="rvPill rvPill-on rvT-verde">✓ Segnale come già fatte</button>
+                        </>
+                    )}
+                </div>
+            )}
 
             {saldi && (
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">

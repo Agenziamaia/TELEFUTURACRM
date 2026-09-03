@@ -2680,3 +2680,9 @@ html.light .ctbTab thead th{background:#f1f5f9;color:#475569}
 html.light .ctbTab tbody tr:nth-child(even){background:rgba(15,23,42,.035)}
 html.light .ctbTab tbody tr:hover{background:rgba(79,70,229,.09)}
 html.light .ctbSel,html.light .ctbNum{background:#fff;border-color:#cbd5e1;color:#0f172a}
+
+/* l'orario sotto la pastiglia dello stato: piccolo, allineato a destra come
+   la pastiglia, e non allarga la colonna */
+.psQuando{font-size:10px;color:var(--tf-64748b);margin-top:2px;text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+html.light .psQuando{color:#64748b}

@@ -88,7 +88,7 @@ async function trovaListino(operatore: string, importo: number, cred: Credenzial
     return { id: t.priceListId };
 }
 
-export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number }): Promise<EsitoEsecuzione> {
+export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number; daPersona?: boolean }): Promise<EsitoEsecuzione> {
     if (riga.stato === "ok_automatico" || riga.stato === "ok_manuale") {
         return { ok: false, errore: "questa ricarica risulta già fatta: se serve rifarla, rimettila prima in sospeso", definitivo: true, stato: 400 };
     }
@@ -191,9 +191,15 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number 
             ...(collaudo ? {} : { stato: "ok_automatico", inviata_il: new Date().toISOString() }),
             rif_fornitore: String(d.operationId),
             errore: null,
+            /* ⚠️ «OK AUTOMATICO» SU UNA RICARICA FATTA A MANO È UNA BUGIA
+               PICCOLA CHE COSTA CARA: guardando il registro non si capisce più
+               quali le ha fatte il motore e quali una persona col pulsante, e
+               quando si accenderà il motore quella distinzione è l'unica prova
+               che sta lavorando davvero. */
+            ...(collaudo ? {} : { stato: opz?.daPersona ? "ok_manuale" : "ok_automatico" }),
             nota: collaudo
                 ? `PROVA in collaudo: operazione ${d.operationId}, ricevuta ${d.receiptId}. Nessun credito erogato.`
-                : `eseguita via API con il plafond di ${cr.identificativo}${esito.replay ? " (risposta già ricevuta, non è stata rifatta)" : ""}`,
+                : `${opz?.daPersona ? "eseguita a mano dal pannello" : "eseguita dal motore"} via API con il plafond di ${cr.identificativo}${esito.replay ? " (risposta già ricevuta, non è stata rifatta)" : ""}`,
         }).eq("id", riga.id);
         return { ok: true, collaudo, replay: !!esito.replay, operationId: d.operationId, receiptId: d.receiptId, saldo: d.balanceAfter };
     }
