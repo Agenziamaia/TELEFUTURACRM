@@ -72,6 +72,13 @@ const TIPI_SERIALE = [
    e la descrizione può contenere altri «·» (c'è «7 · Usato · regime
    margine»), quindi si prende quello che sta PRIMA del primo. */
 const etichettaReparto = (r: { reparto: number; descrizione: string }) => `${r.reparto} · ${r.descrizione}`;
+/* IL PREZZO SERVE, e non è una pignoleria: la rotta che già crea articoli lo
+   pretende da sempre (Luca 29/08: «senza, in cassa quell'articolo non si può
+   vendere»). Due porte per la stessa cosa devono chiedere le stesse cose. */
+const prezzoValido = (v: string) => {
+    const n = Number(String(v || "").replace(",", "."));
+    return v.trim() !== "" && Number.isFinite(n) && n >= 0 && n <= 100000;
+};
 const numeroReparto = (etichetta: string) => {
     const n = Number(String(etichetta || "").split("·")[0].trim());
     return Number.isInteger(n) && n >= 1 && n <= 40 ? n : 0;
@@ -90,8 +97,6 @@ type Riga = {
     /** come si conta QUESTA riga. Parte da `mag_articoli.ha_imei`, ma si può
      *  cambiare: l'anagrafica non sa tutto (v. `unoPerUno` più sotto). */
     unoPerUno: boolean;
-    /** com'era in anagrafica, per accorgersi quando l'operatore la corregge */
-    haImeiInAnagrafica: boolean;
     tipoSeriale: string;
     quantita: number;
     seriali: string[];
@@ -125,12 +130,22 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
        Meglio non fargliela nemmeno scegliere.
        In UFFICIO invece non si vende: lì entra la merce di tutte e due. */
     const [casse, setCasse] = useState<string[] | null>(null);
+    const [casseKo, setCasseKo] = useState("");
+    const [casseInCorso, setCasseInCorso] = useState(false);
     useEffect(() => {
-        if (!negozio || inUfficio) { setCasse(null); return; }
+        if (!negozio || inUfficio) { setCasse(null); setCasseKo(""); return; }
         let vivo = true;
+        setCasseInCorso(true); setCasse(null); setCasseKo("");
         (async () => {
-            const { data } = await supabase.from("pos_rt").select("azienda").eq("negozio", negozio);
-            if (vivo) setCasse(Array.from(new Set((data ?? []).map((r: { azienda: string }) => r.azienda).filter(Boolean))));
+            const { data, error } = await supabase.from("pos_rt").select("azienda").eq("negozio", negozio);
+            if (!vivo) return;
+            setCasseInCorso(false);
+            /* SE NON SI SA, NON SI TIRA A INDOVINARE. Prima l'errore veniva
+               buttato via e la lista restava vuota: l'operatore si vedeva
+               offrire tutte e due le società ovunque, assegnava, faceva
+               quattro passi, e alla fine il database gli diceva di no. */
+            if (error) { setCasseKo(error.message); return; }
+            setCasse(Array.from(new Set((data ?? []).map((r: { azienda: string }) => r.azienda).filter(Boolean))));
         })();
         return () => { vivo = false; };
     }, [negozio, inUfficio]);
@@ -145,10 +160,18 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
     }, [aziende, casse]);
     const aziendaDiDefault = aziendeDelNegozio.length === 1 ? aziendeDelNegozio[0] : "";
 
-    /* Cambiare negozio può togliere di mezzo una società: le righe che la
-       portavano restano senza, e il passo 3 lo dice. */
+    /* CAMBIARE NEGOZIO PUÒ TOGLIERE DI MEZZO UNA SOCIETÀ: le righe che la
+       portavano restano senza, e il passo 3 lo dice.
+       E QUANDO LE CASSE ARRIVANO, se ce n'è una sola, la si mette anche alle
+       righe aggiunte PRIMA: l'elenco delle casse si legge dal server, e nei
+       primi istanti le società sono ancora due — chi aggiungeva in fretta si
+       ritrovava metà carico con la società e metà senza. */
     useEffect(() => {
-        setRighe(r => r.map(x => x.azienda && !aziendeDelNegozio.includes(x.azienda) ? { ...x, azienda: "" } : x));
+        setRighe(r => r.map(x => {
+            if (x.azienda && !aziendeDelNegozio.includes(x.azienda)) return { ...x, azienda: "" };
+            if (!x.azienda && aziendeDelNegozio.length === 1) return { ...x, azienda: aziendeDelNegozio[0] };
+            return x;
+        }));
     }, [aziendeDelNegozio]);
 
     /* ═══ PASSO 2 — LA RICERCA DEGLI ARTICOLI ═══════════════════════════════
@@ -186,7 +209,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
         setRighe(r => [...r, {
             chiave: `${a.codice}|${Date.now()}|${Math.random().toString(36).slice(2, 7)}`,
             codice: a.codice, descrizione: a.descrizione,
-            unoPerUno: !!a.ha_imei, haImeiInAnagrafica: !!a.ha_imei, tipoSeriale: "imei",
+            unoPerUno: !!a.ha_imei, tipoSeriale: "imei",
             quantita: a.ha_imei ? 0 : 1, seriali: [],
             costo: a.costo_ultimo, azienda: aziendaDiDefault,
         }]);
@@ -213,7 +236,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
 
     const [nuovo, setNuovo] = useState<{ codice: string; descrizione: string; haImei: boolean; costo: string; prezzo: string; reparto: string } | null>(null);
     const creaArticolo = async () => {
-        if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto)) return;
+        if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto) || !prezzoValido(nuovo.prezzo)) return;
         setBusy(true); setEsito(null);
         const num = (s: string) => s.trim() ? Number(s.replace(",", ".")) : null;
         /* PASSA DAL DATABASE, non dal browser: su `mag_articoli` chi è loggato
@@ -284,6 +307,10 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
             p_righe: righe.map(r => ({
                 codice: r.codice, descrizione: r.descrizione, azienda: r.azienda,
                 costo: r.costo, tipo_seriale: r.tipoSeriale,
+                /* si DICE come va contata, non lo si fa dedurre dalla forma
+                   dei dati: una riga «uno per uno» rimasta senza numeri deve
+                   dare un errore che lo spiega, non sparire in silenzio */
+                uno_per_uno: r.unoPerUno,
                 ...(r.unoPerUno ? { seriali: r.seriali } : { quantita: pezziDi(r) }),
             })),
         });
@@ -293,20 +320,13 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
         const r = data as { pezzi: number; documenti: { numero: number; azienda: string }[] };
         const docs = (r.documenti || []).map(d => `n.${d.numero} (${nomiAzienda[d.azienda] || d.azienda})`).join(" e ");
 
-        /* L'ANAGRAFICA IMPARA DA QUELLO CHE È SUCCESSO. Il flag `ha_imei` l'ho
-           dedotto dalla storia: chi non aveva storia è rimasto a «si conta a
-           quantità», e chi aveva tutte e due le forme è rimasto a «uno per
-           uno». Se l'operatore ha corretto la riga, la correzione vale anche
-           per la prossima volta — se no la ricorregge ogni volta a mano.
-           Se la scrittura non passa non è un guaio: la merce è entrata, e
-           questo è solo un promemoria per il carico successivo. */
-        const daImparare = righe.filter(x => x.unoPerUno !== x.haImeiInAnagrafica);
-        if (daImparare.length) {
-            await Promise.all(Array.from(new Set(daImparare.map(x => x.codice))).map(cod => {
-                const v = daImparare.find(x => x.codice === cod)!.unoPerUno;
-                return supabase.from("mag_articoli").update({ ha_imei: v }).eq("codice", cod);
-            })).catch(() => {});
-        }
+        /* L'ANAGRAFICA IMPARA — ma lo fa il DATABASE, dentro la stessa
+           transazione del carico. Qui c'era un UPDATE su `mag_articoli`
+           scritto dal browser: la stessa tabella che, due passi più su,
+           dichiaro non scrivibile dal browser. Falliva sempre e in silenzio
+           (supabase-js non lancia, restituisce un errore che nessuno
+           guardava), quindi chi correggeva «uno per uno» su un articolo lo
+           ricorreggeva ogni volta, per sempre. */
 
         setEsito({
             ok: true,
@@ -366,10 +386,28 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                             nasce un <b>documento di trasporto</b> — uno per società — che il negozio ritrova in Trasferimenti.
                             {negozio && inUfficio && <> Qui invece stai caricando <b>in ufficio</b>: nessun documento, la merce è già dov&apos;è.</>}
                             {negozio && !inUfficio && casse?.length === 1 && <> A {negozio} c&apos;è solo la cassa di <b>{nomiAzienda[casse[0]] || casse[0]}</b>: la merce entra tutta lì.</>}
+                            {negozio && !inUfficio && casseInCorso && <> Sto guardando quali società hanno una cassa qui…</>}
                         </div>
                     </div>
+                    {/* SE NON SI SA CHI HA UNA CASSA QUI, NON SI TIRA AVANTI. Offrire
+                        tutte e due le società «per non bloccare» vuol dire far fare
+                        quattro passi all'operatore e poi rifiutargli il carico. */}
+                    {casseKo && (
+                        <div className="rvNota rvNota-ko mt-3">
+                            <div className="rvNota-t">Non riesco a sapere quali società hanno una cassa a {negozio}</div>
+                            <div className="rvNota-s">{casseKo} — riprova fra un momento: senza questo, la merce rischia di finire sulla società sbagliata.</div>
+                        </div>
+                    )}
+                    {negozio && !inUfficio && casse && !casse.length && (
+                        <div className="rvNota rvNota-ko mt-3">
+                            <div className="rvNota-t">A {negozio} non c&apos;è nessun registratore</div>
+                            <div className="rvNota-s">Qui la merce non si può vendere, quindi non ha senso caricarla. Se il negozio è nuovo, la cassa si aggiunge in Amministrazione → Negozi.</div>
+                        </div>
+                    )}
                     <div className="rvBarra rvBarra-c mt-3 justify-end">
-                        <button onClick={() => setPasso(2)} disabled={!negozio} className="rvAzione">Avanti →</button>
+                        <button onClick={() => setPasso(2)}
+                            disabled={!negozio || (!inUfficio && (casseInCorso || !!casseKo || !casse?.length))}
+                            className="rvAzione">Avanti →</button>
                     </div>
                 </div>
             )}
@@ -420,7 +458,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                                     <input value={nuovo.descrizione} onChange={e => setNuovo({ ...nuovo, descrizione: e.target.value })} className="rvIn" /></label>
                                 <label className="rvCampo rvCampo-xs"><span className="rvLab">Costo €</span>
                                     <input value={nuovo.costo} onChange={e => setNuovo({ ...nuovo, costo: e.target.value })} className="rvIn" /></label>
-                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Prezzo €</span>
+                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Prezzo € <span className="rvLabX">(serve)</span></span>
                                     <input value={nuovo.prezzo} onChange={e => setNuovo({ ...nuovo, prezzo: e.target.value })} className="rvIn" /></label>
                             </div>
                             <div className="rvBarra mt-2">
@@ -436,7 +474,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                                 </div>
                             </div>
                             <div className="rvPillRow mt-2">
-                                <button onClick={creaArticolo} disabled={busy || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto)} className="rvAzione rvAzione-sm">Crea e aggiungi</button>
+                                <button onClick={creaArticolo} disabled={busy || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto) || !prezzoValido(nuovo.prezzo)} className="rvAzione rvAzione-sm">Crea e aggiungi</button>
                                 <button onClick={() => setNuovo(null)} className="rvPill rvPill-sm">Annulla</button>
                             </div>
                         </div>
@@ -481,8 +519,9 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                                         </>
                                     ) : (
                                         <label className="rvCampo rvCampo-xs"><span className="rvLab">Quantità</span>
-                                            <input type="number" min={1} className="rvQta" value={r.quantita || ""}
-                                                onChange={e => cambia(r.chiave, { quantita: Number(e.target.value) })} /></label>
+                                            {/* mezzo telefono non esiste: senza `step` il campo accettava 2,7 */}
+                                            <input type="number" min={1} step={1} className="rvQta" value={r.quantita || ""}
+                                                onChange={e => cambia(r.chiave, { quantita: Math.floor(Number(e.target.value) || 0) })} /></label>
                                     )}
                                     <span className="rvTab-min">{pezziDi(r)} pz</span>
                                     <span className="rvSpazio" />
@@ -575,7 +614,8 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                     {!!manca.length && (
                         <div className="rvNota rvNota-att mt-3">
                             <div className="rvNota-t">Prima di caricare</div>
-                            <div className="rvNota-s">{manca.slice(0, 4).join(" · ")}</div>
+                            <div className="rvNota-s">{manca.slice(0, 4).join(" · ")}
+                                {manca.length > 4 && <> · <b>e altre {manca.length - 4} cose</b></>}</div>
                         </div>
                     )}
 
