@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { isAdminOrAbove } from "@/lib/roles";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { eUnLavoroAutomatico } from "@/lib/cronParola";
 import { parametriAutomatismo } from "@/lib/automatismiConfig";
@@ -68,6 +69,10 @@ async function impostazioni() {
 export async function GET(request: Request) {
     const g = await accesso(request, "paystore");
     if (!g.ok) return g.risposta;
+    const { data: chiSono } = await supabase.from("app_users").select("role").eq("id", g.sess.id).maybeSingle();
+    if (!isAdminOrAbove(String((chiSono as { role?: string } | null)?.role || ""))) {
+        return NextResponse.json({ error: "il motore lo guarda l'amministrazione." }, { status: 403 });
+    }
     const imp = await impostazioni();
 
     /* la stessa selezione della presa, ma in sola lettura: dice cosa
@@ -112,6 +117,12 @@ export async function POST(request: Request) {
     if (!(await eUnLavoroAutomatico(request))) {
         const g = await accesso(request, "paystore");
         if (!g.ok) return g.risposta;
+        /* ⚠️ E NON BASTA VEDERE LA SEZIONE: una corsa a mano eroga credito
+           esattamente come quella del cron. */
+        const { data: chiSono } = await supabase.from("app_users").select("role").eq("id", g.sess.id).maybeSingle();
+        if (!isAdminOrAbove(String((chiSono as { role?: string } | null)?.role || ""))) {
+            return NextResponse.json({ error: "far partire il motore è cosa dell'amministrazione." }, { status: 403 });
+        }
         daPersona = true;
     }
 

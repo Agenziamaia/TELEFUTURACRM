@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { isAdminOrAbove } from "@/lib/roles";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { eseguiRicarica } from "@/lib/paystoreEsegui";
 import type { RigaRicarica } from "@/lib/paystoreEsegui";
@@ -25,6 +26,15 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
     const g = await accesso(request, "paystore");
     if (!g.ok) return g.risposta;
+    /* ⚠️ VEDERE LA SEZIONE NON È POTER EROGARE (Luca 03/09: «assicurati che
+       queste modifiche in PayStore è possibile farle solo dall'amministrativo
+       in su»). Misurato: `direttore_cc` ha `/amministrazione` fra i permessi,
+       quindi arrivava a questo pulsante — che fa uscire credito vero dal
+       plafond di un negozio, e non torna indietro. */
+    const { data: chiSono } = await supabase.from("app_users").select("role").eq("id", g.sess.id).maybeSingle();
+    if (!isAdminOrAbove(String((chiSono as { role?: string } | null)?.role || ""))) {
+        return NextResponse.json({ error: "far partire una ricarica è cosa dell'amministrazione." }, { status: 403 });
+    }
 
     let b: { id?: string };
     try { b = await request.json(); } catch { return NextResponse.json({ error: "corpo non valido" }, { status: 400 }); }

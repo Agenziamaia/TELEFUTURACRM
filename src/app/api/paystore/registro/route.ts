@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { isAdminOrAbove } from "@/lib/roles";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto, NOMI_OPERATORE, eStatoValido } from "@/lib/paystore";
 
@@ -446,6 +447,17 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     const g = await accesso(request, "paystore");
     if (!g.ok) return g.risposta;
+    /* ⚠️ QUI DENTRO SI CAMBIA LO STATO DI UNA RICARICA E IL NUMERO DEL CLIENTE,
+       e si riscrive il listino che il banco usa per vendere. Vedere la sezione
+       non basta: misurato, `direttore_cc` ha `/amministrazione` fra i permessi
+       e arrivava fin qui. Luca 03/09: «assicurati che queste modifiche in
+       PayStore è possibile farle solo dall'amministrativo in su».
+       ⚠️ Vale per la SCRITTURA: il registro si LEGGE (GET) da chiunque veda la
+       sezione, che è il modo in cui l'amministrazione lo guarda in due. */
+    const { data: chiSono } = await supabase.from("app_users").select("role").eq("id", g.sess.id).maybeSingle();
+    if (!isAdminOrAbove(String((chiSono as { role?: string } | null)?.role || ""))) {
+        return NextResponse.json({ error: "queste modifiche le fa l'amministrazione." }, { status: 403 });
+    }
 
     let b: { azione?: string; id?: string; operatore?: string; etichetta?: string; valore?: number; ordine?: number; attivo?: boolean; stato?: string; nota?: string; numero?: string };
     try { b = await request.json(); } catch { return NextResponse.json({ error: "corpo non valido" }, { status: 400 }); }
