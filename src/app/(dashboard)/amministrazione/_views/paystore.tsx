@@ -186,7 +186,22 @@ export function PayStoreAdminView() {
        Appena qualcuno preme, comanda la sua scelta, e comanda su tutte e due
        le viste: prima, sulla vista di oggi, premere non faceva assolutamente
        niente perché non c'era niente da nascondere per costruzione. */
-    const [mostraChiuse, setMostraChiuse] = useState<boolean | null>(null);
+    /* ═══ QUALI STATI SI VEDONO ════════════════════════════════════════════
+       Luca 03/09: «anziché quel filtro "completate" che non serve a niente,
+       quando filtro un qualsiasi giorno mi dà già preselezionati in sospeso,
+       non partita e annullata, e mi lascia non cliccati ok automatico e ok
+       manuale, che posso aggiungere io. Così togliamo questo flusso delle
+       completate in elenco, che crea confusione».
+
+       ⚠️ ED È MEGLIO DEL PULSANTE CHE HO TOLTO. Quello nascondeva le completate
+       con una regola sua — «chiusa, scontrino emesso, reparto giusto, numero
+       c'è» — che nessuno poteva indovinare guardando lo schermo: le righe
+       sparivano e il perché stava nel codice. Adesso quello che si vede è
+       scritto sulle pastiglie: tre accese, due spente, e si cambia premendo.
+       Vale per QUALUNQUE periodo — oggi, ieri, sette giorni, un mese — senza
+       regole diverse a seconda del giorno. */
+    const DA_SISTEMARE = ["sospeso", "fallita", "annullata"];
+    const [stati, setStati] = useState<Set<string>>(() => new Set(DA_SISTEMARE));
     /* ⚠️ LA RIGA SI APRE, NON SI SFOGLIA. Su una ricarica che non è andata la
        domanda non è mai «quanto era»: è «cosa c'era intorno» — quale vendita,
        quale cliente, chi l'ha corretta e quante volte l'abbiamo mandata. Tutto
@@ -229,7 +244,7 @@ export function PayStoreAdminView() {
     /* ⚠️ CAMBIANDO FILTRO O PERIODO SI RIPARTE DA 200. `setQuante` sapeva solo
        crescere: dopo quattro «mostrane altre 500» ogni cambio di mese
        ridisegnava duemiladuecento righe in un colpo. */
-    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stato, origine, allarme, operatore, mostraChiuse]);
+    useEffect(() => { setQuante(200); }, [periodo.da, periodo.a, negoziSel, stati, origine, allarme, operatore]);
     useEffect(() => { setGiornoAperto(null); }, [periodo.da, periodo.a]);
     const carica = useCallback(async () => {
         setCaricando(true); setErr(null);
@@ -277,69 +292,33 @@ export function PayStoreAdminView() {
        l'amministrazione le deve trovare.
        Si nasconde solo quello che non chiede più niente a nessuno: credito
        partito, documento uscito, reparto giusto, numero scritto. */
-    /* ⚠️ OGGI SI VEDE TUTTO, LO STORICO NO (Luca 02/09): «nel momento in cui
-       vado ad aprire la sezione di oggi deve darmele tutte; se però vado sullo
-       storico, la prima volta deve darmi solamente quelle che hanno avuto un
-       problema e che di fatto non sono andate in ok».
-       Sulla giornata in corso serve vedere cosa esce dal banco, chiuse
-       comprese. Su un periodo più lungo la domanda è un'altra — cosa è rimasto
-       da sistemare — e le chiuse sono solo rumore fra cui cercare. */
-    const soloOggi = periodo.da === oggiS && periodo.a === oggiS;
-    /* ⚠️ SI NASCONDE ANCHE SU OGGI, SE LO CHIEDE. Legare il nascondimento al
-       periodo voleva dire che sulla giornata in corso il pulsante cambiava
-       etichetta senza spostare una riga — Luca ha chiesto di poter decidere
-       «se mostrare O NASCONDERE», e nascondere non si poteva. */
-    const chiusaVecchia = (r: Riga) =>
-        (r.stato === "ok_automatico" || r.stato === "ok_manuale")
-        && r.scontrino_stato === "emesso"
-        && (r.reparto_usato == null || r.reparto_usato === 1)
-        && !!String(r.numero || "").trim();
-    /* ⚠️ TRE MODI DI RIVEDERLE, e sono tutti espliciti: l'interruttore, il
-       filtro sullo stato «ok» (chiederle è già chiedere di vederle), e il
-       periodo che non arriva a oggi — cioè quando si torna indietro a
-       guardare una giornata chiusa, dove nascondere le fatte vorrebbe dire
-       mostrare una giornata vuota. */
-    /* ⚠️ «TORNARE INDIETRO» È UN GESTO, NON UNA DATA. Avevo legato la
-       riapertura al periodo che FINISCE prima di oggi: così «7 giorni» e
-       «Mese» — che sono i modi normali di guardare indietro — continuavano a
-       nascondere, e l'unica scorciatoia che funzionava era «Ieri».
-       Ora è il gruppo «Quando» ad accendere l'interruttore: toccare il periodo
-       fra i filtri VUOL DIRE «fammi vedere tutto», ed è quello che Luca ha
-       chiesto. Resta un interruttore visibile, che si può rispegnere. */
-    const filtroSuOk = stato === "ok_automatico" || stato === "ok_manuale";
-    const chiuseInElenco = mostraChiuse ?? soloOggi;
-    const mostraTutte = chiuseInElenco || filtroSuOk;
+    /* ⚠️ IL NASCONDIMENTO AUTOMATICO NON C'È PIÙ. Prima le ricariche già a
+       posto sparivano da sole secondo una regola scritta nel codice — chiusa,
+       scontrino emesso, reparto giusto, numero presente — e chi guardava non
+       poteva sapere perché una riga non ci fosse. Adesso lo dicono le
+       pastiglie: quello che si vede è quello che è acceso.
+       `toccate` resta: una riga su cui si è appena agito NON deve sparire sotto
+       le dita mentre la si guarda. */
     const F = {
-        chiuse: (r: Riga) => mostraTutte || toccate.has(r.id) || !chiusaVecchia(r),
+        stato: (r: Riga) => toccate.has(r.id) || stati.has(r.stato),
         negozio: (r: Riga) => !negoziSel || negoziSel.includes(String(r.negozio || "")),
-        stato: (r: Riga) => !stato || r.stato === stato,
         origine: (r: Riga) => !origine || String(r.con_attivazione === true) === origine,
         allarme: (r: Riga) => !allarme
             || (allarme === "scontrino" && r.scontrino_stato === "errore")
             || (allarme === "indietro" && rimastaIndietro(r)),
     };
     const tutte = d.ultime;
-    const righe = tutte.filter((r) => F.chiuse(r) && F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r));
-    /* quante ne sta tenendo da parte: si dice, se no sembra che manchino */
-    const nascoste = mostraTutte ? 0
-        : tutte.filter((r) => chiusaVecchia(r) && F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r)).length;
+    const righe = tutte.filter((r) => F.stato(r) && F.negozio(r) && F.origine(r) && F.allarme(r));
     /** quante righe resterebbero premendo questo pulsante, con quello che è
      *  già premuto adesso */
-    /* ⚠️ `tranne` è una LISTA. Le pastiglie degli stati «ok» devono contare
-       anche le righe che il nascondimento tiene fuori: premerle è il modo di
-       farle riapparire, e un pulsante che dice 0 non lo preme nessuno. */
     const quanteCon = (tranne: (keyof typeof F)[], cond: (r: Riga) => boolean) =>
         tutte.filter((r) => cond(r) && (Object.keys(F) as (keyof typeof F)[])
             .every((k) => tranne.includes(k) || F[k](r))).length;
     /* ⚠️ I DUE ALLARMI CONTANO QUELLO CHE SI VEDRÀ, SEMPRE. Prima, a filtri
-       spenti, usavano i numeri del server — che non sanno del nascondimento:
-       il quadrato prometteva 9 righe senza scontrino e la lista ne mostrava 7.
-       E domani mattina, chiuse le sospese di oggi, avrebbe detto 9 su una
-       lista vuota. Il numero del server serviva quando la rotta mandava solo
-       200 righe; ora le manda tutte, e contare qui è insieme più semplice e
-       sempre coerente con l'elenco sotto. */
-    const senzaScontrino = quanteCon(["allarme"], (r) => r.scontrino_stato === "errore");
-    const daGuardareDavvero = quanteCon(["allarme"], rimastaIndietro);
+       spenti, usavano i numeri del server — che non sanno dei filtri: il
+       quadrato prometteva 9 righe senza scontrino e la lista ne mostrava 7. */
+    const senzaScontrino = quanteCon(["allarme", "stato"], (r) => r.scontrino_stato === "errore");
+    const daGuardareDavvero = quanteCon(["allarme", "stato"], rimastaIndietro);
     /* ⚠️ IL GRAFICO PARLA DI GIORNI, e le ore le mostra solo se gliele chiedi
        (Luca 02/09): «questo grafico deve darmi l'andamento giorno per giorno,
        poi nel momento in cui io clicco su un giorno a quel punto mi esplode
@@ -748,42 +727,38 @@ export function PayStoreAdminView() {
                                 <span className="rvLab">Com&apos;è andata</span>
                                 <div className="rvPillRow">
                                     {ORDINE_STATI.map((x) => {
-                                        const n = quanteCon(["stato", "chiuse"], (r) => r.stato === x);
-                                        if (!n && x !== "sospeso") return null;
-                                        const on = stato === x;
+                                        const n = quanteCon(["stato"], (r) => r.stato === x);
+                                        if (!n && !DA_SISTEMARE.includes(x)) return null;
+                                        const on = stati.has(x);
                                         return (
-                                            <button key={x} onClick={() => setStato(on ? "" : x)} aria-pressed={on}
-                                                title={`${n} ricarich${n === 1 ? "a" : "e"} in questo stato`}
+                                            <button key={x} aria-pressed={on}
+                                                onClick={() => setStati((v) => {
+                                                    /* ⚠️ NON SI PUÒ SPEGNERE TUTTO. Un elenco vuoto non è un
+                                                       filtro: è una schermata che sembra rotta. Togliendo
+                                                       l'ultima pastiglia si torna alle tre di partenza. */
+                                                    const nuovo = new Set(v);
+                                                    if (nuovo.has(x)) nuovo.delete(x); else nuovo.add(x);
+                                                    return nuovo.size ? nuovo : new Set(DA_SISTEMARE);
+                                                })}
+                                                title={`${n} ricarich${n === 1 ? "a" : "e"} in questo stato — premi per ${on ? "toglierle dall'" : "aggiungerle all'"}elenco`}
                                                 className={cn("rvPill rvPill-tinta", TINTA_STATO[x], on && "rvPill-on")}>
                                                 {STATI[x].testo}{on ? " ✓" : ""}<span className="rvPillN">{n}</span>
                                             </button>
                                         );
                                     })}
-                                    {/* ⚠️ QUESTO PULSANTE NON SPARISCE MAI (Luca 02/09): «deve
-                                        rimanere sempre lì, così posso filtrare in qualsiasi momento
-                                        decidendo se mostrare o nascondere quelle completate».
-                                        Prima compariva solo quando c'era qualcosa da riaprire, e
-                                        sulla giornata di oggi — dove non si nasconde niente —
-                                        spariva: chi voleva togliere le chiuse non aveva il comando.
-                                        Nascondere in silenzio, poi, è come non averle mai
-                                        registrate: il numero di quelle tenute da parte è scritto
-                                        sopra. */}
-                                    {/* ⚠️ SPENTO QUANDO NON PUÒ FARE NIENTE. Col filtro sugli
-                                        stati «ok» le completate sono esattamente quello che si sta
-                                        chiedendo: il pulsante diceva «sono nascoste», si premeva, e
-                                        non cambiava una riga. Un comando che non fa niente e non lo
-                                        dice è peggio di un comando assente. */}
-                                    <button onClick={() => setMostraChiuse(!chiuseInElenco)} aria-pressed={chiuseInElenco}
-                                        disabled={filtroSuOk}
-                                        title={filtroSuOk
-                                            ? "stai già chiedendo le completate con il filtro sullo stato: qui non c'è niente da nascondere"
-                                            : chiuseInElenco
-                                                ? "le ricariche completate sono in elenco: premi per toglierle"
-                                                : "le completate — credito partito, scontrino uscito, niente da sistemare — sono fuori dall'elenco: premi per rivederle"}
-                                        className={cn("rvPill rvPill-tinta rvT-grigio", chiuseInElenco && "rvPill-on")}>
-                                        {chiuseInElenco ? "👁 completate in elenco ✓" : "👁 mostra le completate"}
-                                        {!chiuseInElenco && nascoste > 0 && <span className="rvPillN">{nascoste}</span>}
-                                    </button>
+                                    {/* ⚠️ IL PULSANTE «COMPLETATE IN ELENCO» È SPARITO (Luca 03/09:
+                                        «non serve a niente e crea confusione»). Nascondeva le
+                                        ricariche a posto con una regola scritta nel codice che
+                                        nessuno poteva indovinare guardando lo schermo. Adesso quello
+                                        che si vede sta tutto sulle pastiglie qui sopra: tre accese
+                                        di partenza, due spente, e si cambia premendo. */}
+                                    {[...stati].sort().join() !== [...DA_SISTEMARE].sort().join() && (
+                                        <button onClick={() => setStati(new Set(DA_SISTEMARE))}
+                                            className="rvPill rvPill-tinta rvT-grigio"
+                                            title="torna ai tre stati di partenza: in sospeso, non partita, annullata">
+                                            ↺ solo da sistemare
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -870,21 +845,17 @@ export function PayStoreAdminView() {
                                     acceso senza che nessuno l'abbia premuto, e nell'unico caso
                                     in cui non c'è nient'altro da elencare era anche l'unico a
                                     non comparire: la lista diceva «91 di 180» e non spiegava. */}
-                                {nascoste > 0 && (
-                                    <span className="text-[11px] font-semibold text-slate-400">
-                                        {" · "}{nascoste} completate nascoste
-                                    </span>
-                                )}
-                                {(allarme || stato || origine || negoziSel) && (
-                                    <span className="text-[11px] font-semibold text-amber-300/90">
-                                        {" · "}{[
-                                            allarme === "scontrino" ? "senza scontrino" : allarme === "indietro" ? "rimaste indietro" : null,
-                                            stato ? STATI[stato].testo : null,
-                                            origine ? (origine === "true" ? "con attivazione" : "sciolte") : null,
-                                            negoziSel ? (negoziSel.length === 1 ? negoziSel[0] : `${negoziSel.length} negozi`) : null,
-                                        ].filter(Boolean).join(" · ")}
-                                    </span>
-                                )}
+                                {/* ⚠️ COSA SI STA GUARDANDO, scritto per esteso: gli stati
+                                    accesi si dicono sempre, perché di partenza tre sono accesi e
+                                    due no — e chi non lo sa si chiede dove sono finite le altre. */}
+                                <span className="text-[11px] font-semibold text-amber-300/90">
+                                    {" · "}{[
+                                        [...ORDINE_STATI].filter((x) => stati.has(x)).map((x) => STATI[x].testo).join(", "),
+                                        allarme === "scontrino" ? "senza scontrino" : allarme === "indietro" ? "rimaste indietro" : null,
+                                        origine ? (origine === "true" ? "con attivazione" : "sciolte") : null,
+                                        negoziSel ? (negoziSel.length === 1 ? negoziSel[0] : `${negoziSel.length} negozi`) : null,
+                                    ].filter(Boolean).join(" · ")}
+                                </span>
                             </h3>
                             {/* ⚠️ DI COSA PARLA QUESTO NUMERO. Con le già fatte nascoste
                                 qui si leggeva 778 € mentre il quadrato «Incassato» diceva
@@ -898,21 +869,24 @@ export function PayStoreAdminView() {
                             <div className="py-8 text-center">
                                 <p className="text-xs text-slate-500">
                                     {!d.ultime.length ? "Ancora nessuna ricarica registrata in questo periodo."
-                                        : nascoste > 0 && !negoziSel && !stato && !origine && !allarme
-                                            /* ⚠️ «vuoto» su un registro di soldi incassati è il messaggio
-                                                peggiore possibile: se sono tutte già fatte, si dice così. */
-                                            ? `Tutte le ricariche di questo periodo sono già state completate.`
+                                        /* ⚠️ «VUOTO» SU UN REGISTRO DI SOLDI INCASSATI è il messaggio
+                                            peggiore possibile. Di partenza si vedono solo i tre stati da
+                                            sistemare: se non ce n'è nessuna, la notizia è buona e va detta
+                                            così — non con un elenco vuoto che sembra un guasto. */
+                                        : !stati.has("ok_automatico") && !stati.has("ok_manuale")
+                                            ? "Niente da sistemare in questo periodo: le ricariche sono tutte a posto."
                                             : "Nessuna ricarica con questi filtri."}
                                 </p>
                                 {/* la via d'uscita sta dentro il vuoto, non venti righe più
                                     su: chi ci arriva sta cercando proprio quella */}
-                                {nascoste > 0 && (
-                                    <button onClick={() => setMostraChiuse(true)} className="rvPill rvPill-sm rvPill-tinta rvT-grigio mt-3">
-                                        👁 mostra le completate<span className="rvPillN">{nascoste}</span>
+                                {!stati.has("ok_automatico") && (
+                                    <button onClick={() => setStati(new Set(ORDINE_STATI))}
+                                        className="rvPill rvPill-sm rvPill-tinta rvT-grigio mt-3">
+                                        👁 mostra anche quelle già fatte
                                     </button>
                                 )}
-                                {d.ultime.length > 0 && (negoziSel || stato || origine || allarme || operatore) && (
-                                    <button onClick={() => { setNegoziSel(null); setStato(""); setOrigine(""); setAllarme(""); setOperatore(""); }}
+                                {d.ultime.length > 0 && (negoziSel || origine || allarme || operatore) && (
+                                    <button onClick={() => { setNegoziSel(null); setOrigine(""); setAllarme(""); setOperatore(""); }}
                                         className="rvPill rvPill-sm rvPill-via mt-3 ml-2">✕ togli i filtri</button>
                                 )}
                             </div>
@@ -956,7 +930,9 @@ export function PayStoreAdminView() {
                                                         dice la stessa cosa accanto al marchio */}
                                                     {r.con_attivazione && <span className="psConSim" title="ricarica della SIM appena venduta: il numero è quello dell'attivazione">📶</span>}
                                                 </td>
-                                                <td className="font-mono text-slate-300">
+                                                {/* anche qui: quando il numero manca c'è un campo da
+                                                    scrivere, e scriverci dentro non deve aprire la scheda */}
+                                                <td className="font-mono text-slate-300" onClick={(e) => { if (!r.numero) e.stopPropagation(); }}>
                                                     {/* ⚠️ IL NUMERO SI PRENDE DALLO SCONTRINO, non si chiede a
                                                         chi guarda: è stampato nella descrizione della riga. Il
                                                         campo a mano resta per i casi in cui lo scontrino non
@@ -975,7 +951,15 @@ export function PayStoreAdminView() {
                                                     ) : <span className="text-slate-600 text-[11px]" title="non abbiamo trovato il lavoro di stampa di questa vendita">non risulta</span>}
                                                 </td>
                                                 <td className="text-slate-400">{SOCIETA[r.azienda || ""] || "—"}</td>
-                                                <td>
+                                                {/* ⚠️ QUI IL CLIC SI FERMA (Luca 03/09: «se clicco sullo
+                                                    stato deve funzionare solo quello, la scheda si apre
+                                                    cliccando su qualsiasi altra parte della riga»).
+                                                    Dentro questa cella ci sono una tendina che dichiara
+                                                    partito un credito e un pulsante che lo eroga davvero:
+                                                    lasciar salire il clic alla riga voleva dire che ogni
+                                                    volta si apriva anche la scheda, sopra il menu che si
+                                                    stava usando. */}
+                                                <td onClick={(e) => e.stopPropagation()}>
                                                     {/* ⚠️ LO STATO SI CAMBIA DA QUI. Finché le ricariche si
                                                         fanno sul terminale del fornitore, l'unico modo che il
                                                         CRM ha di sapere se il credito è partito è che glielo
