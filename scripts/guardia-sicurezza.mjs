@@ -40,6 +40,7 @@ const SENZA_SESSIONE = {
        print/*, verificata riga per riga: senza questa voce il build restava
        rosso e NIENTE andava in produzione. */
     "agent/report": "agente di cassa, protetto dal suo token nel corpo",
+    "agent/test-print": "stampa di PROVA non fiscale dal pannello di cassa: stesso PRINT_AGENT_TOKEN nel corpo (verificato: senza token risponde 401, senza token sul server 503)",
     "print/enqueue": "agente di stampa, protetto dal suo token",
     "print/next": "agente di stampa, protetto dal suo token",
     "print/claim": "agente di stampa, protetto dal suo token",
