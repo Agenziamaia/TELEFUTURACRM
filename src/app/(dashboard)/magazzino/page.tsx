@@ -400,8 +400,19 @@ function Magazzino() {
     return (
         /* la tinta della sezione sta sul contenitore, non nei bottoni
            (regola 2): è l'indaco del CRM, e tutto quello che sta dentro —
-           pastiglie, riquadri, frecce d'ordinamento — la eredita. */
-        <div className="max-w-[1500px]">
+           pastiglie, riquadri, frecce d'ordinamento — la eredita.
+
+           NIENTE TETTO ALLA LARGHEZZA (Luca 03/09: «gli schermi
+           dell'amministrazione sono grandi, per cui se allargo la finestra
+           deve potersi allargare anche la finestra del magazzino»). C'era un
+           `max-w-[1500px]` dalla primissima versione, senza una ragione
+           scritta: su un monitor da 2560 lasciava 800px di nero a destra
+           mentre la tabella si stringeva. Nessun'altra sezione ce l'ha —
+           Gare, Registra Vendita e Analisi crescono con la finestra — e
+           `<main>` è già `flex-1 w-full min-w-0`, cioè pronto.
+           Misurato a 2560 con la testata dei filtri: sette riquadri in una
+           fila, dodici pastiglie su una riga, zero coda vuota. */
+        <div>
             <div className="rvTesta">
                 <h1 className="rvTit"><Boxes size={25} /> Magazzino · {tab === "giacenze" ? "Giacenze" : tab === "trasferimenti" ? "Trasferimenti" : "Articoli"}</h1>
                 {/* LE TRE SCHEDE NON STANNO PIU' QUI (Luca 03/09): «togliamole,

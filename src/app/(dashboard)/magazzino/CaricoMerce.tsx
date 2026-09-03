@@ -394,14 +394,28 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
         if (!aperto) return;
         const esc = (e: KeyboardEvent) => { if (e.key === "Escape") chiudi(); };
         window.addEventListener("keydown", esc);
-        return () => window.removeEventListener("keydown", esc);
+
+        /* LA PAGINA SOTTO STA FERMA (Luca 03/09: «quando ho questa finestra
+           aperta, se scrollo con il mouse mi scorre anche la pagina sotto»).
+           Con la rotella sopra la finestra si scorre la finestra; appena il
+           puntatore ne esce — o quando dentro non c'è più niente da scorrere —
+           il browser passa la rotella a quello che c'è dietro, e la tabella
+           delle giacenze scivolava via sotto la sovrapposizione.
+           Si rimette il valore di PRIMA, non «auto»: se un giorno un'altra
+           finestra avrà già bloccato la pagina, riaprirla non deve sbloccarla. */
+        const prima = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => {
+            window.removeEventListener("keydown", esc);
+            document.body.style.overflow = prima;
+        };
     }, [aperto, chiudi]);
 
     if (!aperto) return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[120] overflow-y-auto flex items-start justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <div className="rvBox w-full max-w-5xl my-4">
+        <div className="fixed inset-0 z-[120] overflow-y-auto flex items-start justify-center p-4 bg-black/65 backdrop-blur-sm">
+        <div className="rvBox rvBox-sopra w-full max-w-5xl my-4">
             <div className="rvTesta">
                 <h2 className="rvTit"><PackagePlus size={22} /> Carico merce</h2>
                 <button onClick={chiudi} className="rvPill rvPill-sm" title="Chiudi (Esc) — quello che hai messo nel carico resta">
