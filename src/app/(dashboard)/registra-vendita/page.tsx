@@ -8044,7 +8044,19 @@ const _descrizioneConImei = (modello, seriale, fallback) => rigaConImei(modello,
            vuota e la ricerca per cliente inutile. Il nome era gia' calcolato
            venti righe piu' sotto, per la conferma a schermo. */
         setScontrino({ items: _scRows, negozio: selNeg, contrattoId: contractRows[0]?.id || null, coupon: couponCart, daRegistrare: true, telefoni: _telefoni,
-          cliente: (ana.ragioneSociale || `${ana.nome || ""} ${ana.cognome || ""}`.trim() || ana.cf || "").trim() || null });
+          cliente: (ana.ragioneSociale || `${ana.nome || ""} ${ana.cognome || ""}`.trim() || ana.cf || "").trim() || null,
+          /* L'ANAGRAFICA VIAGGIA COL MODALE ANCHE PER LA FATTURA (Luca 04/09).
+             Se il cliente la chiede, i suoi dati sono già tutti qui: farglieli
+             ridettare al banco, dopo che li ha appena dati, è il modo più
+             sicuro per scriverli diversi dall'anagrafica. */
+          fattura: {
+            tipo: tipoCliente === "business" ? "business" as const : "consumer" as const,
+            ragioneSociale: ana.ragioneSociale || "",
+            nome: ana.nome || "", cognome: ana.cognome || "",
+            cfPiva: (ana.cf || "").trim().toUpperCase().replace(/\s+/g, ""),
+            indirizzo: ana.via || "", cap: ana.cap || "", citta: ana.citta || "",
+            email: ana.email || "", telefono: ana.cellulare || ana.recapito || "",
+          }, });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
         /* NIENTE SCONTRINO: ma il venditore deve sapere PERCHÉ (Luca 31/08:
@@ -8368,7 +8380,19 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
            `contrattoId` il dettaglio in Documenti non offriva nemmeno il
            collegamento «Apri la vendita» (revisione 01/09). */
         setScontrino({ items: _scRows, negozio: selNeg, coupon: couponCart, daRegistrare: true, telefoni: _telMarg,
-          cliente: _cliLabel || null });
+          cliente: _cliLabel || null,
+          /* L'ANAGRAFICA VIAGGIA COL MODALE ANCHE PER LA FATTURA (Luca 04/09).
+             Se il cliente la chiede, i suoi dati sono già tutti qui: farglieli
+             ridettare al banco, dopo che li ha appena dati, è il modo più
+             sicuro per scriverli diversi dall'anagrafica. */
+          fattura: {
+            tipo: tipoCliente === "business" ? "business" as const : "consumer" as const,
+            ragioneSociale: ana.ragioneSociale || "",
+            nome: ana.nome || "", cognome: ana.cognome || "",
+            cfPiva: (ana.cf || "").trim().toUpperCase().replace(/\s+/g, ""),
+            indirizzo: ana.via || "", cap: ana.cap || "", citta: ana.citta || "",
+            email: ana.email || "", telefono: ana.cellulare || ana.recapito || "",
+          }, });
       } else {
         // Negozio SENZA scontrino: si salva subito, ma DICENDO perché (vedi
         // il gemello nel flusso brand: il silenzio si legge come «cassa rotta»).

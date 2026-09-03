@@ -48,6 +48,7 @@ import { useVisibleStores, stessoMagazzino, negozioInValues } from "@/lib/visibl
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { FileDown, RefreshCw, Receipt, Loader2 } from "lucide-react";
 import { nomeSocieta } from "@/lib/societa";
+import { FattureDaFare } from "./FattureDaFare";
 
 const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 /** Gli euro come li scrive il resto del CRM: col punto delle migliaia. Prima
@@ -454,11 +455,33 @@ function Documenti() {
        di prima. Il nonce `t=` che mette UrgentTasks serve proprio a questo, e
        con `window.location` letto una volta sola non sarebbe servito a niente. */
     const parametri = useSearchParams();
+    /* ═══ LE FATTURE DA EMETTERE (Luca 04/09) ════════════════════════════════
+       Una vista a sé dentro Documenti: non sono documenti emessi, sono lavoro
+       da fare. Il flash dell'amministrazione atterra qui con `?fattura=<id>`,
+       e in quel caso la vista si apre da sola sulla richiesta giusta. */
+    const [vistaFatture, setVistaFatture] = useState(false);
+    const [fatturaApri, setFatturaApri] = useState<string | null>(null);
+    const [daFatturare, setDaFatturare] = useState(0);
+    /* CHI PUÒ ESITARE una fattura è chi la emette davvero: la stessa lista che
+       il database controlla in `fattura_esita`. Qui serve solo a non mostrare
+       un pulsante che poi risponderebbe di no. */
+    const puoiEsitareFatture = ["amministrativo", "direttore_generale", "admin", "dev"]
+        .includes(String(user?.role || ""));
     useEffect(() => {
-        const d = parametri.get("doc"), g = parametri.get("giorno");
+        const d = parametri.get("doc"), g = parametri.get("giorno"), f = parametri.get("fattura");
         if (g && /^\d{4}-\d{2}-\d{2}$/.test(g)) { setDal(g); setAl(g); }
         if (d) setAperto(d);
+        if (f) { setFatturaApri(f); setVistaFatture(true); }
     }, [parametri]);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const { count } = await supabase.from("fatture_richieste")
+                .select("id", { count: "exact", head: true }).eq("stato", "da_fare");
+            if (vivo) setDaFatturare(count || 0);
+        })();
+        return () => { vivo = false; };
+    }, [vistaFatture]);
 
     /* TUTTI I NOMI DEI NEGOZI, che servono per trovare i gemelli di sede
        fisica: «Collatina W3» e «Collatina Multi» sono lo stesso bancone. */
@@ -1068,20 +1091,39 @@ function Documenti() {
                         {QUADRI.map(q => {
                             const t = q.n.toLocaleString("it-IT");
                             return (
-                                <button key={q.id || "tutti"} type="button" onClick={() => setTipo(x => (x === q.id ? "" : q.id) as typeof tipo)}
-                                    className={cn("rvRapido", q.tinta, tipo === q.id && "rvRapido-on", !q.n && tipo !== q.id && "rvRapido-off")}>
+                                <button key={q.id || "tutti"} type="button" onClick={() => { setVistaFatture(false); setTipo(x => (x === q.id ? "" : q.id) as typeof tipo); }}
+                                    className={cn("rvRapido", q.tinta, !vistaFatture && tipo === q.id && "rvRapido-on", !q.n && tipo !== q.id && "rvRapido-off")}>
                                     <em className={corpoNumero(t)}>{t}</em>
                                     <b>{q.icona} {q.et}</b>
                                     <small>{eurTondo(q.val)} incassati</small>
                                 </button>
                             );
                         })}
+                        {/* ═══ DA FATTURARE ═══ non è un tipo di documento emesso ma
+                            una coda di lavoro, quindi apre una vista sua. Sta qui
+                            perché è qui che l'amministrazione guarda la giornata. */}
+                        <button type="button" onClick={() => { setVistaFatture(v => !v); setFatturaApri(null); }}
+                            className={cn("rvRapido", "rvT-ambra", vistaFatture && "rvRapido-on", !daFatturare && !vistaFatture && "rvRapido-off")}>
+                            <em className={corpoNumero(String(daFatturare))}>{daFatturare}</em>
+                            <b>🧾 Da fatturare</b>
+                            <small>richieste dalla cassa</small>
+                        </button>
                     </div>
                     <div className="rvHint">
                         I valori contano solo i documenti riusciti e non di prova.
                         {conta.incerti > 0 ? ` ${conta.incerti} non risultano emessi: restano in elenco perché il tentativo c'è stato — apri la riga per sapere cos'ha risposto la cassa.` : ""}
                     </div>
                 </div>
+
+                {/* ═══ LA VISTA DELLE FATTURE DA EMETTERE ═══ prende il posto
+                    di filtri e tabella: sono due lavori diversi, e mostrarli
+                    insieme vorrebbe dire filtrare per data una coda di cose da
+                    fare, che per definizione si guarda tutta. */}
+                {vistaFatture ? (
+                    <div className="mt-3">
+                        <FattureDaFare puoiEsitare={puoiEsitareFatture} apriId={fatturaApri} />
+                    </div>
+                ) : (<>
 
                 {/* ═══ I FILTRI ═══ */}
                 <div className="rvBarra mt-3">
@@ -1119,11 +1161,12 @@ function Documenti() {
                     scoprirlo in fondo alla pagina dopo aver cambiato le date. */}
                 {tipo === "fattura" && !conta.fatture && (
                     <div className="rvNota rvNota-att mt-3">
-                        <div className="rvNota-t">Le fatture non sono ancora emesse dal CRM</div>
+                        <div className="rvNota-t">Qui ci sono le fatture EMESSE dal registratore, e non ce ne sono</div>
                         <div className="rvNota-s">
-                            Il posto è questo e il filtro le aspetta: manca la parte che le crea —
-                            numerazione, dati fiscali del cliente e invio allo SdI. Non dipende dalle
-                            date: allargarle non farà comparire niente.
+                            Le fatture non le stampa la cassa. Quando un cliente ne chiede una, la cassa
+                            non emette scontrino e manda una richiesta all&apos;amministrazione: la trovi
+                            nel riquadro <b>Da fatturare</b> qui sopra, con i dati del cliente pronti.
+                            Non dipende dalle date: allargarle non farà comparire niente.
                         </div>
                     </div>
                 )}
@@ -1283,6 +1326,8 @@ function Documenti() {
                     </div>
                     </>
                 )}
+
+                </>)}
 
             </div>
         </div>

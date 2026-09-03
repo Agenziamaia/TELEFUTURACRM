@@ -70,6 +70,47 @@ export interface ScontrinoData {
      *  chiedono anticipo e resto, perché da lì dipendono la riga dello
      *  scontrino e la forma di pagamento */
     telefoni?: TelefonoScontrino[];
+    /** L'ANAGRAFICA DI QUESTA VENDITA, per la fattura. Arriva già compilata da
+     *  quello che il venditore ha scritto nel form: se il cliente chiede
+     *  fattura non gli si richiedono i dati che ha appena dato. Restano da
+     *  chiedere solo quelli che al CRM non servivano — il codice destinatario
+     *  e la PEC — che infatti in anagrafica non c'erano proprio. */
+    fattura?: DatiFattura;
+}
+
+export type DatiFattura = {
+    clientId?: string | null;
+    tipo?: "business" | "consumer";
+    ragioneSociale?: string;
+    nome?: string;
+    cognome?: string;
+    cfPiva?: string;
+    codiceDestinatario?: string;
+    pec?: string;
+    indirizzo?: string;
+    cap?: string;
+    citta?: string;
+    email?: string;
+    telefono?: string;
+};
+
+/* COSA MANCA PER FARE LA FATTURA. È il gemello del controllo che sta nella
+   rotta: qui serve a spegnere il pulsante e a dirlo mentre il cliente è ancora
+   davanti, là a non far entrare una richiesta monca. Il controllo vero resta
+   quello del server — questo si può aggirare, quello no. */
+export function mancaPerFattura(c: DatiFattura): string[] {
+    const v = (x?: string) => (x || "").trim();
+    const out: string[] = [];
+    if (!v(c.ragioneSociale) && !(v(c.nome) && v(c.cognome))) out.push("la ragione sociale (o nome e cognome)");
+    if (!v(c.cfPiva)) out.push("la partita IVA o il codice fiscale");
+    if (!v(c.indirizzo)) out.push("l'indirizzo");
+    if (!v(c.cap)) out.push("il CAP");
+    if (!v(c.citta)) out.push("la città");
+    if (!v(c.codiceDestinatario) && !v(c.pec)) out.push("il codice destinatario o la PEC");
+    if (v(c.codiceDestinatario) && !/^[A-Za-z0-9]{6,7}$/.test(v(c.codiceDestinatario)))
+        out.push("un codice destinatario valido (6 o 7 caratteri)");
+    if (v(c.pec) && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v(c.pec))) out.push("una PEC scritta bene");
+    return out;
 }
 
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
@@ -81,6 +122,29 @@ const CASH_TIMEOUT_MS = 240000; // 4 min: il cliente inserisce i contanti
 const ATTESA_STAMPA_MS = 25000;
 
 type Fase = "telefoni" | "scelta" | "incasso" | "stampa" | "fatto" | "errore";
+
+/* UN CAMPO DELLA FATTURA. Scritto una volta sola perché sono dodici: dodici
+   copie dello stesso `<input>` sono dodici occasioni di scriverne uno storto.
+   L'obbligatorietà è scritta a parole e non con un asterisco — chi sta al banco
+   col cliente davanti non deve interpretare un simbolo. */
+function CampoFat({ et, v, set, cls, ph, nota, obbl }: {
+    et: string; v?: string; set: (v: string) => void;
+    cls?: string; ph?: string; nota?: string; obbl?: boolean;
+}) {
+    const vuoto = !(v || "").trim();
+    return (
+        <label className={cls}>
+            <span className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-[11px] text-slate-300">{et}</span>
+                {obbl && vuoto && <span className="text-[10px] text-rose-300/90">obbligatorio</span>}
+                {nota && <span className="text-[10px] text-slate-500 truncate">{nota}</span>}
+            </span>
+            <input value={v || ""} onChange={(e) => set(e.target.value)} placeholder={ph}
+                className={"w-full rounded-lg bg-black/30 border px-2.5 py-2 text-sm text-white placeholder:text-slate-600 "
+                    + (obbl && vuoto ? "border-rose-400/40" : "border-white/10")} />
+        </label>
+    );
+}
 
 export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData | null; onDone: () => void; onCommit?: (extra?: { contoTerzi?: { descrizione: string; imei: string; importo: number; forma: string }[]; azienda?: string | null; aziendaScontrino?: string | null; sospesa?: boolean }) => Promise<{ ok: boolean; error?: string; rows?: any }> }) {
 
@@ -96,6 +160,14 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        «Incassa ed emetti» resta spento finché non lo si fa. */
     const [righe, setRighe] = useState<RigaPagamento[]>([{ forma: "", importo: 0 }]);
     const [fase, setFase] = useState<Fase>("scelta");
+    /* ═══ IL CLIENTE VUOLE FATTURA (Luca 04/09) ══════════════════════════════
+       Con questo acceso NON esce nessuno scontrino — fattura e scontrino sono
+       due documenti per la stessa operazione, e insieme conterebbero l'importo
+       due volte. I soldi però si incassano come sempre, cash machine compresa:
+       cambia il documento, non la cassa. */
+    const [vuoleFattura, setVuoleFattura] = useState(false);
+    const [fat, setFat] = useState<DatiFattura>({});
+    const [fatErr, setFatErr] = useState<string>("");
     /* GLI IMPORTI DEI TELEFONI, chiesti prima di incassare. Testo e non
        numero: un campo che si azzera da solo mentre lo scrivi è il modo più
        veloce per far sbagliare una cifra a chi ha un cliente davanti. */
@@ -419,6 +491,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         setCouponInput("");
         setCoupon(cIn ? { code: cIn.code, valore: Number(cIn.valore) || 0, sconto: sc } : null);
         setCouponMsg(""); setNuovoCoupon(null); setCommitFail(false); cancelCashRef.current = false;
+        /* LA FATTURA NON SI EREDITA da una vendita all'altra: è la richiesta di
+           QUESTO cliente, e restare accesa sulla prossima vendita vorrebbe dire
+           non emettere uno scontrino dovuto. */
+        setVuoleFattura(false); setFatErr("");
+        setFat({ ...(data?.fattura || {}) });
         const neg = data?.negozio;
         if (!neg) return;
         // le insegne del LOCALE: quelle con un registratore hanno anche una cassa
@@ -780,6 +857,42 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         } catch { /* se non ci si riesce, resta la scadenza del server */ }
     };
 
+    /* ═══ L'ANAGRAFICA SI RICORDA DI QUESTO CLIENTE ══════════════════════════
+       Accendendo la fattura si va a vedere se questo codice fiscale / partita
+       IVA è già in archivio: se la prima fattura ha insegnato il codice
+       destinatario e la PEC, la seconda non li richiede. Si riempiono SOLO i
+       campi vuoti — quello che il venditore ha scritto adesso vince sempre su
+       quello che c'era scritto un anno fa. */
+    useEffect(() => {
+        if (!vuoleFattura) return;
+        const cf = (fat.cfPiva || "").trim().toUpperCase();
+        if (cf.length < 11) return;
+        let vivo = true;
+        (async () => {
+            const { data: cli } = await supabase.from("clients")
+                .select("id, codice_destinatario, pec, indirizzo, cap, citta, email, cellulare, ragione_sociale")
+                .eq("cf_piva", cf).limit(1).maybeSingle();
+            if (!vivo || !cli) return;
+            setFat((f) => {
+                const t = (x?: string | null) => (x || "").trim();
+                return {
+                    ...f,
+                    clientId: f.clientId || cli.id || null,
+                    codiceDestinatario: t(f.codiceDestinatario) || t(cli.codice_destinatario),
+                    pec: t(f.pec) || t(cli.pec),
+                    ragioneSociale: t(f.ragioneSociale) || t(cli.ragione_sociale),
+                    indirizzo: t(f.indirizzo) || t(cli.indirizzo),
+                    cap: t(f.cap) || t(cli.cap),
+                    citta: t(f.citta) || t(cli.citta),
+                    email: t(f.email) || t(cli.email),
+                    telefono: t(f.telefono) || t(cli.cellulare),
+                };
+            });
+        })();
+        return () => { vivo = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [vuoleFattura, fat.cfPiva]);
+
     const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
         setFase("incasso");
         cancelCashRef.current = false;
@@ -907,6 +1020,18 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             setMsg(rimanente > 0 ? `Manca ${eur(rimanente)} da assegnare a una forma di pagamento.` : `Pagamento eccedente di ${eur(-rimanente)}.`);
             return;
         }
+        /* I DATI DELLA FATTURA SI CONTROLLANO PRIMA DEI SOLDI. Accorgersene dopo
+           l'incasso vorrebbe dire avere i contanti nel cassetto, nessuno
+           scontrino e nessuna fattura: la vendita più scoperta che esista. */
+        if (vuoleFattura) {
+            const manca = mancaPerFattura(fat);
+            if (manca.length) {
+                setFatErr("Per fare la fattura manca " + manca.join(", ") + ".");
+                setFase("scelta");
+                return;
+            }
+            setFatErr("");
+        }
         const pagamenti = pagamentiSend();
         /* PRE-CHECK PRIMA DI QUALUNQUE INCASSO (revisore 29/08).
            Stava DENTRO il ramo dei contanti: pagando con carta si andava
@@ -925,7 +1050,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             if (!res.ok) chk.ok = false;
             if (chk?.testMode) setIsTest(true);
         } catch (e: any) { chk = { ok: false, error: String(e?.message || e) }; }
-        if (!chk.ok) {
+        /* CON LA FATTURA IL DRY-RUN NON PUÒ BOCCIARE: controlla che ogni voce
+           abbia il reparto IVA, che è una regola dello SCONTRINO. Qui lo si
+           chiama lo stesso, ma solo per sapere se il negozio è in prova — da
+           cui dipende se la cash machine viene davvero azionata. */
+        if (!chk.ok && !vuoleFattura) {
             setFase("errore");
             setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
             return;
@@ -936,7 +1065,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
            incassare un rifiuto: soldi nel cassetto e nessuno scontrino.
            Non dovrebbe più capitare — le sezioni le disegna la risposta del
            server — ma se capitasse, ci si ferma qui, prima del cassetto. */
-        if (Array.isArray(chk.aziende) && chk.aziende.length > 1 && !multiSocieta) {
+        if (!vuoleFattura && Array.isArray(chk.aziende) && chk.aziende.length > 1 && !multiSocieta) {
             setFase("errore"); setErroreDi("pagamento");
             setMsg("Questo carrello contiene merce di più società e va emesso come più scontrini, "
                 + "ma la finestra non è riuscita a dividerlo. Chiudi e rifai la vendita: nessun incasso è stato avviato.");
@@ -989,6 +1118,69 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                 setPaidCash(cashRounded);
             }
         }
+        /* ═══ FATTURA AL POSTO DELLO SCONTRINO ═══════════════════════════════
+           I soldi sono incassati, il documento no: qui NON si chiama il
+           registratore. Si archivia la richiesta con i dati del cliente
+           congelati e parte il flash all'amministrazione.
+           UNA RICHIESTA PER SOCIETÀ, come sarebbero stati due scontrini: due
+           partite IVA non stanno su una fattura sola. */
+        if (vuoleFattura) {
+            setFase("stampa"); setMsg("Registro la richiesta di fattura…");
+            const gruppi = multiSocieta
+                ? sezioni.map((sz) => ({
+                    societa: sz.label,
+                    totale: sz.totale,
+                    righe: sz.righe.map((x) => ({ descrizione: x.i.description, quantita: Number(x.i.qty) > 0 ? Number(x.i.qty) : 1, prezzo: Number(x.i.unitPrice) || 0 })),
+                    pagamenti: (righePerAz[sz.azienda] || []).filter((r) => Number(r.importo) > 0)
+                        .map((r) => ({ forma: r.forma, importo: +Number(r.importo).toFixed(2) })),
+                }))
+                : [{
+                    societa: aziendaSel || null,
+                    totale: +(totale - scontoCoupon).toFixed(2),
+                    righe: itemsTutte.map((i) => ({ descrizione: i.description, quantita: Number(i.qty) > 0 ? Number(i.qty) : 1, prezzo: Number(i.unitPrice) || 0 })),
+                    pagamenti,
+                }];
+            for (const g of gruppi) {
+                try {
+                    const res = await fetch("/api/vendita/fattura", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            contrattoId: data.contrattoId ?? null,
+                            negozio: data.negozio, societa: g.societa,
+                            totale: g.totale, righe: g.righe, pagamenti: g.pagamenti,
+                            cliente: fat,
+                        }),
+                    });
+                    const j = await res.json().catch(() => ({}));
+                    if (!res.ok || !j?.ok) throw new Error(j?.error || "richiesta non registrata");
+                } catch (e: any) {
+                    /* I SOLDI SONO GIÀ PRESI: non si torna indietro e non si
+                       butta la vendita. Si registra lo stesso e si dice forte
+                       che la fattura va aperta a mano, con l'importo scritto. */
+                    setFase("errore"); setErroreDi("");
+                    setMsg("⚠️ Incasso riuscito ma la richiesta di fattura NON è stata registrata ("
+                        + String(e?.message || e) + "). Segnala subito all'amministrazione: "
+                        + (fat.ragioneSociale || `${fat.nome || ""} ${fat.cognome || ""}`.trim())
+                        + ", " + eur(g.totale) + ".");
+                    if (onCommit) await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null, aziendaScontrino: aziendaSel });
+                    return;
+                }
+            }
+            if (onCommit) {
+                const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null, aziendaScontrino: aziendaSel });
+                if (!c || !c.ok) {
+                    setCommitFail(true); setFase("errore");
+                    setMsg("⚠️ La richiesta di fattura è registrata, ma non sono riuscito a registrare la vendita ("
+                        + (c?.error || "errore") + "). Riprova.");
+                    return;
+                }
+            }
+            setFase("fatto");
+            setMsg("Vendita registrata e richiesta di fattura inviata all'amministrazione. "
+                + "Nessuno scontrino: il documento è la fattura.");
+            return;
+        }
+
         const p = await stampaScontrino(
             pagamenti,
             coupon ? { code: coupon.code, sconto: scontoCoupon } : undefined,
@@ -1962,6 +2154,68 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             </p>
                         )}
 
+                        {/* ═══ IL CLIENTE VUOLE FATTURA (Luca 04/09) ══════════════
+                            Sta QUI, sotto le forme di pagamento, perché è qui che
+                            la domanda nasce davvero: «come paga?» e «le serve
+                            fattura?» sono la stessa conversazione al banco.
+                            Acceso, cambia il documento — non l'incasso. */}
+                        {!data.sospesoId && (
+                            <div className={"rounded-xl border transition " + (vuoleFattura
+                                ? "bg-sky-500/12 border-sky-400/50"
+                                : "bg-white/5 border-white/10")}>
+                                <button type="button" onClick={() => { setVuoleFattura((v) => !v); setFatErr(""); }}
+                                    aria-pressed={vuoleFattura}
+                                    className="w-full flex items-center gap-3 px-3 py-3 text-left">
+                                    <span className={"w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-black shrink-0 " +
+                                        (vuoleFattura ? "bg-sky-400 border-sky-300 text-slate-900" : "border-white/25 text-transparent")}>✓</span>
+                                    <span className="min-w-0">
+                                        <span className="block text-sm font-semibold text-white">🧾 Il cliente vuole fattura</span>
+                                        <span className="block text-[11px] text-slate-400 leading-snug">
+                                            {vuoleFattura
+                                                ? "Non uscirà nessuno scontrino: il documento è la fattura. I soldi si incassano lo stesso, come sempre."
+                                                : "Per i clienti business. Al posto dello scontrino parte una richiesta all'amministrazione."}
+                                        </span>
+                                    </span>
+                                </button>
+
+                                {vuoleFattura && (
+                                    <div className="px-3 pb-3 space-y-3 border-t border-white/10 pt-3">
+                                        {/* L'ANAGRAFICA CHE C'È GIÀ non si ricopia: arriva
+                                            compilata da quello che il venditore ha appena
+                                            scritto nel form della vendita. Restano da
+                                            chiedere i due campi che al CRM non servivano
+                                            — e che infatti in anagrafica non c'erano. */}
+                                        {!!data.fattura?.ragioneSociale || !!data.fattura?.cfPiva ? (
+                                            <div className="text-[11px] text-sky-200/90 bg-sky-500/10 rounded-lg px-2.5 py-2 border border-sky-400/25">
+                                                Dati presi dall&apos;anagrafica di questa vendita
+                                                {data.fattura?.tipo === "business" ? " (cliente business)" : ""}. Controllali e completa quelli che mancano.
+                                            </div>
+                                        ) : (
+                                            <div className="text-[11px] text-amber-200/90 bg-amber-500/10 rounded-lg px-2.5 py-2 border border-amber-400/25">
+                                                Questa vendita non porta un&apos;anagrafica: i dati per la fattura vanno scritti qui.
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-12 gap-2">
+                                            <CampoFat cls="col-span-12" et="Ragione sociale" v={fat.ragioneSociale} set={(v) => setFat((f) => ({ ...f, ragioneSociale: v }))} ph="Rossi Impianti S.r.l." />
+                                            <CampoFat cls="col-span-6" et="Nome" v={fat.nome} set={(v) => setFat((f) => ({ ...f, nome: v }))} />
+                                            <CampoFat cls="col-span-6" et="Cognome" v={fat.cognome} set={(v) => setFat((f) => ({ ...f, cognome: v }))} />
+                                            <CampoFat cls="col-span-6" et="P. IVA / Cod. fiscale" v={fat.cfPiva} set={(v) => setFat((f) => ({ ...f, cfPiva: v.toUpperCase() }))} obbl />
+                                            <CampoFat cls="col-span-6" et="Codice destinatario" v={fat.codiceDestinatario} set={(v) => setFat((f) => ({ ...f, codiceDestinatario: v.toUpperCase() }))} ph="7 caratteri" nota="oppure la PEC" />
+                                            <CampoFat cls="col-span-12" et="PEC" v={fat.pec} set={(v) => setFat((f) => ({ ...f, pec: v.toLowerCase() }))} ph="nome@pec.it" nota="serve se non c'è il codice destinatario" />
+                                            <CampoFat cls="col-span-12" et="Indirizzo" v={fat.indirizzo} set={(v) => setFat((f) => ({ ...f, indirizzo: v }))} obbl />
+                                            <CampoFat cls="col-span-4" et="CAP" v={fat.cap} set={(v) => setFat((f) => ({ ...f, cap: v }))} obbl />
+                                            <CampoFat cls="col-span-8" et="Città" v={fat.citta} set={(v) => setFat((f) => ({ ...f, citta: v }))} obbl />
+                                            <CampoFat cls="col-span-7" et="Email" v={fat.email} set={(v) => setFat((f) => ({ ...f, email: v.toLowerCase() }))} />
+                                            <CampoFat cls="col-span-5" et="Telefono" v={fat.telefono} set={(v) => setFat((f) => ({ ...f, telefono: v }))} />
+                                        </div>
+
+                                        {fatErr && <div className="text-[11px] text-rose-300 font-semibold">{fatErr}</div>}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <div className="space-y-2 pt-1">
                             <div className="flex gap-2">
                                 {!data.sospesoId && (
@@ -1973,8 +2227,15 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                     {/* IL PULSANTE DICE QUANTI DOCUMENTI USCIRANNO: premere
                                         «Emetti scontrino» e vederne uscire due, su due casse
                                         diverse, è una sorpresa che al banco non serve. */}
-                                    {(multiSocieta ? contantiTotali : cashRounded) > 0 ? "Incassa ed emetti" : "Emetti"}
-                                    {multiSocieta ? ` i ${sezioni.length} scontrini` : cashRounded > 0 ? "" : " scontrino"}
+                                    {/* CON LA FATTURA IL PULSANTE NON PUÒ DIRE «emetti
+                                        scontrino»: è esattamente il documento che non
+                                        uscirà. */}
+                                    {vuoleFattura
+                                        ? ((multiSocieta ? contantiTotali : cashRounded) > 0
+                                            ? `Incassa · fattura da fare${multiSocieta ? ` (${sezioni.length})` : ""}`
+                                            : `Registra · fattura da fare${multiSocieta ? ` (${sezioni.length})` : ""}`)
+                                        : <>{(multiSocieta ? contantiTotali : cashRounded) > 0 ? "Incassa ed emetti" : "Emetti"}
+                                            {multiSocieta ? ` i ${sezioni.length} scontrini` : cashRounded > 0 ? "" : " scontrino"}</>}
                                 </button>
                             </div>
                             {/* VIA «CHIUDI SENZA SCONTRINO» (Luca 31/08: «non ha alcun
