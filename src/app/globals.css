@@ -730,6 +730,47 @@ select.rvIn{cursor:pointer}
   box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px color-mix(in srgb,var(--rv-acc) 24%,transparent)}
 html.light .rvBox-sopra{background:#f7f8fc;border-color:rgba(30,41,82,.14);
   box-shadow:0 1px 2px rgba(30,41,82,.06),0 26px 64px rgba(79,70,229,.20)}
+/* ═══ UNA CASELLA PER PEZZO ═══════════════════════════════════════════════
+   I numeri di serie del carico merce: una riga per telefono, numerata, con il
+   suo cestino. Prima era un riquadro solo in cui scriverli tutti, e a parte
+   il difetto del ritorno a capo non si vedeva mai quanti pezzi si stessero
+   caricando — bisognava contare le righe a occhio. */
+/* LA SIGLA DELLA SOCIETÀ, accanto alla casella che si spunta. Due colori
+   diversi perché la domanda vera non è «che società è questa riga» ma «ce
+   n'è una fuori posto» — e a quella si risponde col colore, non leggendo
+   tre volte lo stesso nome. Bianco su questi fondi: 8,3:1 e 7,4:1. */
+.rvSoc{flex:none;min-width:30px;text-align:center;padding:3px 8px;border-radius:8px;
+  font-size:11px;font-weight:900;letter-spacing:.04em;color:#fff}
+.rvSoc-1{background:linear-gradient(135deg,#4338ca,#4f46e5)}
+.rvSoc-2{background:linear-gradient(135deg,#0e7490,#0891b2)}
+.rvSoc-no{background:transparent;color:var(--tf-64748b);border:1px dashed var(--tf-w150)}
+html.light .rvSoc-no{color:#64748b;border-color:rgba(15,23,42,.22)}
+
+/* LA RIGA DI UN ARTICOLO NEL CARICO. Il contenuto va a capo quanto vuole —
+   con dieci IMEI diventa alta dieci righe — e il cestino resta ancorato in
+   alto a destra, accanto all'articolo che cancella e non in fondo a tutto. */
+/* `.rvDettR` sta 1350 righe più in basso e ha la stessa specificità: a parità
+   vince chi viene dopo, quindi «al centro, va a capo» batteva «in alto, non va
+   a capo» e il cestino continuava a finire in fondo. Con le due classi insieme
+   (0,2,0) l'ordine non conta più. È la trappola §4 di sempre. */
+.rvDettR.rvCaricoR{align-items:flex-start;flex-wrap:nowrap;gap:10px}
+/* tutto parte dalla stessa riga: col blocco dei numeri alto sei righe, il
+   nome dell'articolo centrato finiva a mezz'aria con un vuoto sopra */
+.rvCaricoR-c{flex:1 1 auto;min-width:0;display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px}
+.rvCaricoR-c > .rvTab-nome,.rvCaricoR-c > .rvTab-cod,.rvCaricoR-c > .rvTab-min{margin-top:5px}
+.rvCaricoR-x{flex:none;align-self:flex-start;margin-top:2px}
+.rvCaricoR-pz{margin-top:5px;min-width:42px}
+/* la riga di un risultato che si prende tutta: il dito (o il puntatore) non
+   deve mirare a un pulsante da 70px in fondo a una riga larga mille */
+.rvDettR-cl{cursor:pointer;border-radius:10px;transition:background .12s}
+.rvDettR-cl:hover,.rvDettR-cl:focus-visible{background:color-mix(in srgb,var(--rv-acc) 12%,transparent);outline:none}
+.rvSeriali{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.rvSeriale{display:flex;align-items:center;gap:8px;width:100%}
+.rvSeriale .rvIn{flex:1 1 auto;min-width:0}
+/* il numero d'ordine: dice «questo è il terzo telefono» senza contare */
+.rvSeriale-n{flex:none;width:20px;text-align:right;font-size:11px;font-weight:800;
+  color:var(--tf-64748b);font-variant-numeric:tabular-nums}
+html.light .rvSeriale-n{color:#64748b}
 .rvBoxT{font-size:11.5px;font-weight:800;color:color-mix(in srgb,var(--rv-acc) 88%,#fff);margin-bottom:11px;text-transform:uppercase;letter-spacing:.7px}
 /* ═══ IL RIQUADRO DOVE SI CARICA UN FILE ═══════════════════════════════
    Tratteggiato come i suggerimenti — ma qui il tratteggio dice un'altra

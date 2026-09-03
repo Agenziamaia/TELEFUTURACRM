@@ -89,6 +89,10 @@ type ArticoloTrovato = {
     gruppo: string | null; marca: string | null; reparto: number | null;
 };
 
+/* I NUMERI SCRITTI, non le caselle: con una riga per pezzo ce n'è sempre una
+   vuota in fondo che aspetta il prossimo, e quella non è un telefono. */
+const veri = (l: string[]) => l.map(x => x.trim()).filter(Boolean);
+
 type Riga = {
     chiave: string;
     codice: string;
@@ -107,6 +111,11 @@ type Riga = {
 /* `utente` non si legge più da qui, ed è voluto: chi ha caricato la merce lo
    scrive il database, prendendolo dalla sessione firmata. Il nome che arriva
    dal browser è un nome che il browser può cambiare. */
+/** Quanti pezzi porta una riga. Sta fuori dal componente perché non dipende
+ *  da niente che stia dentro: dentro veniva ricreata a ogni disegno, e i
+ *  calcoli che la usano si rifacevano tutti ogni volta. */
+const pezziDi = (r: Riga) => r.unoPerUno ? veri(r.seriali).length : (Number(r.quantita) || 0);
+
 export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo, chiudi }: {
     aperto: boolean; negozi: string[]; aziende: string[]; nomiAzienda: Record<string, string>;
     utente: string; dopo: () => void; chiudi: () => void;
@@ -213,18 +222,67 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
         return () => { vivo = false; clearTimeout(t); };
     }, [cerca]);
 
+    /* IN CIMA, NON IN FONDO (Luca 03/09: «dopo che aggiungo un prodotto me lo
+       deve mettere in cima, mentre ora me lo mette sotto»). L'articolo appena
+       cercato è quello su cui si sta lavorando — ci vanno scritti gli IMEI, o
+       la quantità — e con dieci righe nel carico finiva sotto la piega, da
+       cercare scorrendo. Chi cerca guarda in alto, dov'è il campo di ricerca:
+       la risposta deve comparire lì. */
     const aggiungi = (a: ArticoloTrovato) => {
-        setRighe(r => [...r, {
+        setRighe(r => [{
             chiave: `${a.codice}|${Date.now()}|${Math.random().toString(36).slice(2, 7)}`,
             codice: a.codice, barcode: a.barcode, descrizione: a.descrizione,
             unoPerUno: !!a.ha_imei, tipoSeriale: "imei",
             quantita: a.ha_imei ? 0 : 1, seriali: [],
             costo: a.costo_ultimo, azienda: aziendaDiDefault,
-        }]);
+        }, ...r]);
         setCerca(""); setTrovati([]);
     };
 
     const togli = (k: string) => setRighe(r => r.filter(x => x.chiave !== k));
+
+    /* ═══ UNA RIGA PER OGNI NUMERO ══════════════════════════════════════════
+       Luca 03/09: «non mi fa andare a capo, quindi poi non riconosce che sto
+       mettendo più IMEI… mettimi una riga per ogni IMEI, e con un + dammi la
+       possibilità di aggiungere altri pezzi, sempre dello stesso articolo».
+
+       IL RITORNO A CAPO NON FUNZIONAVA, ed era colpa di come avevo scritto il
+       campo: era un riquadro solo, e a ogni tasto ricalcolavo il testo
+       spezzandolo e riunendolo. Premendo invio il valore diventava «…235\n»,
+       lo spezzavo, buttavo via il pezzo vuoto e riunivo: la riga nuova
+       spariva nell'istante in cui la creavi. Un campo che si riscrive da solo
+       a ogni tasto non può tenere una riga vuota — e una riga vuota è
+       esattamente quello che serve per cominciarne un'altra.
+
+       Con una casella per pezzo il problema non esiste più, e in cambio si
+       vede quanti telefoni si stanno caricando senza contare le righe.
+       L'INVIO AGGIUNGE E SPOSTA IL FUOCO, che è quello che serve al lettore:
+       quasi tutti sparano il codice e poi un invio, quindi si possono
+       leggere venti scatole di fila senza toccare il mouse. */
+    const [aFuoco, setAFuoco] = useState("");   // `${chiave}|${indice}`
+    const numeri = (r: Riga) => r.seriali.length ? r.seriali : [""];
+    const scriviNumero = (k: string, i: number, v: string) => setRighe(rs => rs.map(x => {
+        if (x.chiave !== k) return x;
+        const l = [...(x.seriali.length ? x.seriali : [""])];
+        /* INCOLLARE VENTI IMEI IN UNA CASELLA li mette in venti caselle: chi
+           arriva da un foglio non deve rifare il lavoro a mano. */
+        const pezzi = v.split(/[\n\r\t,;]+/).map(t => t.trim());
+        l.splice(i, 1, ...pezzi);
+        return { ...x, seriali: l };
+    }));
+    const aggiungiNumero = (k: string, dopo?: number) => setRighe(rs => rs.map(x => {
+        if (x.chiave !== k) return x;
+        const l = [...(x.seriali.length ? x.seriali : [""])];
+        const i = dopo == null ? l.length : dopo + 1;
+        l.splice(i, 0, "");
+        setAFuoco(`${k}|${i}`);
+        return { ...x, seriali: l };
+    }));
+    const togliNumero = (k: string, i: number) => setRighe(rs => rs.map(x => {
+        if (x.chiave !== k) return x;
+        const l = (x.seriali.length ? x.seriali : [""]).filter((_, j) => j !== i);
+        return { ...x, seriali: l.length ? l : [""] };
+    }));
     const cambia = (k: string, patch: Partial<Riga>) => setRighe(r => r.map(x => x.chiave === k ? { ...x, ...patch } : x));
 
     /* ═══ CREARE UN ARTICOLO SENZA USCIRE DAL FLUSSO ════════════════════════
@@ -284,7 +342,6 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
     };
 
     /* ═══ QUANTI PEZZI, E QUANTO VALGONO ════════════════════════════════════ */
-    const pezziDi = (r: Riga) => r.unoPerUno ? r.seriali.length : (Number(r.quantita) || 0);
     const totPezzi = righe.reduce((a, r) => a + pezziDi(r), 0);
     const totValore = righe.reduce((a, r) => a + pezziDi(r) * (Number(r.costo) || 0), 0);
     const perSocieta = useMemo(() => {
@@ -299,13 +356,13 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
         if (!negozio) out.push("scegli dove sta entrando la merce");
         if (!righe.length) out.push("aggiungi almeno un articolo");
         righe.forEach(r => {
-            if (r.unoPerUno && !r.seriali.length) out.push(`«${r.descrizione}» si conta uno per uno: non hai inserito nessun numero`);
+            if (r.unoPerUno && !veri(r.seriali).length) out.push(`«${r.descrizione}» si conta uno per uno: non hai inserito nessun numero`);
             if (!r.unoPerUno && pezziDi(r) <= 0) out.push(`«${r.descrizione}»: quanti pezzi?`);
             if (!r.azienda) out.push(`«${r.descrizione}»: di quale società è?`);
         });
         /* GLI STESSI SERIALI DUE VOLTE non sono due pezzi: sono un errore di
            battitura o un lettore che ha sparato due volte. */
-        const tutti = righe.flatMap(r => r.seriali);
+        const tutti = righe.flatMap(r => veri(r.seriali));
         const doppi = tutti.filter((s, i) => tutti.indexOf(s) !== i);
         if (doppi.length) out.push(`seriale ripetuto: ${Array.from(new Set(doppi)).slice(0, 3).join(", ")}`);
         return out;
@@ -325,7 +382,7 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                    dei dati: una riga «uno per uno» rimasta senza numeri deve
                    dare un errore che lo spiega, non sparire in silenzio */
                 uno_per_uno: r.unoPerUno,
-                ...(r.unoPerUno ? { seriali: r.seriali } : { quantita: pezziDi(r) }),
+                ...(r.unoPerUno ? { seriali: veri(r.seriali) } : { quantita: pezziDi(r) }),
             })),
         });
         setBusy(false);
@@ -507,7 +564,17 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                     {!!trovati.length && (
                         <div className="rvDett mt-2">
                             {trovati.map(a => (
-                                <div key={a.codice} className="rvDettR">
+                                /* SI CLICCA TUTTA LA RIGA (Luca 03/09: «quando devo
+                                   aggiungere un articolo a carrello devo poterci
+                                   semplicemente anche cliccare sopra, non solo sul
+                                   tasto aggiungi»). Il bersaglio da 70px in fondo a
+                                   destra era l'unico modo per prendere una riga
+                                   larga mille: il pulsante resta, perché dice cosa
+                                   succede, ma non è più l'unica porta. */
+                                <div key={a.codice} className="rvDettR rvDettR-cl" role="button" tabIndex={0}
+                                    onClick={() => aggiungi(a)}
+                                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); aggiungi(a); } }}
+                                    title={`Aggiungi «${a.descrizione}» al carico`}>
                                     <span className="rvTab-nome">{a.descrizione}</span>
                                     {/* TUTT'E DUE I CODICI (Luca 03/09): quello interno del
                                         gestionale e quello a barre della scatola — che è
@@ -521,8 +588,8 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                                     {a.marca && <span className="rvTab-min">{a.marca}</span>}
                                     <span className="rvSpazio" />
                                     <span className="rvTab-min">{eur(a.costo_ultimo)}</span>
-                                    <button onClick={() => aggiungi(a)} className="rvPill rvPill-sm">
-                                        <Plus size={13} className="inline-block align-[-2px]" /> aggiungi</button>
+                                    <span className="rvPill rvPill-sm">
+                                        <Plus size={13} className="inline-block align-[-2px]" /> aggiungi</span>
                                 </div>
                             ))}
                         </div>
@@ -597,8 +664,16 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                     {!!righe.length && (
                         <div className="rvDett mt-3">
                             <div className="rvDettT">Nel carico ({totPezzi} pezz{totPezzi === 1 ? "o" : "i"})</div>
+                            {/* IL CESTINO STA IN ALTO A DESTRA, ANCORATO. Con i numeri
+                                uno per riga la riga diventa alta, e il cestino —
+                                che era l'ultimo elemento di una fila che va a capo —
+                                finiva su una riga tutta sua in basso a sinistra,
+                                lontano dall'articolo che cancella. Il contenuto
+                                adesso è un blocco che va a capo per conto suo, e il
+                                cestino gli sta accanto. */}
                             {righe.map(r => (
-                                <div key={r.chiave} className="rvDettR">
+                                <div key={r.chiave} className="rvDettR rvCaricoR">
+                                    <div className="rvCaricoR-c">
                                     <span className="rvTab-nome">{r.descrizione}</span>
                                     <span className="rvTab-cod">{r.codice}</span>
                                     {r.barcode && r.barcode !== r.codice && (
@@ -614,16 +689,46 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                                     <div className="rvPillRow">
                                         <button onClick={() => cambia(r.chiave, { unoPerUno: false, seriali: [], quantita: r.quantita || 1 })}
                                             className={cn("rvPill rvPill-sm", !r.unoPerUno && "rvPill-on")}>a quantità</button>
-                                        <button onClick={() => cambia(r.chiave, { unoPerUno: true, quantita: 0 })}
+                                        <button onClick={() => cambia(r.chiave, { unoPerUno: true, quantita: 0, seriali: r.seriali.length ? r.seriali : [""] })}
                                             className={cn("rvPill rvPill-sm", r.unoPerUno && "rvPill-on")}>uno per uno</button>
                                     </div>
+                                    {/* il conto sta ACCANTO all'interruttore che lo
+                                        decide: in fondo alla riga, con i numeri su
+                                        più righe, finiva da solo in basso a sinistra */}
+                                    <span className="rvTab-min rvCaricoR-pz">{pezziDi(r)} pz</span>
 
                                     {r.unoPerUno ? (
                                         <>
-                                            <label className="rvCampo rvCampo-flex"><span className="rvLab">Numeri <span className="rvLabX">(uno per riga)</span></span>
-                                                <textarea rows={3} className="rvIn font-mono"
-                                                    value={r.seriali.join("\n")}
-                                                    onChange={e => cambia(r.chiave, { seriali: e.target.value.split(/[\n,;\s]+/).map(s => s.trim()).filter(Boolean) })} /></label>
+                                            <div className="rvCampo rvCampo-flex"><span className="rvLab">Numeri <span className="rvLabX">(uno per pezzo — spara col lettore, l&apos;invio passa al prossimo)</span></span>
+                                                <div className="rvSeriali">
+                                                    {numeri(r).map((n, i) => (
+                                                        <div key={i} className="rvSeriale">
+                                                            <span className="rvSeriale-n">{i + 1}</span>
+                                                            <input className="rvIn font-mono" value={n} placeholder="spara o scrivi il numero…"
+                                                                ref={el => { if (el && aFuoco === `${r.chiave}|${i}`) { el.focus(); setAFuoco(""); } }}
+                                                                onChange={e => scriviNumero(r.chiave, i, e.target.value)}
+                                                                onKeyDown={e => {
+                                                                    /* L'INVIO APRE LA PROSSIMA: è il gesto del lettore, che
+                                                                       dopo il codice manda un invio. Venti scatole di fila
+                                                                       senza toccare il mouse. */
+                                                                    if (e.key === "Enter") { e.preventDefault(); aggiungiNumero(r.chiave, i); }
+                                                                    /* e cancellando una casella già vuota si torna indietro,
+                                                                       come in qualunque elenco */
+                                                                    if (e.key === "Backspace" && !n && numeri(r).length > 1) {
+                                                                        e.preventDefault(); togliNumero(r.chiave, i); setAFuoco(`${r.chiave}|${Math.max(0, i - 1)}`);
+                                                                    }
+                                                                }} />
+                                                            {numeri(r).length > 1 && (
+                                                                <button type="button" onClick={() => togliNumero(r.chiave, i)}
+                                                                    className="rvCestino" title="Togli questo pezzo"><X size={13} /></button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                    <button type="button" onClick={() => aggiungiNumero(r.chiave)} className="rvPill rvPill-sm">
+                                                        <Plus size={13} className="inline-block align-[-2px] mr-1" /> Aggiungi un pezzo
+                                                    </button>
+                                                </div>
+                                            </div>
                                             <div className="rvCampo rvCampo-xs"><span className="rvLab">Che numero è</span>
                                                 <div className="rvPillRow">
                                                     {TIPI_SERIALE.map(t => (
@@ -639,9 +744,8 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                                             <input type="number" min={1} step={1} className="rvQta" value={r.quantita || ""}
                                                 onChange={e => cambia(r.chiave, { quantita: Math.floor(Number(e.target.value) || 0) })} /></label>
                                     )}
-                                    <span className="rvTab-min">{pezziDi(r)} pz</span>
-                                    <span className="rvSpazio" />
-                                    <button onClick={() => togli(r.chiave)} className="rvCestino" title="Togli dal carico">
+                                    </div>
+                                    <button onClick={() => togli(r.chiave)} className="rvCestino rvCaricoR-x" title="Togli dal carico">
                                         <Trash2 size={14} /></button>
                                 </div>
                             ))}
@@ -675,6 +779,18 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                                 <label className="rvCampo rvCampo-xs">
                                     <input type="checkbox" checked={spuntate.has(r.chiave)} onChange={() => spunta(r.chiave)} />
                                 </label>
+                                {/* LA SIGLA SUBITO DOPO IL FLAG (Luca 03/09: «qui
+                                    rischiamo di sbagliarci, mettimi un simbolo T1 o
+                                    T2 alla destra del flag dopo che ho fatto la
+                                    scelta, lasciando anche quello in fondo a
+                                    destra»). Il nome per esteso in fondo dice CHI è,
+                                    ma sta a mezzo metro dalla casella che si spunta:
+                                    l'occhio che spunta guarda a sinistra, e lì non
+                                    c'era niente. Due colori diversi, così si vede
+                                    una riga fuori posto senza leggerla. */}
+                                <span className={cn("rvSoc", r.azienda === "T2" ? "rvSoc-2" : r.azienda ? "rvSoc-1" : "rvSoc-no")}>
+                                    {r.azienda || "—"}
+                                </span>
                                 <span className="rvTab-nome">{r.descrizione}</span>
                                 <span className="rvTab-min">{pezziDi(r)} pz</span>
                                 <span className="rvSpazio" />
