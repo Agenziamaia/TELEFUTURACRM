@@ -760,17 +760,55 @@ html.light .rvSoc-no{color:#64748b;border-color:rgba(15,23,42,.22)}
 .rvCaricoR-c > .rvTab-nome,.rvCaricoR-c > .rvTab-cod,.rvCaricoR-c > .rvTab-min{margin-top:5px}
 .rvCaricoR-x{flex:none;align-self:flex-start;margin-top:2px}
 .rvCaricoR-pz{margin-top:5px;min-width:42px}
+/* il blocco dei numeri prende TUTTA la riga sotto: con 380px si incastrava
+   accanto ai nomi lunghi e spingeva a capo quello che veniva dopo */
+.rvCaricoR-num{flex:1 0 100%;width:auto}
 /* la riga di un risultato che si prende tutta: il dito (o il puntatore) non
    deve mirare a un pulsante da 70px in fondo a una riga larga mille */
 .rvDettR-cl{cursor:pointer;border-radius:10px;transition:background .12s}
 .rvDettR-cl:hover,.rvDettR-cl:focus-visible{background:color-mix(in srgb,var(--rv-acc) 12%,transparent);outline:none}
-.rvSeriali{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
-.rvSeriale{display:flex;align-items:center;gap:8px;width:100%}
-.rvSeriale .rvIn{flex:1 1 auto;min-width:0}
-/* il numero d'ordine: dice «questo è il terzo telefono» senza contare */
-.rvSeriale-n{flex:none;width:20px;text-align:right;font-size:11px;font-weight:800;
+/* UN ELENCO, NON TRE SCATOLE (Luca 03/09: «queste finestre mi sembrano quelle
+   di mio nonno»). Ogni casella col suo bordo, il suo angolo tondo e la sua
+   ombra faceva sembrare i numeri tre moduli diversi invece che tre righe della
+   stessa lista — e con l'angolo tondo largo il testo restava schiacciato in
+   mezzo. Adesso il bordo ce l'ha SOLO il contenitore, e le righe dentro sono
+   separate da un filo: si legge come un elenco, che è quello che è. */
+.rvSeriali{display:flex;flex-direction:column;align-items:stretch;gap:0;
+  border:1px solid var(--tf-w100);border-radius:12px;overflow:hidden;
+  background:var(--tf-w20);max-width:520px}
+.rvSeriali .rvPillRow{padding:8px 10px;border-bottom:1px solid var(--tf-w100);gap:6px}
+.rvSeriale{display:flex;align-items:center;gap:0;border-bottom:1px solid var(--tf-w60);
+  transition:background .12s}
+.rvSeriale:focus-within{background:color-mix(in srgb,var(--rv-acc) 13%,transparent)}
+/* il numero d'ordine dice «questo è il terzo telefono» senza doverli contare */
+.rvSeriale-n{flex:none;width:34px;text-align:center;font-size:11px;font-weight:800;
   color:var(--tf-64748b);font-variant-numeric:tabular-nums}
+/* la casella NON ha una forma sua: la forma è quella dell'elenco */
+.rvSeriale input.rvIn{flex:1 1 auto;min-width:0;background:transparent;border:none;
+  border-radius:0;box-shadow:none;padding:9px 4px;font-size:13.5px;letter-spacing:.02em}
+.rvSeriale input.rvIn:focus{background:transparent;border:none;box-shadow:none;outline:none}
+/* il cestino si fa vedere quando serve: tre ✕ sempre accesi sono tre inviti a
+   cancellare su una lista che uno sta ancora riempiendo */
+.rvSeriale .rvCestino{flex:none;margin-right:6px;opacity:0;transition:opacity .12s}
+.rvSeriale:hover .rvCestino,.rvSeriale:focus-within .rvCestino{opacity:.85}
+.rvSeriale .rvCestino:hover{opacity:1}
+/* «fatto»: un IMEI ne ha 15, un ICCID 19-20 — quando il numero è della
+   lunghezza giusta si accende una spunta, e si vede da lontano quante
+   scatole sono già passate */
+.rvSeriale-ok{flex:none;width:18px;text-align:center;font-size:11px;font-weight:900;color:#22c55e}
+/* la riga sotto al passo ora porta una RISPOSTA, non uno stato: «Mazzini»,
+   «3 articoli · 12 pz». Va tenuta su una riga sola e non deve allargare il
+   passo, se no la timeline si sposta a ogni scelta. */
+.rvsteps .rvnode-sub{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-transform:none;letter-spacing:.02em;font-size:10.5px}
+.rvSeriali-piu{display:flex;align-items:center;gap:6px;padding:8px 10px;background:transparent;
+  border:none;color:var(--rv-acc);font-size:12.5px;font-weight:800;cursor:pointer;text-align:left;
+  transition:background .12s}
+.rvSeriali-piu:hover{background:color-mix(in srgb,var(--rv-acc) 12%,transparent)}
 html.light .rvSeriale-n{color:#64748b}
+html.light .rvSeriali{background:#fff;border-color:rgba(15,23,42,.14)}
+html.light .rvSeriali .rvPillRow{border-bottom-color:rgba(15,23,42,.10)}
+html.light .rvSeriale{border-bottom-color:rgba(15,23,42,.07)}
 .rvBoxT{font-size:11.5px;font-weight:800;color:color-mix(in srgb,var(--rv-acc) 88%,#fff);margin-bottom:11px;text-transform:uppercase;letter-spacing:.7px}
 /* ═══ IL RIQUADRO DOVE SI CARICA UN FILE ═══════════════════════════════
    Tratteggiato come i suggerimenti — ma qui il tratteggio dice un'altra

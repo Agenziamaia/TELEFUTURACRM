@@ -93,6 +93,18 @@ type ArticoloTrovato = {
    vuota in fondo che aspetta il prossimo, e quella non è un telefono. */
 const veri = (l: string[]) => l.map(x => x.trim()).filter(Boolean);
 
+/** LA LUNGHEZZA GIUSTA per il tipo di numero: un IMEI ne ha 15, un ICCID
+ *  19 o 20. Non è una verifica — un numero può essere sbagliato ed essere
+ *  lungo giusto — è un segnale: dice «questa casella l'hai finita», così si
+ *  vede da lontano quante scatole sono già passate senza rileggerle. */
+const lungoGiusto = (v: string, tipo: string) => {
+    const n = v.replace(/\s/g, "");
+    if (!n) return false;
+    if (tipo === "imei") return /^\d{15}$/.test(n);
+    if (tipo === "iccid") return /^\d{19,20}$/.test(n);
+    return n.length >= 6;
+};
+
 type Riga = {
     chiave: string;
     codice: string;
@@ -423,23 +435,34 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
        regalati») e serve a far vedere DOVE manca qualcosa senza doverci
        tornare sopra. */
     const rigaCompleta = (r: Riga) => pezziDi(r) > 0;
+    /* OGNI PASSO DICE COSA HAI SCELTO (Luca 03/09: «quando sono negli step
+       avanzati, sotto al primo ci deve essere scritto il negozio che ho
+       selezionato, così posso vederlo senza tornare indietro»). Vale per
+       tutti e quattro: quattro «COMPLETO» uguali in fila non dicono niente,
+       mentre «Mazzini · 3 articoli · T1 · Il negozio accetta» è il riassunto
+       di quello che stai per fare, sempre sotto gli occhi. */
+    const socNelCarico = Array.from(new Set(righe.map(r => r.azienda).filter(Boolean)));
     const PASSI = [
         {
             n: 1 as const, et: "Dove entra", ico: "🏪", abil: true,
             perc: negozio && (inUfficio || (!!casse?.length && !casseKo)) ? 100 : 0,
+            scelto: negozio,
         },
         {
             n: 2 as const, et: "Cosa entra", ico: "📦", abil: !!negozio,
             perc: !righe.length ? 0 : righe.every(rigaCompleta) ? 100 : 50,
+            scelto: righe.length ? `${righe.length} articol${righe.length === 1 ? "o" : "i"} · ${totPezzi} pz` : "",
         },
         {
             n: 3 as const, et: "Di chi è", ico: "🏢", abil: !!negozio && righe.length > 0,
             perc: !righe.length ? 0 : righe.every(r => !!r.azienda) ? 100
                 : righe.some(r => !!r.azienda) ? 50 : 0,
+            scelto: socNelCarico.join(" + "),
         },
         {
             n: 4 as const, et: "Come arriva", ico: "🚚", abil: !!negozio && righe.length > 0,
             perc: !righe.length ? 0 : manca.length ? 50 : 100,
+            scelto: !righe.length ? "" : inUfficio ? "In ufficio" : conAccettazione ? "Da accettare" : "Diretto",
         },
     ];
     const railPct = Math.min(100, (PASSI.filter(p => p.perc >= 100).length / (PASSI.length - 1)) * 100);
@@ -487,8 +510,10 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                 {PASSI.map(p => {
                     const attivo = passo === p.n;
                     const fatto = p.perc >= 100;
-                    const sub = fatto ? "Completo" : attivo ? "Sei qui"
-                        : p.perc > 0 ? p.perc + "%" : p.abil ? "Da fare" : "Bloccato";
+                    /* la risposta batte lo stato: «Mazzini» dice tutto quello che
+                       direbbe «Completo», e in più dice QUALE. */
+                    const sub = p.scelto || (fatto ? "Completo" : attivo ? "Sei qui"
+                        : p.perc > 0 ? p.perc + "%" : p.abil ? "Da fare" : "Bloccato");
                     return (
                         <button key={p.n} type="button" disabled={!p.abil}
                             onClick={() => { if (p.abil) setPasso(p.n); }}
@@ -499,7 +524,7 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                                 {fatto && <span className="rvnode-check">✓</span>}
                             </span>
                             <span className="rvnode-lab">{p.et}</span>
-                            <span className="rvnode-sub">{sub}</span>
+                            <span className="rvnode-sub" title={sub}>{sub}</span>
                         </button>
                     );
                 })}
@@ -699,8 +724,22 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
 
                                     {r.unoPerUno ? (
                                         <>
-                                            <div className="rvCampo rvCampo-flex"><span className="rvLab">Numeri <span className="rvLabX">(uno per pezzo — spara col lettore, l&apos;invio passa al prossimo)</span></span>
+                                            {/* IL TIPO STA SOPRA I NUMERI, non in un campo suo
+                                                (Luca 03/09: «qui esteticamente è un po' un
+                                                disastro, non allineato»). Era un `rvCampo` a
+                                                parte in una riga che va a capo: con le caselle
+                                                dei numeri larghe, finiva sulla riga sotto e
+                                                tutto a sinistra — l'etichetta di una cosa,
+                                                staccata dalla cosa. Adesso sono un blocco solo:
+                                                prima si dice CHE numero è, poi lo si scrive. */}
+                                            <div className="rvCampo rvCaricoR-num"><span className="rvLab">Numeri <span className="rvLabX">(uno per pezzo — spara col lettore, l&apos;invio passa al prossimo)</span></span>
                                                 <div className="rvSeriali">
+                                                    <div className="rvPillRow">
+                                                        {TIPI_SERIALE.map(t => (
+                                                            <button key={t.v} onClick={() => cambia(r.chiave, { tipoSeriale: t.v })} title={t.nota}
+                                                                className={cn("rvPill rvPill-sm", r.tipoSeriale === t.v && "rvPill-on")}>{t.et}</button>
+                                                        ))}
+                                                    </div>
                                                     {numeri(r).map((n, i) => (
                                                         <div key={i} className="rvSeriale">
                                                             <span className="rvSeriale-n">{i + 1}</span>
@@ -718,23 +757,16 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                                                                         e.preventDefault(); togliNumero(r.chiave, i); setAFuoco(`${r.chiave}|${Math.max(0, i - 1)}`);
                                                                     }
                                                                 }} />
+                                                            <span className="rvSeriale-ok">{lungoGiusto(n, r.tipoSeriale) ? "✓" : ""}</span>
                                                             {numeri(r).length > 1 && (
                                                                 <button type="button" onClick={() => togliNumero(r.chiave, i)}
                                                                     className="rvCestino" title="Togli questo pezzo"><X size={13} /></button>
                                                             )}
                                                         </div>
                                                     ))}
-                                                    <button type="button" onClick={() => aggiungiNumero(r.chiave)} className="rvPill rvPill-sm">
-                                                        <Plus size={13} className="inline-block align-[-2px] mr-1" /> Aggiungi un pezzo
+                                                    <button type="button" onClick={() => aggiungiNumero(r.chiave)} className="rvSeriali-piu">
+                                                        <Plus size={14} /> Aggiungi un pezzo
                                                     </button>
-                                                </div>
-                                            </div>
-                                            <div className="rvCampo rvCampo-xs"><span className="rvLab">Che numero è</span>
-                                                <div className="rvPillRow">
-                                                    {TIPI_SERIALE.map(t => (
-                                                        <button key={t.v} onClick={() => cambia(r.chiave, { tipoSeriale: t.v })} title={t.nota}
-                                                            className={cn("rvPill rvPill-sm", r.tipoSeriale === t.v && "rvPill-on")}>{t.et}</button>
-                                                    ))}
                                                 </div>
                                             </div>
                                         </>
