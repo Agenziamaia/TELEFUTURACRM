@@ -45,9 +45,10 @@
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectOpzioni } from "@/components/SelectPersona";
-import { PackagePlus, Trash2, Plus } from "lucide-react";
+import { PackagePlus, Trash2, Plus, X } from "lucide-react";
 
 const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 const eur = (n: number | null | undefined) => n == null ? "—"
@@ -107,8 +108,8 @@ type Riga = {
 /* `utente` non si legge più da qui, ed è voluto: chi ha caricato la merce lo
    scrive il database, prendendolo dalla sessione firmata. Il nome che arriva
    dal browser è un nome che il browser può cambiare. */
-export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi }: {
-    negozi: string[]; aziende: string[]; nomiAzienda: Record<string, string>;
+export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo, chiudi }: {
+    aperto: boolean; negozi: string[]; aziende: string[]; nomiAzienda: Record<string, string>;
     utente: string; dopo: () => void; chiudi: () => void;
 }) {
     const [passo, setPasso] = useState<1 | 2 | 3 | 4>(1);
@@ -339,30 +340,85 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
         setRighe([]); setSpuntate(new Set()); setPasso(1); dopo();
     }, [manca, busy, righe, negozio, inUfficio, conAccettazione, nomiAzienda, dopo]);
 
-    /* ═══ IL DISEGNO ════════════════════════════════════════════════════════ */
-    const PASSI = [
-        { n: 1 as const, et: "Dove entra" },
-        { n: 2 as const, et: "Cosa entra" },
-        { n: 3 as const, et: "Di chi è" },
-        { n: 4 as const, et: "Come arriva" },
-    ];
-    const puoAndare = (n: number) => n === 1 || (n === 2 && !!negozio) || (n >= 3 && !!negozio && righe.length > 0);
+    /* ═══ IL DISEGNO ════════════════════════════════════════════════════════
+       Luca 03/09: «deve aprirmi una sezione a parte in sovrapposizione, che è
+       stile registra vendita con la timeline sopra e gli step che ci siamo
+       detti prima». Quindi: un portale a tutto schermo, e la stessa timeline
+       ad anelli di Registra Vendita — non una fila di pastiglie che assomiglia
+       vagamente a dei passi, ma proprio quella, con le stesse classi.
 
-    return (
-        <div className="rvBox">
+       LA PERCENTUALE NON SI REGALA. L'anello di un passo si chiude solo quando
+       quel passo è finito davvero: le righe hanno i loro pezzi, ogni riga ha
+       la sua società. È la regola di Registra Vendita («niente 100%
+       regalati») e serve a far vedere DOVE manca qualcosa senza doverci
+       tornare sopra. */
+    const rigaCompleta = (r: Riga) => pezziDi(r) > 0;
+    const PASSI = [
+        {
+            n: 1 as const, et: "Dove entra", ico: "🏪", abil: true,
+            perc: negozio && (inUfficio || (!!casse?.length && !casseKo)) ? 100 : 0,
+        },
+        {
+            n: 2 as const, et: "Cosa entra", ico: "📦", abil: !!negozio,
+            perc: !righe.length ? 0 : righe.every(rigaCompleta) ? 100 : 50,
+        },
+        {
+            n: 3 as const, et: "Di chi è", ico: "🏢", abil: !!negozio && righe.length > 0,
+            perc: !righe.length ? 0 : righe.every(r => !!r.azienda) ? 100
+                : righe.some(r => !!r.azienda) ? 50 : 0,
+        },
+        {
+            n: 4 as const, et: "Come arriva", ico: "🚚", abil: !!negozio && righe.length > 0,
+            perc: !righe.length ? 0 : manca.length ? 50 : 100,
+        },
+    ];
+    const railPct = Math.min(100, (PASSI.filter(p => p.perc >= 100).length / (PASSI.length - 1)) * 100);
+
+    /* Il lavoro non si perde chiudendo: il pannello resta montato e sparisce
+       il portale, quindi riaprendolo si ritrova il carrello com'era. È il
+       motivo per cui qui non c'è nessun «sei sicuro?» — Luca l'ha già detto
+       per la finestra del pagamento: chiudere deve solo chiudere. */
+    useEffect(() => {
+        if (!aperto) return;
+        const esc = (e: KeyboardEvent) => { if (e.key === "Escape") chiudi(); };
+        window.addEventListener("keydown", esc);
+        return () => window.removeEventListener("keydown", esc);
+    }, [aperto, chiudi]);
+
+    if (!aperto) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[120] overflow-y-auto flex items-start justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="rvBox w-full max-w-5xl my-4">
             <div className="rvTesta">
                 <h2 className="rvTit"><PackagePlus size={22} /> Carico merce</h2>
-                <button onClick={chiudi} className="rvPill rvPill-sm">Chiudi</button>
+                <button onClick={chiudi} className="rvPill rvPill-sm" title="Chiudi (Esc) — quello che hai messo nel carico resta">
+                    <X size={14} className="inline-block align-[-2px] mr-1" /> Chiudi
+                </button>
             </div>
 
-            {/* I PASSI, come in Registra Vendita: si vede dove si è e quanto manca */}
-            <div className="rvPillRow">
-                {PASSI.map(p => (
-                    <button key={p.n} type="button" disabled={!puoAndare(p.n)} onClick={() => setPasso(p.n)}
-                        className={cn("rvPill rvPill-sm", passo === p.n && "rvPill-on")}>
-                        {p.n}. {p.et}
-                    </button>
-                ))}
+            {/* LA TIMELINE, quella vera di Registra Vendita */}
+            <div className="rvsteps">
+                <div className="rvsteps-rail"><i style={{ width: railPct + "%" }} /></div>
+                {PASSI.map(p => {
+                    const attivo = passo === p.n;
+                    const fatto = p.perc >= 100;
+                    const sub = fatto ? "Completo" : attivo ? "Sei qui"
+                        : p.perc > 0 ? p.perc + "%" : p.abil ? "Da fare" : "Bloccato";
+                    return (
+                        <button key={p.n} type="button" disabled={!p.abil}
+                            onClick={() => { if (p.abil) setPasso(p.n); }}
+                            title={!p.abil ? "Finisci prima i passi che vengono prima" : attivo ? "Sei qui" : "Vai a " + p.et}
+                            className={cn("rvnode-step", attivo && "is-active", fatto && "is-done", !p.abil && "is-locked")}>
+                            <span className="rvnode-ring" style={{ background: `conic-gradient(${fatto ? "#22c55e" : "#6d5cff"} ${p.perc}%, var(--rv-track) 0)` }}>
+                                <span className="rvnode"><span>{p.ico}</span></span>
+                                {fatto && <span className="rvnode-check">✓</span>}
+                            </span>
+                            <span className="rvnode-lab">{p.et}</span>
+                            <span className="rvnode-sub">{sub}</span>
+                        </button>
+                    );
+                })}
             </div>
 
             {esito && (
@@ -628,5 +684,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi
                 </div>
             )}
         </div>
+        </div>,
+        document.body,
     );
 }
