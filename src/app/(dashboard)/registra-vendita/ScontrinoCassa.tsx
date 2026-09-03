@@ -92,19 +92,39 @@ export type DatiFattura = {
     citta?: string;
     email?: string;
     telefono?: string;
+    /** due lettere. Fuori dall'Italia i formati di partita IVA e CAP sono altri
+     *  e non si possono controllare: si accetta quello che scrive l'operatore. */
+    nazione?: string;
 };
 
 /* COSA MANCA PER FARE LA FATTURA. È il gemello del controllo che sta nella
    rotta: qui serve a spegnere il pulsante e a dirlo mentre il cliente è ancora
    davanti, là a non far entrare una richiesta monca. Il controllo vero resta
    quello del server — questo si può aggirare, quello no. */
+export function pivaValida(v: string): boolean {
+    const x = v.replace(/\s/g, "").toUpperCase();
+    if (/^[0-9]{11}$/.test(x)) {
+        let somma = 0;
+        for (let i = 0; i < 11; i++) {
+            let n = x.charCodeAt(i) - 48;
+            if (i % 2 === 1) { n *= 2; if (n > 9) n -= 9; }
+            somma += n;
+        }
+        return somma % 10 === 0;
+    }
+    return /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/.test(x);
+}
+
 export function mancaPerFattura(c: DatiFattura): string[] {
     const v = (x?: string) => (x || "").trim();
+    const italia = (v(c.nazione) || "IT").toUpperCase() === "IT";
     const out: string[] = [];
     if (!v(c.ragioneSociale) && !(v(c.nome) && v(c.cognome))) out.push("la ragione sociale (o nome e cognome)");
     if (!v(c.cfPiva)) out.push("la partita IVA o il codice fiscale");
+    else if (italia && !pivaValida(v(c.cfPiva)))
+        out.push(`una partita IVA o un codice fiscale scritti bene: «${v(c.cfPiva)}» non è valido`);
     if (!v(c.indirizzo)) out.push("l'indirizzo");
-    if (!v(c.cap)) out.push("il CAP");
+    if (!v(c.cap) && italia) out.push("il CAP");
     if (!v(c.citta)) out.push("la città");
     if (!v(c.codiceDestinatario) && !v(c.pec)) out.push("il codice destinatario o la PEC");
     if (v(c.codiceDestinatario) && !/^[A-Za-z0-9]{6,7}$/.test(v(c.codiceDestinatario)))
@@ -166,6 +186,16 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
        due volte. I soldi però si incassano come sempre, cash machine compresa:
        cambia il documento, non la cassa. */
     const [vuoleFattura, setVuoleFattura] = useState(false);
+    /* QUALI RICHIESTE SONO GIÀ ANDATE. Col carrello a due società la prima può
+       riuscire e la seconda no: premendo «Riprova» il ciclo le rimandava
+       ENTRAMBE, e l'amministrazione si trovava due fatture per la stessa
+       merce. Qui si segna cosa è già passato, e il riprova salta quelle. */
+    const fattFatte = useRef<Set<string>>(new Set());
+    /* LA VENDITA SI SCRIVE UNA VOLTA SOLA, anche premendo «Riprova»: qui si
+       segna che è fatta e con quale id, così il riprova rimanda solo le
+       richieste di fattura che mancano. */
+    const venditaScritta = useRef(false);
+    const idVenditaRef = useRef<string | null>(null);
     const [fat, setFat] = useState<DatiFattura>({});
     const [fatErr, setFatErr] = useState<string>("");
     /* GLI IMPORTI DEI TELEFONI, chiesti prima di incassare. Testo e non
@@ -494,7 +524,8 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
         /* LA FATTURA NON SI EREDITA da una vendita all'altra: è la richiesta di
            QUESTO cliente, e restare accesa sulla prossima vendita vorrebbe dire
            non emettere uno scontrino dovuto. */
-        setVuoleFattura(false); setFatErr("");
+        setVuoleFattura(false); setFatErr(""); fattFatte.current = new Set();
+        venditaScritta.current = false; idVenditaRef.current = null;
         setFat({ ...(data?.fattura || {}) });
         const neg = data?.negozio;
         if (!neg) return;
@@ -1065,7 +1096,11 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
            incassare un rifiuto: soldi nel cassetto e nessuno scontrino.
            Non dovrebbe più capitare — le sezioni le disegna la risposta del
            server — ma se capitasse, ci si ferma qui, prima del cassetto. */
-        if (!vuoleFattura && Array.isArray(chk.aziende) && chk.aziende.length > 1 && !multiSocieta) {
+        /* VALE ANCHE PER LA FATTURA (revisore 04/09): questo controllo non
+           riguarda il reparto IVA, dice solo che il carrello è di due società.
+           Escluderlo faceva passare UNA richiesta sola con dentro due partite
+           IVA — esattamente ciò che l'impianto vieta. */
+        if (Array.isArray(chk.aziende) && chk.aziende.length > 1 && !multiSocieta) {
             setFase("errore"); setErroreDi("pagamento");
             setMsg("Questo carrello contiene merce di più società e va emesso come più scontrini, "
                 + "ma la finestra non è riuscita a dividerlo. Chiudi e rifai la vendita: nessun incasso è stato avviato.");
@@ -1128,24 +1163,67 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
             setFase("stampa"); setMsg("Registro la richiesta di fattura…");
             const gruppi = multiSocieta
                 ? sezioni.map((sz) => ({
-                    societa: sz.label,
+                    /* IL CODICE, NON L'ETICHETTA (revisore 04/09): i due rami
+                       mandavano due alfabeti diversi — «T1» da una parte e
+                       «Telefutura S.R.L. (Custom) · Acilia» dall'altra — e chi
+                       emette la fattura doveva indovinare. */
+                    societa: sz.azienda,
                     totale: sz.totale,
                     righe: sz.righe.map((x) => ({ descrizione: x.i.description, quantita: Number(x.i.qty) > 0 ? Number(x.i.qty) : 1, prezzo: Number(x.i.unitPrice) || 0 })),
                     pagamenti: (righePerAz[sz.azienda] || []).filter((r) => Number(r.importo) > 0)
                         .map((r) => ({ forma: r.forma, importo: +Number(r.importo).toFixed(2) })),
                 }))
                 : [{
-                    societa: aziendaSel || null,
+                    /* ⚠️ LA SOCIETÀ LA DECIDE LA MERCE, non la preselezione
+                       (revisore 04/09, ed era grave). `aziendaSel` è l'ultimo
+                       ripiego per i carrelli di soli servizi: la sceglie
+                       `list.find(isDef)`, e ad Acilia, Collatina e Magliana
+                       `is_default` è vero su TUTTE E DUE le righe di `pos_rt`
+                       — quindi vinceva quella che capitava prima. Uscivano
+                       fatture con la partita IVA sbagliata, e per di più la
+                       finestra a schermo mostrava quella GIUSTA: nessuno se ne
+                       sarebbe accorto. */
+                    societa: (aziendeMerce.length === 1 ? aziendeMerce[0] : aziendaSel) || null,
                     totale: +(totale - scontoCoupon).toFixed(2),
-                    righe: itemsTutte.map((i) => ({ descrizione: i.description, quantita: Number(i.qty) > 0 ? Number(i.qty) : 1, prezzo: Number(i.unitPrice) || 0 })),
+                    /* IL COUPON DIVENTA UNA RIGA. Senza, le righe sommavano
+                       130 € e il totale ne diceva 100: l'amministrazione si
+                       trovava una scheda che non torna, e «Copia i dati» la
+                       consegnava così al gestionale. */
+                    righe: [
+                        ...itemsTutte.map((i) => ({ descrizione: i.description, quantita: Number(i.qty) > 0 ? Number(i.qty) : 1, prezzo: Number(i.unitPrice) || 0 })),
+                        ...(scontoCoupon > 0 ? [{ descrizione: `Sconto coupon${coupon?.code ? " " + coupon.code : ""}`, quantita: 1, prezzo: -scontoCoupon }] : []),
+                    ],
                     pagamenti,
                 }];
-            for (const g of gruppi) {
+            /* ⚠️ PRIMA SI REGISTRA LA VENDITA, POI SI CHIEDE LA FATTURA
+               (revisore 04/09). Due motivi. Il primo: `contratto_id` nel flusso
+               merce nasce QUI dentro, e senza di lui la richiesta non è
+               agganciata a nessuna vendita — niente «Apri la vendita», e
+               nessun modo di riconciliare l'incasso col documento.
+               Il secondo: se il salvataggio fallisce, così non resta una
+               richiesta di fattura orfana per una vendita che non esiste. */
+            let idVendita: string | null = data.contrattoId ?? idVenditaRef.current;
+            if (!venditaScritta.current && onCommit) {
+                const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null, aziendaScontrino: aziendaSel });
+                if (!c || !c.ok) {
+                    setCommitFail(true); setFase("errore");
+                    setMsg("⚠️ Non sono riuscito a registrare la vendita (" + (c?.error || "errore")
+                        + "). Nessuna richiesta di fattura è partita. Riprova.");
+                    return;
+                }
+                venditaScritta.current = true;
+                idVendita = idVendita || (Array.isArray(c.rows) ? (c.rows as { id?: string }[])[0]?.id ?? null : null);
+                idVenditaRef.current = idVendita;
+            }
+
+            for (const [i, g] of gruppi.entries()) {
+                const chiave = `${i}|${g.societa ?? ""}|${g.totale}`;
+                if (fattFatte.current.has(chiave)) continue;   // già registrata: non si rifà
                 try {
                     const res = await fetch("/api/vendita/fattura", {
                         method: "POST", headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            contrattoId: data.contrattoId ?? null,
+                            contrattoId: idVendita,
                             negozio: data.negozio, societa: g.societa,
                             totale: g.totale, righe: g.righe, pagamenti: g.pagamenti,
                             cliente: fat,
@@ -1153,25 +1231,19 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                     });
                     const j = await res.json().catch(() => ({}));
                     if (!res.ok || !j?.ok) throw new Error(j?.error || "richiesta non registrata");
+                    fattFatte.current.add(chiave);
                 } catch (e: any) {
                     /* I SOLDI SONO GIÀ PRESI: non si torna indietro e non si
                        butta la vendita. Si registra lo stesso e si dice forte
                        che la fattura va aperta a mano, con l'importo scritto. */
+                    /* LA VENDITA È GIÀ SCRITTA e i soldi sono presi: qui manca
+                       solo la richiesta. Si dice forte cosa aprire a mano, con
+                       l'importo, e «Riprova la richiesta» rimanda SOLO questa. */
                     setFase("errore"); setErroreDi("");
-                    setMsg("⚠️ Incasso riuscito ma la richiesta di fattura NON è stata registrata ("
-                        + String(e?.message || e) + "). Segnala subito all'amministrazione: "
+                    setMsg("⚠️ Vendita registrata e incasso riuscito, ma la richiesta di fattura NON è partita ("
+                        + String(e?.message || e) + "). Riprova, o segnala all'amministrazione: "
                         + (fat.ragioneSociale || `${fat.nome || ""} ${fat.cognome || ""}`.trim())
                         + ", " + eur(g.totale) + ".");
-                    if (onCommit) await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null, aziendaScontrino: aziendaSel });
-                    return;
-                }
-            }
-            if (onCommit) {
-                const c = await onCommit({ contoTerzi: contoTerziDaSalvare, azienda: soloServizi ? aziendaSel : null, aziendaScontrino: aziendaSel });
-                if (!c || !c.ok) {
-                    setCommitFail(true); setFase("errore");
-                    setMsg("⚠️ La richiesta di fattura è registrata, ma non sono riuscito a registrare la vendita ("
-                        + (c?.error || "errore") + "). Riprova.");
                     return;
                 }
             }
@@ -2159,10 +2231,9 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             la domanda nasce davvero: «come paga?» e «le serve
                             fattura?» sono la stessa conversazione al banco.
                             Acceso, cambia il documento — non l'incasso. */}
-                        {!data.sospesoId && (
-                            <div className={"rounded-xl border transition " + (vuoleFattura
-                                ? "bg-sky-500/12 border-sky-400/50"
-                                : "bg-white/5 border-white/10")}>
+                        <div className={"rounded-xl border transition " + (vuoleFattura
+                            ? "bg-sky-500/12 border-sky-400/50"
+                            : "bg-white/5 border-white/10")}>
                                 <button type="button" onClick={() => { setVuoleFattura((v) => !v); setFatErr(""); }}
                                     aria-pressed={vuoleFattura}
                                     className="w-full flex items-center gap-3 px-3 py-3 text-left">
@@ -2204,8 +2275,13 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                             <CampoFat cls="col-span-6" et="Codice destinatario" v={fat.codiceDestinatario} set={(v) => setFat((f) => ({ ...f, codiceDestinatario: v.toUpperCase() }))} ph="7 caratteri" nota="oppure la PEC" />
                                             <CampoFat cls="col-span-12" et="PEC" v={fat.pec} set={(v) => setFat((f) => ({ ...f, pec: v.toLowerCase() }))} ph="nome@pec.it" nota="serve se non c'è il codice destinatario" />
                                             <CampoFat cls="col-span-12" et="Indirizzo" v={fat.indirizzo} set={(v) => setFat((f) => ({ ...f, indirizzo: v }))} obbl />
-                                            <CampoFat cls="col-span-4" et="CAP" v={fat.cap} set={(v) => setFat((f) => ({ ...f, cap: v }))} obbl />
-                                            <CampoFat cls="col-span-8" et="Città" v={fat.citta} set={(v) => setFat((f) => ({ ...f, citta: v }))} obbl />
+                                            <CampoFat cls="col-span-3" et="CAP" v={fat.cap} set={(v) => setFat((f) => ({ ...f, cap: v }))} obbl />
+                                            <CampoFat cls="col-span-6" et="Città" v={fat.citta} set={(v) => setFat((f) => ({ ...f, citta: v }))} obbl />
+                                            {/* FUORI DALL'ITALIA non si può controllare né la
+                                                partita IVA né il CAP: cambiando la nazione i
+                                                controlli si allentano, se no un cliente estero
+                                                resta bloccato al banco senza via d'uscita. */}
+                                            <CampoFat cls="col-span-3" et="Nazione" v={fat.nazione ?? "IT"} set={(v) => setFat((f) => ({ ...f, nazione: v.toUpperCase().slice(0, 2) }))} ph="IT" />
                                             <CampoFat cls="col-span-7" et="Email" v={fat.email} set={(v) => setFat((f) => ({ ...f, email: v.toLowerCase() }))} />
                                             <CampoFat cls="col-span-5" et="Telefono" v={fat.telefono} set={(v) => setFat((f) => ({ ...f, telefono: v }))} />
                                         </div>
@@ -2213,8 +2289,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                         {fatErr && <div className="text-[11px] text-rose-300 font-semibold">{fatErr}</div>}
                                     </div>
                                 )}
-                            </div>
-                        )}
+                        </div>
 
                         <div className="space-y-2 pt-1">
                             <div className="flex gap-2">
@@ -2317,7 +2392,7 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                             </p>
                         ) : cashDone && (
                             <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">
-                                Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)} (quota {eur(paidCash)}). NON reincassare — usa «Ristampa scontrino».
+                                Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)} (quota {eur(paidCash)}). NON reincassare — usa «{vuoleFattura ? "Riprova la richiesta" : "Ristampa scontrino"}».
                             </p>
                         )}
                         <div className="flex gap-2">
@@ -2326,7 +2401,12 @@ export function ScontrinoCassa({ data, onDone, onCommit }: { data: ScontrinoData
                                 ? <button type="button" onClick={retrySalvataggio} className="flex-1 primary-btn py-2.5 text-sm font-semibold">Salva vendita</button>
                                 : erroreDi === "pagamento"
                                     ? <button type="button" onClick={() => { setFase("scelta"); setMsg(""); setErroreDi(""); }} className="flex-1 primary-btn py-2.5 text-sm font-semibold">Torna al pagamento</button>
-                                    : <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>}
+                                    : <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{
+                                        /* SU UNA VENDITA A FATTURA lo scontrino non è mai
+                                           esistito e non deve esistere: offrire di
+                                           «ristamparlo» è la parola più sbagliata che ci
+                                           sia in quel momento. */
+                                        vuoleFattura ? "Riprova la richiesta" : cashDone ? "Ristampa scontrino" : "Riprova"}</button>}
                         </div>
                     </div>
                 )}

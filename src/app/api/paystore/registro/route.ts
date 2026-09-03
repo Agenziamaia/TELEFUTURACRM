@@ -221,6 +221,19 @@ async function completaDalloScontrino(da: string, a: string) {
         const sospesiPerNegozio: Record<string, { t: number }[]> = {};
         for (const x of sosp || []) (sospesiPerNegozio[String(x.negozio || "")] ||= []).push({ t: new Date(x.created_at).getTime() });
 
+        /* ⚠️ E LE VENDITE FATTURATE (04/09). Quando il cliente chiede fattura
+           non esce nessuno scontrino: la ricarica restava senza stato, la
+           scheda mostrava «lo scontrino non risulta agganciato» e il credito
+           non partiva mai da solo — andava sempre forzato a mano, con lo
+           storico che diceva il falso. Non è un guasto: è il documento giusto. */
+        const { data: fatt } = await supabase.from("fatture_richieste")
+            .select("negozio, created_at")
+            .gte("created_at", new Date(new Date(da + "T00:00:00Z").getTime() - 3600000).toISOString())
+            .lte("created_at", new Date(new Date(a + "T23:59:59Z").getTime() + 3600000).toISOString())
+            .neq("stato", "annullata").limit(5000);
+        const fatturePerNegozio: Record<string, { t: number }[]> = {};
+        for (const x of fatt || []) (fatturePerNegozio[String(x.negozio || "")] ||= []).push({ t: new Date(x.created_at).getTime() });
+
         type RigaStampata = { negozio: string; t: number; importo: number; numero: string; reparto: number; emesso: boolean; azienda: string | null; errore: string | null };
         const stampate: RigaStampata[] = [];
         const scontriniPerNegozio: Record<string, { t: number; emesso: boolean; azienda: string | null }[]> = {};
@@ -302,6 +315,9 @@ async function completaDalloScontrino(da: string, a: string) {
                 }
                 const soc = [...new Set(sc.map((x) => x.azienda).filter(Boolean))];
                 if (!r.azienda && soc.length === 1) patch.azienda = soc[0];
+            } else if (!r.scontrino_stato && fatturePerNegozio[String(r.negozio || "")]?.some(vicino)) {
+                patch.scontrino_stato = "fatturata";
+                patch.scontrino_emesso = true;   // il documento c'è, è una fattura
             } else if (!r.scontrino_stato && sospesiPerNegozio[String(r.negozio || "")]?.some(vicino)) {
                 /* ⚠️ NESSUNO SCONTRINO, MA UN CONTO MESSO DA PARTE. «Tieni in
                    sospeso» scrive la vendita e rimanda l'incasso: la ricarica

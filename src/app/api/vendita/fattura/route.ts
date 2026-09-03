@@ -28,6 +28,26 @@ export const dynamic = "force-dynamic";
 
 const s = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);
 
+/* ── LA PARTITA IVA SI CONTROLLA DAVVERO ─────────────────────────────────────
+   Prima bastava che il campo non fosse vuoto: «123» passava, e la fattura non
+   era emettibile — cioè esattamente la telefonata al cliente il giorno dopo che
+   questo controllo doveva evitare. Undici cifre con la cifra di controllo, o
+   sedici caratteri di codice fiscale. Per un cliente estero non si controlla
+   niente: ogni paese ha il suo formato. */
+export function pivaValida(v: string): boolean {
+    const x = v.replace(/\s/g, "").toUpperCase();
+    if (/^[0-9]{11}$/.test(x)) {
+        let somma = 0;
+        for (let i = 0; i < 11; i++) {
+            let n = x.charCodeAt(i) - 48;
+            if (i % 2 === 1) { n *= 2; if (n > 9) n -= 9; }
+            somma += n;
+        }
+        return somma % 10 === 0;
+    }
+    return /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/.test(x);
+}
+
 /* I CAMPI SENZA I QUALI LA FATTURA NON SI PUÒ FARE. Il controllo sta QUI e non
    solo nel browser: una richiesta a metà non è un promemoria, è una telefonata
    al cliente il giorno dopo per farsi dare i dati che si avevano davanti. */
@@ -35,8 +55,10 @@ function cosaManca(c: Record<string, string>): string[] {
     const out: string[] = [];
     if (!c.ragione_sociale && !(c.nome && c.cognome)) out.push("la ragione sociale (o nome e cognome)");
     if (!c.cf_piva) out.push("la partita IVA o il codice fiscale");
+    else if ((c.nazione || "IT") === "IT" && !pivaValida(c.cf_piva))
+        out.push("una partita IVA (11 cifre) o un codice fiscale (16 caratteri) scritti bene: «" + c.cf_piva + "» non è valido");
     if (!c.indirizzo) out.push("l'indirizzo");
-    if (!c.cap) out.push("il CAP");
+    if (!c.cap && (c.nazione || "IT") === "IT") out.push("il CAP");
     if (!c.citta) out.push("la città");
     /* SDI O PEC, ALMENO UNO: senza, lo SdI non sa a chi consegnarla. Per un
        privato il codice è '0000000' e si consegna alla PEC o al cassetto
@@ -79,6 +101,7 @@ export async function POST(req: Request) {
         citta: s(b?.cliente?.citta, 80),
         email: s(b?.cliente?.email, 160).toLowerCase(),
         telefono: s(b?.cliente?.telefono, 40),
+        nazione: (s(b?.cliente?.nazione, 2) || "IT").toUpperCase(),
     };
     const manca = cosaManca(c);
     if (manca.length)

@@ -1208,7 +1208,12 @@ function RifaiRicarica({ r, onFatto }: { r: Riga; onFatto: () => void }) {
     /* ⚠️ FORZARE VUOL DIRE EROGARE SENZA LA PROVA DELL'INCASSO. Si può, perché
        lo scontrino che «non risulta» spesso c'è davvero e la cliente è al banco
        — ma lo si fa premendo un pulsante diverso, non lo stesso. */
-    const senzaScontrino = r.scontrino_stato !== "emesso";
+    /* «fatturata» VALE QUANTO «emesso» (04/09): il cliente ha chiesto fattura,
+       quindi lo scontrino non doveva uscire. La prova dell'incasso c'è — è
+       l'altro documento — e il credito può partire da solo. Senza questa riga
+       ogni ricarica venduta con fattura andava forzata a mano, e lo storico
+       diceva «forzata: lo scontrino non risultava agganciato», che è falso. */
+    const senzaScontrino = r.scontrino_stato !== "emesso" && r.scontrino_stato !== "fatturata";
     const esegui = async (forza = false) => {
         setLavoro(true);
         try {

@@ -483,6 +483,7 @@ function Documenti() {
         return () => { vivo = false; };
     }, [vistaFatture]);
 
+
     /* TUTTI I NOMI DEI NEGOZI, che servono per trovare i gemelli di sede
        fisica: «Collatina W3» e «Collatina Multi» sono lo stesso bancone. */
     /* ⚠️ SUL DOCUMENTO C'È IL NOME DEL COMPUTER, NON DEL NEGOZIO (02/09).
@@ -535,6 +536,43 @@ function Documenti() {
         });
         return negozioInValues(Array.from(out));
     }, [seesAll, negoziVisibili, tuttiNegozi, perAgente]);
+
+    /* ═══ I SOLDI CHE NON HANNO UNO SCONTRINO ════════════════════════════════
+       Una vendita fatturata incassa davvero — contanti nella cash machine
+       compresi — ma non produce nessun documento fiscale: quindi NON è nei
+       riquadri qui sopra (che contano i lavori di stampa) e NON è nella
+       chiusura Z. Chi la sera conta il cassetto trova più contanti di quanti
+       ne dica lo Z e non sa perché.
+       Questo numero è quella differenza, e si conta per GIORNO DELLA VENDITA —
+       non per quando l'amministrazione emette la fattura, che può essere una
+       settimana dopo — e a prescindere dallo stato, perché i soldi sono
+       entrati comunque. */
+    const [fuoriScontrino, setFuoriScontrino] = useState<{ n: number; tot: number; contanti: number }>({ n: 0, tot: 0, contanti: 0 });
+    useEffect(() => {
+        if (!visibilitaPronta) return;
+        let vivo = true;
+        (async () => {
+            let q = supabase.from("fatture_richieste")
+                .select("negozio, totale, pagamenti")
+                .gte("created_at", inizioGiorno(dal))
+                .lte("created_at", fineGiorno(al))
+                .neq("stato", "annullata")
+                .limit(2000);
+            if (ambito) q = q.in("negozio", ambito);
+            const { data } = await q;
+            if (!vivo) return;
+            const righeF = data || [];
+            const contanti = righeF.reduce((t, r) => t + ((r.pagamenti || []) as { forma?: string; importo?: number }[])
+                .filter(p => /contant|cash/i.test(String(p.forma || "")))
+                .reduce((x, p) => x + (Number(p.importo) || 0), 0), 0);
+            setFuoriScontrino({
+                n: righeF.length,
+                tot: righeF.reduce((t, r) => t + (Number(r.totale) || 0), 0),
+                contanti,
+            });
+        })();
+        return () => { vivo = false; };
+    }, [dal, al, ambito, visibilitaPronta, vistaFatture]);
 
     /* ── LA LETTURA ──────────────────────────────────────────────────────────
        Per INTERVALLO DI DATE, non «gli ultimi N»: un negozio che cerca lo
@@ -1113,6 +1151,25 @@ function Documenti() {
                         I valori contano solo i documenti riusciti e non di prova.
                         {conta.incerti > 0 ? ` ${conta.incerti} non risultano emessi: restano in elenco perché il tentativo c'è stato — apri la riga per sapere cos'ha risposto la cassa.` : ""}
                     </div>
+                    {/* ⚠️ LA DIFFERENZA CHE ALTRIMENTI NON SI SPIEGA. Sta sotto i
+                        riquadri perché è lì che si leggono gli incassi, ed è lì che
+                        manca: senza questa riga, chi conta il cassetto la sera trova
+                        più contanti di quanti ne dica lo Z e pensa a un errore. */}
+                    {fuoriScontrino.n > 0 && (
+                        <div className="rvNota rvNota-att mt-2">
+                            <div className="rvNota-t">
+                                In questo periodo {fuoriScontrino.n} vendit{fuoriScontrino.n === 1 ? "a è stata fatturata" : "e sono state fatturate"}: {eurTondo(fuoriScontrino.tot)} che NON sono qui sopra
+                            </div>
+                            <div className="rvNota-s">
+                                Il cliente ha chiesto fattura, quindi non è uscito nessuno scontrino e quegli importi non
+                                stanno né nei riquadri né nella chiusura Z — ma i soldi sono entrati lo stesso.
+                                {fuoriScontrino.contanti > 0
+                                    ? ` Di questi, ${eurTondo(fuoriScontrino.contanti)} in contanti: è la differenza che il cassetto avrà in più rispetto allo Z.`
+                                    : " Nessuno in contanti: il cassetto non ne risente."}
+                                {" "}Le trovi nel riquadro «Da fatturare».
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* ═══ LA VISTA DELLE FATTURE DA EMETTERE ═══ prende il posto

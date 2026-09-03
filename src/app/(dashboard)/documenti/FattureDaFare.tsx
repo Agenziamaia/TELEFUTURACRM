@@ -108,6 +108,14 @@ export function FattureDaFare({ puoiEsitare, apriId }: { puoiEsitare: boolean; a
         setAperta(apriId);
     }, [apriId, righe, filtro]);
 
+    /* ⚠️ IL NUMERO NON DEVE MIGRARE DA UNA SCHEDA ALL'ALTRA (revisore 04/09).
+       `numero` e `nota` sono uno stato solo per tutte le schede, e l'effetto
+       del deep link riapre una scheda a ogni cambio di filtro: si scriveva
+       «124/2026» su una richiesta, si toccava un filtro, e quel numero
+       ricompariva dentro la scheda di un altro cliente già pronto da
+       confermare. Cambiando scheda si riparte puliti, sempre. */
+    useEffect(() => { setNumero(""); setNota(""); setErrore(""); }, [aperta]);
+
     useEffect(() => {
         if (!scrollaA.current || !righe) return;
         const el = document.getElementById("fat-" + scrollaA.current);
