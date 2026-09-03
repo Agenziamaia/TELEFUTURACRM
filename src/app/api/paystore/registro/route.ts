@@ -508,7 +508,14 @@ export async function POST(request: Request) {
     if (b.azione === "numero") {
         const num = String(b.numero || "").replace(/\D/g, "");
         if (!b.id || num.length < 7 || num.length > 11) return NextResponse.json({ error: "numero non valido" }, { status: 400 });
-        const { error } = await supabase.from("paystore_ricariche").update({ numero: num }).eq("id", b.id);
+        /* ⚠️ E AZZERA LA CHIAVE DI IDEMPOTENZA, come fa la scheda. È legata a
+           QUELLA ricarica: tenendola, il tentativo dopo la correzione
+           riceverebbe da PayStore l'esito del tentativo VECCHIO — quello sul
+           numero sbagliato — e la riga direbbe «fatta» mentre il numero nuovo
+           non ha ricevuto niente. Erano due strade per la stessa correzione, e
+           questa si comportava al contrario dell'altra. */
+        const { error } = await supabase.from("paystore_ricariche")
+            .update({ numero: num, idempotency_key: null, errore: null }).eq("id", b.id);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         return NextResponse.json({ ok: true });
     }

@@ -106,7 +106,7 @@ export async function PATCH(request: Request) {
     if (!b.id) return NextResponse.json({ error: "id mancante" }, { status: 400 });
 
     const { data: prima } = await supabaseAdmin.from("paystore_ricariche")
-        .select("id, stato, operatore, operatore_nome, numero").eq("id", b.id).maybeSingle();
+        .select("id, stato, operatore, operatore_nome, numero, tentativi, errore").eq("id", b.id).maybeSingle();
     if (!prima) return NextResponse.json({ error: "ricarica non trovata" }, { status: 404 });
     const p = prima as { stato: string; operatore: string; operatore_nome: string | null; numero: string };
 
@@ -138,6 +138,17 @@ export async function PATCH(request: Request) {
         }
     }
     if (!righe.length) return NextResponse.json({ error: "niente da cambiare" }, { status: 400 });
+
+    /* ⚠️ MA NON SE C'È UN TENTATIVO DI CUI NON SAPPIAMO L'ESITO. Azzerare la
+       chiave su una riga che ha già bussato a PayStore senza risposta vuol dire
+       ripartire da capo su una ricarica che POTREBBE essere partita: è un
+       doppio pagamento deciso a tavolino. Prima si guarda com'è andata. */
+    if (Number((prima as { tentativi?: number }).tentativi || 0) > 0
+        && /esito non ricevuto/i.test(String((prima as { errore?: string }).errore || ""))) {
+        return NextResponse.json({
+            error: "questa ricarica ha un tentativo di cui non conosciamo l'esito: potrebbe essere partita. Prima usa «Quali ha già fatto PayStore», poi correggila.",
+        }, { status: 409 });
+    }
 
     /* ⚠️ E LA CHIAVE DI IDEMPOTENZA SI BUTTA VIA. È legata a QUELLA ricarica:
        tenendola, il tentativo dopo la correzione riceverebbe da PayStore

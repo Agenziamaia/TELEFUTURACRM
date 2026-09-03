@@ -155,15 +155,58 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
         }
     }
 
+    /* ⚠️ LA RIGA SI RILEGGE ADESSO, non si esegue sulla fotografia.
+       Il motore prende dieci righe e le lavora una alla volta: quella in fondo
+       viene eseguita minuti dopo essere stata letta, e nel frattempo
+       l'amministrazione può averla marcata a mano — succede davvero, 145 righe
+       al giorno le marca una persona sola. Senza questa rilettura il motore la
+       eseguiva lo stesso e poi SOVRASCRIVEVA il suo «ok manuale». */
+    const { data: fresca } = await supabase.from("paystore_ricariche")
+        .select("stato, idempotency_key, tentativi").eq("id", riga.id).maybeSingle();
+    const f = fresca as { stato: string; idempotency_key: string | null; tentativi: number } | null;
+    if (!f) return { ok: false, errore: "la ricarica non esiste più", definitivo: true, stato: 404 };
+    if (f.stato === "ok_automatico" || f.stato === "ok_manuale") {
+        return { ok: false, errore: "nel frattempo risulta già fatta: non la rifaccio", definitivo: true, stato: 409 };
+    }
+
+    /* ⚠️ E UNA RIGA CON UNA GEMELLA NON SI ESEGUE DA SOLA. Misurato il 03/09:
+       in archivio ci sono righe IDENTICHE — stesso contratto, stesso numero,
+       stesso importo, stesso millisecondo — nate dalla vendita normale. Sono
+       due `id`, quindi due chiavi di idempotenza, quindi per PayStore due
+       ricariche diverse: le paga entrambe. Una di quelle coppie è già stata
+       erogata due volte oggi, a sei secondi di distanza.
+       Il motore si ferma; una persona può ancora forzarla dal pannello, ma
+       guardandola. */
+    if (!opz?.daPersona) {
+        const { count } = await supabase.from("paystore_ricariche")
+            .select("id", { count: "exact", head: true })
+            .eq("contract_id", (riga as { contract_id?: string }).contract_id || "__nessuno__")
+            .eq("numero", numero).eq("importo", riga.importo).neq("id", riga.id);
+        if ((count || 0) > 0) {
+            await supabase.from("paystore_ricariche").update({
+                errore: "c'è un'altra riga identica su questo scontrino (stesso numero e stesso importo): il motore non la esegue da solo, perché sarebbero due crediti. Guardala e falla partire a mano se è giusta.",
+            }).eq("id", riga.id);
+            return { ok: false, errore: "riga doppia: la eseguo solo a mano", definitivo: true, stato: 409 };
+        }
+    }
+
     // la chiave si scrive PRIMA di partire, e non cambia più
-    const chiave = riga.idempotency_key || nuovaChiaveIdempotenza();
+    const chiave = f.idempotency_key || riga.idempotency_key || nuovaChiaveIdempotenza();
     const collaudo = ambienteOra;
-    const { error: eChiave } = await supabase.from("paystore_ricariche").update({
+    /* ⚠️ E SI SCRIVE SOLO SE LO STATO È ANCORA QUELLO. `.eq("stato", ...)` è
+       quello che rende la presa una vera presa: se fra la rilettura e questa
+       riga qualcuno ha cambiato lo stato, l'update non tocca niente e si
+       vede — invece di erogare su una riga che nel frattempo è di qualcun
+       altro. */
+    const { error: eChiave, data: scritta } = await supabase.from("paystore_ricariche").update({
         idempotency_key: chiave,
         tentata_il: new Date().toISOString(),
-        tentativi: (riga.tentativi || 0) + 1,
+        tentativi: (f.tentativi || riga.tentativi || 0) + 1,
         ambiente: collaudo ? "collaudo" : "produzione",
-    }).eq("id", riga.id);
+    }).eq("id", riga.id).eq("stato", f.stato).select("id");
+    if (!eChiave && !(scritta || []).length) {
+        return { ok: false, errore: "qualcun altro l'ha cambiata mentre la stavo prendendo: non parto", definitivo: true, stato: 409 };
+    }
     /* ⚠️ SE LA CHIAVE NON SI È SCRITTA, NON SI PARTE. Su questa unica scrittura
        poggia tutta la difesa contro il doppio credito: se resta solo in memoria
        e il server muore fra la chiamata e la risposta, il tentativo successivo
@@ -191,6 +234,21 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
 
     if (esito.ok) {
         const d = esito.dati;
+        /* ⚠️ IL CODICE HTTP NON È L'ESITO. PayStore può rispondere 200 con
+           dentro `status: "failed"` o `"pending"`: scrivere «ok automatico» su
+           quello vuol dire dichiarare erogato un credito che non è partito, e
+           nessuno la ripesca più — il cliente ha pagato e il registro dice che
+           è tutto a posto. E un corpo vuoto o non JSON arriva qui come `dati`
+           nullo: leggerlo faceva morire la corsa senza lasciare traccia. */
+        const stato = String((d as { status?: string } | null)?.status || "").toLowerCase();
+        if (!d || (stato && stato !== "success" && stato !== "ok" && stato !== "completed")) {
+            const perche = !d
+                ? "PayStore ha risposto senza dati leggibili"
+                : `PayStore ha risposto «${stato}», che non è un successo`;
+            await supabase.from("paystore_ricariche").update({ errore: perche }).eq("id", riga.id);
+            await diario(perche, { grezzo: d as unknown });
+            return { ok: false, errore: perche, definitivo: false, stato: 502 };
+        }
         /* in collaudo NON si scrive «fatta»: nessun credito è partito davvero,
            e una riga verde su una ricarica non erogata è peggio di una riga
            gialla su una eseguita */
