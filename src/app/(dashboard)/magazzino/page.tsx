@@ -64,7 +64,7 @@ const MAGAZZINO_UFFICIO = "Ufficio";
 import {
     SITUAZIONI, PERIODI, STATI_DDT, STATI_RIGA, TIPI_DDT, RIGHE_APERTE,
     aperto, inRitardo, fermo, giorniInViaggio, eCessione, daFatturare, tipoDi,
-    nellaSituazione, estremi, pezziDi, valoreRiga, cosaMancaPerEmettere, nomeCorto, soloConNegozio, guastoDdt,
+    nellaSituazione, estremi, pezziDi, valoreRiga, cosaMancaPerEmettere, nomeCorto, situazioniPer, guastoDdt,
     type Ddt, type RigaDdt, type Situazione, type Periodo,
 } from "@/lib/trasferimenti";
 
@@ -2558,6 +2558,34 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
         return out;
     }, [filtrati, righeDi, miei]);
 
+    /* IL SECONDO NUMERO DI OGNI RIQUADRO. Il grande dice quanti DOCUMENTI
+       vedrai premendolo; questo dice quanta merce c'è dietro — che è la
+       domanda che viene subito dopo. Per le differenze sono le RIGHE ancora
+       aperte, non i pezzi: lì il lavoro si conta a righe da chiudere. */
+    const pezziSituazione = useMemo(() => {
+        const ora = Date.now();
+        const out = {} as Record<Situazione, number>;
+        SITUAZIONI.forEach(s => {
+            out[s.id] = filtrati.reduce((t, d) => {
+                const rs = righeDi(d.id);
+                if (!nellaSituazione(s.id, d, rs, miei, ora)) return t;
+                return t + (s.id === "differenze"
+                    ? rs.filter(r => r.stato === "mancante").length
+                    : rs.reduce((n, r) => n + pezziDi(r), 0));
+            }, 0);
+        });
+        return out;
+    }, [filtrati, righeDi, miei]);
+
+    /* LA TINTA DICE SE È UNA COSA DA FARE O UNA DA SAPERE: rosso quello che
+       chiama, ambra quello che aspetta, indaco quello che è solo un elenco. */
+    const TINTA_SIT: Record<Situazione, string> = {
+        tutti: "rvT-indaco", da_accettare: "rvT-ciano", in_viaggio: "rvT-viola",
+        in_ritardo: "rvT-ambra", partiti_da_me: "rvT-verde",
+        differenze: "rvT-ambra", da_fatturare: "rvT-indaco",
+        con_problema: "rvT-rosso", fermi: "rvT-rosso",
+    };
+
     const visibili = useMemo(() => {
         const ora = Date.now();
         return filtrati.filter(d => nellaSituazione(situazione, d, righeDi(d.id), miei, ora));
@@ -2826,6 +2854,37 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
 
     return (
         <div className="space-y-4">
+            {/* ── LA TESTATA, COME IN GIACENZE (Luca 03/09) ────────────────
+                «Nel momento in cui devo creare un trasferimento il pulsante è
+                messo al centro della pagina»: era vero alla lettera — stava
+                400px sotto l'inizio della sezione, in mezzo a una riga, e con
+                la stessa forma dei due export e dei due interruttori di vista.
+                L'azione che emette un documento fiscale aveva lo stesso peso
+                del pulsante Excel.
+                Adesso sta in alto a destra, pieno e nel colore del CRM, come il
+                Carico merce in Giacenze; il PDF resta una pastiglia — guardare
+                non è fare — e l'Excel resta verde perché è Excel. */}
+            <div className="rvBoxTop rvBoxTop-c">
+                <div className="rvBoxT">🚚 I documenti di trasporto</div>
+                <div className="rvAzioniTop">
+                    {/* niente bottone se non c'è nessun magazzino da cui far partire
+                        la merce: aprirlo per trovarci dentro «nessun magazzino in
+                        visibilità» è peggio che non averlo (revisore 02/09) */}
+                    {gestisce && negoziPartenza.length > 0 && (
+                        <button onClick={() => setApriNuovo(v => !v)}
+                            className={cn("rvAzione rvAzione-sm rvAzione-crm", apriNuovo && "rvAzione-giu")}>
+                            <Truck size={14} className="inline-block align-[-3px] mr-1.5" /> Nuovo trasferimento
+                        </button>
+                    )}
+                    <button onClick={stampaArchivio} disabled={!visibili.length} className="rvPill rvPill-sm"
+                        title="Tutti i documenti che vedi, in un unico PDF — uno per pagina">
+                        📄 PDF di tutti ({visibili.length})
+                    </button>
+                    <button onClick={esporta} disabled={!merce.length} className="rvAzione rvAzione-sm">
+                        <FileDown size={14} className="inline-block align-[-2px] mr-1.5" />Excel
+                    </button>
+                </div>
+            </div>
             {/* SI DICE PRIMA, NON DOPO (regola §7): un DDT emesso senza la sede
                 legale delle società non è valido, e accorgersene in stampa vuol
                 dire accorgersene quando il corriere è già partito. */}
@@ -2848,14 +2907,49 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                 </div>
             )}
 
-            {/* ── LE SITUAZIONI: le domande che si fanno ogni giorno ───────── */}
-            <div className="rvPillRow">
-                {SITUAZIONI.filter(s => miei.length || !soloConNegozio.includes(s.id)).map(s => (
-                    <button key={s.id} onClick={() => setSituazione(s.id)} title={s.spiega}
-                        className={cn("rvPill", situazione === s.id && "rvPill-on")}>
-                        {s.ico} {s.et}<b className="rvPillN">{conteggi[s.id] ?? 0}</b>
-                    </button>
-                ))}
+            {/* ── LE SITUAZIONI, COME IN GIACENZE ──────────────────────────
+                Luca 03/09: «ci sono dei bottoni belli grandi come quelli di
+                Giacenze, che magari mi indicano in arrivo, in viaggio…».
+                Erano le stesse identiche domande — le sette `SITUAZIONI` —
+                disegnate col vestito sbagliato: sette pastiglie sottili col
+                numero in un `rvPillN` da nove pixel, che a 1366 andavano su due
+                file lasciando l'ultima da sola con 882px di vuoto accanto.
+                Stesso contenuto, la forma di Giacenze: numero grande, nome,
+                riga piccola, e la spiegazione addosso al pulsante.
+
+                SETTE, SEMPRE SETTE: `rvGriglia7` chiude la fila a zero di vuoto
+                con sette tessere, e ne lascia 293 con cinque. Per questo chi non
+                ha un negozio — l'amministrazione, la direzione — non perde due
+                riquadri: gliene arrivano due suoi al posto di «qui» e «me»
+                (`situazioniPer`). */}
+            <div className="rvCampo rvCampo-flex rvGriglia7"><span className="rvLab">Come stanno i trasferimenti</span>
+                <div className="rvRapidoG rvRapidoG-kpi">
+                    {situazioniPer(miei).map(s => {
+                        const on = situazione === s.id;
+                        const n = conteggi[s.id] ?? 0;
+                        const testo = n.toLocaleString("it-IT");
+                        const p = pezziSituazione[s.id] ?? 0;
+                        /* la riga piccola dice sempre due cose: cosa conta il
+                           numero grande, e il secondo numero che serve davvero */
+                        const sotto = s.id === "da_fatturare"
+                            ? `cession${n === 1 ? "e" : "i"} · da emettere`
+                            /* «righe aperte» finiva coi puntini in una tessera da
+                               136px: la parola che porta l'informazione è «righe» */
+                            : s.id === "differenze"
+                                ? `documenti · ${p.toLocaleString("it-IT")} righe`
+                                : `documenti · ${p.toLocaleString("it-IT")} pezzi`;
+                        return (
+                            <button key={s.id} type="button" onClick={() => setSituazione(s.id)}
+                                title={`${s.spiega}. Premilo per vedere solo questi: il numero grande dice quanti documenti vedrai.`}
+                                className={cn("rvRapido", TINTA_SIT[s.id],
+                                    on ? "rvRapido-on" : !n && "rvRapido-off")}>
+                                <em className={corpoNumero(testo)}>{testo}</em>
+                                <b>{s.ico} {s.et}{on ? " ✓" : ""}</b>
+                                <small>{sotto}</small>
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
 
             {/* ── I FILTRI ─────────────────────────────────────────────────── */}
@@ -2906,41 +3000,25 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                 </div>
             </div>
 
-            {/* ── LE DUE VISTE E LE AZIONI ─────────────────────────────────── */}
-            <div className="rvBarra rvBarra-c">
+            {/* ── COME GUARDO: le due viste, sotto i riquadri ─────────────
+                Non entrano nella fila dei sette — sarebbero l'ottavo e il nono,
+                e otto tessere lasciano 878px di vuoto sulla seconda riga. Ma
+                adesso hanno la loro etichetta, come tutto il resto. */}
+            <div className="rvCampo"><span className="rvLab">Come guardo</span>
                 <div className="rvPillRow">
                     <button onClick={() => setVista("documenti")} className={cn("rvPill", vista === "documenti" && "rvPill-on")}>
                         📄 Documenti di trasporto<b className="rvPillN">{visibili.length}</b></button>
                     <button onClick={() => setVista("merce")} className={cn("rvPill", vista === "merce" && "rvPill-on")}>
                         📦 Merce mossa<b className="rvPillN">{merce.length}</b></button>
                 </div>
-                <span className="rvSpazio" />
-                {/* niente bottone se non c'è nessun magazzino da cui far partire
-                    la merce: aprirlo per trovarci dentro «nessun magazzino in
-                    visibilità» è peggio che non averlo (revisore 02/09) */}
-                {gestisce && negoziPartenza.length > 0 && (
-                    <button onClick={() => { setApriNuovo(v => !v); }}
-                        className={cn("rvPill", apriNuovo && "rvPill-on")}>
-                        <Truck size={15} className="inline-block align-[-3px] mr-1.5" /> Nuovo trasferimento</button>
-                )}
-                {gestisce && negoziPartenza.length === 0 && visibiliPronti && (
-                    <span className="rvTab-min">
-                        {accessoInAttesa
-                            ? "🔒 La tua richiesta di lavorare in un altro punto vendita è ancora da autorizzare: finché non la approvano non puoi spedire merce."
-                            : "Per spedire serve un magazzino tuo: dichiara dove stai lavorando oggi, o chiedi all'amministrazione."}
-                    </span>
-                )}
-                {/* IL CARICO SI E' TRASFERITO IN GIACENZE (Luca 03/09): «e'
-                    posizionata un po' per errore dentro i trasferimenti, invece
-                    deve stare dentro giacenze con un pulsante in alto». Qui
-                    restano i documenti, che e' quello che i Trasferimenti sono. */}
-                <button onClick={esporta} disabled={!merce.length} className="rvPill rvPill-sm">
-                    <FileDown size={14} className="inline-block align-[-2px] mr-1.5" />Excel</button>
-                {/* l'archivio dei documenti del periodo, in un file solo */}
-                <button onClick={stampaArchivio} disabled={!visibili.length} className="rvPill rvPill-sm"
-                    title="Tutti i documenti che vedi, in un unico PDF — uno per pagina">
-                    📄 PDF di tutti ({visibili.length})</button>
             </div>
+            {gestisce && negoziPartenza.length === 0 && visibiliPronti && (
+                <div className="rvNota rvNota-att"><div className="rvNota-s">
+                    {accessoInAttesa
+                        ? "🔒 La tua richiesta di lavorare in un altro punto vendita è ancora da autorizzare: finché non la approvano non puoi spedire merce."
+                        : "Per spedire serve un magazzino tuo: dichiara dove stai lavorando oggi, o chiedi all'amministrazione."}
+                </div></div>
+            )}
 
             {apriNuovo && (
                 <NuovoTrasferimento unita={unita} quantita={quantita} negozi={negozi} negoziPartenza={negoziPartenza} negDati={negDati} casse={casse}

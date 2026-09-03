@@ -291,7 +291,10 @@ export function valoreRiga(r: RigaDdt): number | null {
  *   · l'amministrazione → «quali documenti sono ancora aperti?» */
 export type Situazione =
     | "tutti" | "da_accettare" | "in_viaggio" | "in_ritardo"
-    | "partiti_da_me" | "differenze" | "da_fatturare";
+    | "partiti_da_me" | "differenze" | "da_fatturare"
+    /* le due che sostituiscono «qui» e «me» per chi un negozio non ce l'ha:
+       i riquadri devono restare SETTE, se no la fila lascia un buco */
+    | "con_problema" | "fermi";
 
 export const SITUAZIONI: { id: Situazione; et: string; ico: string; spiega: string }[] = [
     { id: "tutti", et: "Tutti", ico: "📄", spiega: "Ogni documento, in qualunque stato" },
@@ -305,11 +308,30 @@ export const SITUAZIONI: { id: Situazione; et: string; ico: string; spiega: stri
     { id: "partiti_da_me", et: "Partiti da me", ico: "📤", spiega: "Tutto quello che è uscito dai tuoi negozi, anche già arrivato" },
     { id: "differenze", et: "Differenze aperte", ico: "⚠️", spiega: "Merce che non è arrivata e che nessuno ha ancora chiuso" },
     { id: "da_fatturare", et: "Da fatturare", ico: "🧾", spiega: "Cessioni fra le due società che aspettano la fattura" },
+    /* ⚠️ IL PALLINO ROSSO DEL MENÙ DEVE AVERE UN POSTO DOVE ATTERRARE. La
+       bandierina «Problema!» accende un pallino nel menù di sinistra: chi ci
+       clicca sopra deve trovare QUALI sono, non una lista di tutto. */
+    { id: "con_problema", et: "Con problema", ico: "🚩", spiega: "Qualcuno ha segnalato che qualcosa non torna: il documento resta accettabile" },
+    /* fermi da una settimana: `fermo()` esisteva già e non lo contava nessuno —
+       serviva solo a tingere di rosso una riga piccola */
+    { id: "fermi", et: `Fermi da ${GIORNI_FERMO} giorni`, ico: "⛔", spiega: `Partiti da ${GIORNI_FERMO} giorni o più e ancora in viaggio` },
 ];
 
 /** Le due situazioni che parlano di «qui» e di «me»: hanno senso solo per chi
  *  un negozio ce l'ha. */
 export const soloConNegozio: Situazione[] = ["da_accettare", "partiti_da_me"];
+
+/** E LE DUE CHE PRENDONO IL LORO POSTO. I riquadri sono sette perché la fila
+ *  ne tiene sette: con cinque resta un buco da 293px (misurato). Chi non ha un
+ *  negozio non ha «qui» né «me», ma ha le due domande che si fa davvero —
+ *  «dove c'è un problema» e «cosa è fermo da troppo». */
+export const senzaNegozio: Situazione[] = ["con_problema", "fermi"];
+
+/** Le sette situazioni da mostrare a chi guarda. Sempre sette. */
+export const situazioniPer = (miei: readonly string[]) =>
+    SITUAZIONI.filter(s => miei.length
+        ? !senzaNegozio.includes(s.id)
+        : !soloConNegozio.includes(s.id));
 
 /** Il documento rientra nella situazione? `miei` sono i negozi della persona
  *  (i gemelli contano come uno solo: chi sta a Magliana W3 riceve anche
@@ -326,6 +348,8 @@ export function nellaSituazione(
         case "partiti_da_me": return !miei.length || mio(d.da_negozio);
         case "differenze": return haDifferenze(righe);
         case "da_fatturare": return daFatturare(d);
+        case "con_problema": return guastoDdt(d);
+        case "fermi": return fermo(d, ora);
     }
 }
 
