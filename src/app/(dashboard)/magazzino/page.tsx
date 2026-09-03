@@ -32,11 +32,12 @@
 // classe si aggiunge ALLA CASSETTA — non si fa un'eccezione qui.
 // Il COMPORTAMENTO non è cambiato: filtri, conteggi, colonna «Altrove»,
 // esplosione dei pezzi, cestino, DDT ed export sono gli stessi di prima.
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CaricoMerce from "./CaricoMerce";
 import { createPortal } from "react-dom";
 import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { famigliaDalNome } from "@/lib/cassaCatalogo";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { isAdminOrAbove } from "@/lib/roles";
@@ -180,7 +181,13 @@ const gg = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleDateS
 const gghh = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const eur = (v: number | null | undefined) => v == null ? "—" : v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 
+/* `useSearchParams()` vuole una Suspense in fase di build: è la stessa forma
+   che hanno già Gare, Usati e Collaboratori. */
 export default function MagazzinoPage() {
+    return <Suspense fallback={<div className="rvTab-min p-6">apro il magazzino…</div>}><Magazzino /></Suspense>;
+}
+
+function Magazzino() {
     const { user } = useAuth();
     /* ⚠️ IL PERIMETRO SONO I NEGOZI IN VISIBILITÀ, non il solo negozio del
        login (Luca 02/09). Prima questa pagina si costruiva l'ambito a mano da
@@ -259,12 +266,23 @@ export default function MagazzinoPage() {
     const [tab, setTab] = useState<"giacenze" | "trasferimenti" | "articoli">("giacenze");
     /* LA SEZIONE ARRIVA DALL'INDIRIZZO (Luca 01/09): il magazzino è diventato
        un hub nel menù — Giacenze, Trasferimenti, Articoli — e ogni voce deve
-       portare dove dice. I pulsanti in alto restano: chi è già dentro cambia
-       sezione senza tornare al menù. */
+       portare dove dice.
+
+       E DEVE SEGUIRLO ANCHE QUANDO CAMBIA SOTTO I PIEDI. Prima l'indirizzo si
+       leggeva UNA VOLTA SOLA, al montaggio, da `window.location.search`.
+       Finché in cima c'erano le tre pastiglie non si vedeva; da quando le ho
+       tolte — erano la stessa cosa scritta due volte a un centimetro di
+       distanza — le tre voci del menù di sinistra hanno smesso di funzionare:
+       puntano alla STESSA rotta, quindi il componente non si rimonta e
+       l'effetto non riparte. L'indirizzo diceva Trasferimenti e lo schermo
+       restava sulle Giacenze; se ne usciva solo con F5.
+       `useSearchParams()` invece è reattivo, ed è quello che usa già tutto il
+       resto del CRM (Gare, Chat, Collaboratori, Usati, Amministrazione). */
+    const params = useSearchParams();
     useEffect(() => {
-        const t = new URLSearchParams(window.location.search).get("tab");
+        const t = params.get("tab");
         if (t === "giacenze" || t === "trasferimenti" || t === "articoli") setTab(t);
-    }, []);
+    }, [params]);
     /* IL SECONDO CLIC DELLA CRONISTORIA ARRIVA QUI (revisore 31/08). La storia
        di un pezzo offre «apri il documento di trasporto» con `?ddt=<numero>`,
        ma questa pagina non leggeva nessun parametro: si ricaricava sulle
@@ -272,9 +290,9 @@ export default function MagazzinoPage() {
        campo di ricerca dei Trasferimenti, che sa già trovarlo («n.5»). */
     const [ddtCercato, setDdtCercato] = useState("");
     useEffect(() => {
-        const n = new URLSearchParams(window.location.search).get("ddt");
+        const n = params.get("ddt");
         if (n) { setTab("trasferimenti"); setDdtCercato("n." + n); }
-    }, []);
+    }, [params]);
 
     /* LE DUE SOCIETÀ, COL LORO NOME (Francesco 29/08: «non è possibile
        filtrare tra Telefutura e Telefutura 2»). Il filtro c'era, ma diceva
@@ -2194,7 +2212,6 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
     const [dal, setDal] = useState(""); const [al, setAl] = useState("");
     const [vista, setVista] = useState<"documenti" | "merce">("documenti");
     const [apriNuovo, setApriNuovo] = useState(false);
-    const [apriCarico, setApriCarico] = useState(false);
     const [apertoId, setApertoId] = useState<string | null>(null);
 
     const azzera = () => {
@@ -2635,7 +2652,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                     la merce: aprirlo per trovarci dentro «nessun magazzino in
                     visibilità» è peggio che non averlo (revisore 02/09) */}
                 {gestisce && negoziPartenza.length > 0 && (
-                    <button onClick={() => { setApriNuovo(v => !v); setApriCarico(false); }}
+                    <button onClick={() => { setApriNuovo(v => !v); }}
                         className={cn("rvPill", apriNuovo && "rvPill-on")}>
                         <Truck size={15} className="inline-block align-[-3px] mr-1.5" /> Nuovo trasferimento</button>
                 )}
@@ -3460,67 +3477,6 @@ function NuovoTrasferimento({ unita, quantita, negozi, negoziPartenza, negDati, 
                 <button onClick={crea} disabled={busy || cosaManca.length > 0} className="rvAzione">
                     {busy && <Loader2 className="w-4 h-4 animate-spin inline-block align-[-3px] mr-2" />}
                     {busy ? "Emetto il documento…" : `Emetti il DDT (${totPezzi})`}
-                </button>
-            </div>
-        </div>
-    );
-}
-
-function Carico({ negozi, aziende, utente, dopo }: { negozi: string[]; aziende: string[]; utente: string; dopo: () => void }) {
-    const [descrizione, setDescrizione] = useState(""); const [codice, setCodice] = useState("");
-    const [negozio, setNegozio] = useState(""); const [azienda, setAzienda] = useState("");
-    const [valore, setValore] = useState(""); const [tipo, setTipo] = useState("imei");
-    const [seriali, setSeriali] = useState(""); const [busy, setBusy] = useState(false);
-    const salva = async () => {
-        const lista = seriali.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
-        if (!descrizione.trim() || !negozio || !lista.length) return;
-        setBusy(true);
-        const v = valore.trim() === "" ? null : Number(valore.replace(",", "."));
-        const { error } = await supabase.from("mag_unita").insert(lista.map(s => ({
-            seriale: s, tipo_seriale: tipo, codice: codice.trim() || null, descrizione: descrizione.trim(),
-            azienda: azienda || null, negozio, valore: v, caricato_da: utente,
-            storia: [{ quando: new Date().toISOString(), evento: "📥 Carico", negozio, operatore: utente }],
-        })));
-        setBusy(false);
-        if (error) { alert("Carico non riuscito: " + error.message); return; }
-        dopo();
-    };
-    return (
-        <div className="rvBox">
-            <div className="rvBoxT">📥 Carico merce</div>
-            <div className="rvBarra">
-                <label className="rvCampo rvCampo-flex"><span className="rvLab">Descrizione articolo</span>
-                    <input value={descrizione} onChange={e => setDescrizione(e.target.value)} placeholder='es. "iPhone 15 128GB Nero"' className="rvIn" /></label>
-                <label className="rvCampo rvCampo-xs"><span className="rvLab">Codice</span>
-                    <input value={codice} onChange={e => setCodice(e.target.value)} className="rvIn" /></label>
-                <div className="rvCampo rvCampo-md"><span className="rvLab">Negozio</span>
-                    <SelectOpzioni className="rvIn" value={negozio} onChange={setNegozio}
-                        opzioni={negozi} placeholder="scegli il negozio…" /></div>
-                <div className="rvCampo rvCampo-sm"><span className="rvLab">Azienda</span>
-                    <SelectOpzioni className="rvIn" value={azienda} onChange={setAzienda}
-                        opzioni={Array.from(new Set([...aziende, "T1", "T2"]))} placeholder="—" /></div>
-                <label className="rvCampo rvCampo-xs"><span className="rvLab">Valore unitario €</span>
-                    <input value={valore} onChange={e => setValore(e.target.value)} className="rvIn" /></label>
-            </div>
-            {/* TRE VOCI E UNA SOLA VALIDA: una tendina si può svuotare, e un
-                carico senza tipo di seriale finirebbe a DB con il campo vuoto.
-                Le pastiglie non hanno lo stato «niente» (regola 7). */}
-            {/* `.rvCampo`, non un <div> nudo: `.rvLab` ha `margin-bottom`, e su
-                uno <span> INLINE quel margine non si applica — era l'unica
-                etichetta della pagina attaccata al suo controllo. */}
-            <div className="rvCampo mt-3">
-                <span className="rvLab">Tipo seriale</span>
-                <div className="rvPillRow">
-                    {([["imei", "IMEI"], ["sim", "SIM (ICCID)"], ["seriale", "Seriale"]] as const).map(([k, l]) => (
-                        <button key={k} onClick={() => setTipo(k)} className={cn("rvPill rvPill-sm", tipo === k && "rvPill-on")}>{l}</button>
-                    ))}
-                </div>
-            </div>
-            <label className="rvCampo mt-3"><span className="rvLab">Seriali <span className="rvLabX">(uno per riga — spara pure col lettore barcode)</span></span>
-                <textarea value={seriali} onChange={e => setSeriali(e.target.value)} rows={5} className="rvIn font-mono" /></label>
-            <div className="rvBarra rvBarra-c mt-3 justify-end">
-                <button onClick={salva} disabled={busy || !descrizione.trim() || !negozio || !seriali.trim()} className="rvAzione">
-                    {busy ? "Carico…" : "Carica le unità"}
                 </button>
             </div>
         </div>
