@@ -6171,7 +6171,21 @@ function CRM() {
           if(!(unit>0))continue;
           const q=Math.max(1,Number(op.quantita||1));
           const coeff=_ceBundleCoeff??0;
-          push(String(op.nome).trim(),true,{qty:q,price:unit,importo:Math.round(unit*q*100)/100,margin:Math.round(unit*coeff*100)/100,totalMargin:Math.round(unit*q*coeff*100)/100,priceLocked:true,priceRequired:false,bundle:true});
+          /* ⚠️ IL BUNDLE NON ESCE SULLO SCONTRINO (Luca 03/09). «Bundle è
+             possibile metterli solamente nel momento in cui faccio un
+             finanziamento, per cui la teoria dice che quell'importo dovrebbe
+             sommarsi all'importo del finanziamento… però attualmente dammi la
+             possibilità di registrarli per tenerne traccia in termini di
+             marginalità, ma fai sì che sullo scontrino non esca l'importo, e
+             non deve di conseguenza chiedermi come ho incassato».
+             Quindi: la voce resta nel carrello — il margine e il commissioning
+             la vogliono — ma `fuoriScontrino` la toglie da `buildScontrinoItems`,
+             cioè dal documento, dal «da incassare» e dalla domanda del
+             pagamento. Il salvataggio invece la prende (usa `margItems` intero),
+             quindi in marginalità e in analisi c'è.
+             Il giorno che si deciderà di sommarla al finanziato, si toglie
+             questa riga: il resto è già pronto. */
+          push(String(op.nome).trim(),true,{qty:q,price:unit,importo:Math.round(unit*q*100)/100,margin:Math.round(unit*coeff*100)/100,totalMargin:Math.round(unit*q*coeff*100)/100,priceLocked:true,priceRequired:false,bundle:true,fuoriScontrino:true});
         }
       }
       // KIPOINT (cantiere CE 07/08): spedizioni/ritiri = servizi che vivono in
@@ -8962,14 +8976,22 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
             const contrib=(m)=>{if(m.totalMargin!=null)return Number(m.totalMargin);const q=Number(m.qty)||1;if(m.margin!=null)return Number(m.margin)*q;return Number(m.importo)||0;};
             const val=margItems.reduce((t,m)=>t+contrib(m),0);
             const tel=margItems.filter(m=>m.priceLocked&&(m.totalMargin!=null||m.margin!=null));
-            const telListino=tel.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);
+            /* ⚠️ `importo` È GIÀ IL TOTALE (unità × quantità), come dice il
+               commento tre righe sopra — e come lo scrive chi spinge la voce:
+               il bundle fa `importo: unit*q`. Qui si rimoltiplicava per la
+               quantità, e tre bundle da 99,99 diventavano 899,91 invece di
+               299,97: lo stesso «×qtà al quadrato» già corretto il 07/08 due
+               righe più su, su una riga che era rimasta indietro. */
+            const telListino=tel.reduce((t,m)=>t+(Number(m.importo)||0),0);
             return (
             <div className="cart-val" style={{marginTop:8,background:"var(--tf-w160)",border:"1px solid var(--tf-w250)",borderRadius:10,padding:"9px 14px"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <span style={{color:"var(--tf-w750)",fontSize:11,fontWeight:800,letterSpacing:.6}}>💰 VALORE CARRELLO (margine)</span>
                 <span className="cart-valv" style={{color:"#fff",fontWeight:900,fontSize:21}}>€ {val.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
               </div>
-              {tel.length>0&&<div style={{fontSize:10,color:"var(--tf-w600)",fontWeight:700,marginTop:2,textAlign:"right"}}>telefoni a listino € {telListino.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})} → il margine è nel valore</div>}
+              {/* «valore a listino», non «telefoni»: qui dentro ci finiscono
+                  anche i bundle, che telefoni non sono. */}
+              {tel.length>0&&<div style={{fontSize:10,color:"var(--tf-w600)",fontWeight:700,marginTop:2,textAlign:"right"}}>valore a listino € {telListino.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})} → il margine è nel valore</div>}
             </div>);})()}
 
         </div>
@@ -9005,7 +9027,14 @@ paystore:mi.paystore?{operatore:mi.paystore.operatore,numero:mi.paystore.numero|
                         {m.fontePrezzo==="listino"&&<span className="rvBadge rvBadge-ok rvBadge-mini" title="prezzo e margine dal listino ufficiale del brand">💰 LISTINO</span>}
                         {m.fontePrezzo==="magazzino"&&<span className="rvBadge rvBadge-warn rvBadge-mini" title="il listino del brand non copre questo modello: prezzo del pezzo a magazzino, modificabile">🏬 MAGAZZINO</span>}
                         {m.fontePrezzo==="usato"&&<span className="rvBadge rvBadge-empty rvBadge-mini" title="è un telefono usato: il prezzo lo fa il negozio">♻️ USATO</span>}</div>
-                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)",whiteSpace:"nowrap"}}>€ {Number(m.importo||0).toFixed(2)}{(m.totalMargin!=null||m.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → marg. € {Number(m.totalMargin??m.margin).toFixed(2)}</span>:null}</div>
+                      {/* CON PIÙ PEZZI SI DICE ANCHE QUANTO COSTA UNO (Luca 03/09:
+                          «anziché darmi 99,99 euro x 3 mi dà 299,97 x 3»). L'importo
+                          è il TOTALE e accanto c'era «x3»: si leggeva come un prezzo
+                          unitario moltiplicato ancora. Adesso c'è scritto «99,99
+                          cad.» e il dubbio non si pone.
+                          E se la voce non finisce sullo scontrino, lo dice: sono
+                          soldi che il cliente non paga alla cassa. */}
+                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)",whiteSpace:"nowrap"}}>{(Number(m.qty)||1)>1&&m.price!=null?<span style={{color:"var(--tf-64748b)",fontWeight:600}}>{Number(m.price).toFixed(2)} cad. → </span>:null}€ {Number(m.importo||0).toFixed(2)}{m.fuoriScontrino?<span style={{color:"var(--tf-fbbf24)",fontWeight:800}} title="registrato per la marginalità: non esce sullo scontrino e non si incassa alla cassa"> · fuori scontrino</span>:null}{(m.totalMargin!=null||m.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → marg. € {Number(m.totalMargin??m.margin).toFixed(2)}</span>:null}</div>
                       :m.prezzoModificabile===false?<div style={{fontSize:10.5,fontWeight:800,color:"var(--tf-e2e8f0)",whiteSpace:"nowrap"}}>🔒 € {Number(m.importo??0).toFixed(2)}</div>
                       :(m.auto||m.priceRequired||m.linked||m.natura)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
                         <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
