@@ -28,12 +28,26 @@
  * società escono DUE documenti, uno per partita IVA: è la stessa regola che
  * vale per i trasferimenti e per gli scontrini, e non è una complicazione
  * nostra — è che un documento di trasporto ha un solo mittente fiscale.
+ *
+ * ── QUI NON SI SCRIVE A MAGAZZINO ──────────────────────────────────────────
+ * Questa schermata RACCOGLIE e basta: alla fine chiama `mag_carico_merce`, che
+ * fa tutto in una transazione sola. La prima versione scriveva da qui, in
+ * quattro o cinque colpi, e la revisione ostile ha misurato dove finiva:
+ *  · un documento nato e le sue righe fallite = un protocollo bruciato e un
+ *    documento che nessun bottone può più chiudere;
+ *  · la prima società passata e la seconda no = un riprova che raddoppiava le
+ *    quantità della prima.
+ * E soprattutto: le righe con i seriali si scrivevano tutte insieme, con gli
+ * IMEI separati da virgola. Per il resto del gestionale un seriale vuol dire
+ * UN pezzo (`pezziDi()`), quindi cinque telefoni contavano uno e
+ * all'accettazione sparivano. Adesso una riga di documento è UN pezzo, e il
+ * pezzo nasce insieme al documento.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectOpzioni } from "@/components/SelectPersona";
-import { PackagePlus, Search, Trash2, Plus } from "lucide-react";
+import { PackagePlus, Trash2, Plus } from "lucide-react";
 
 const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 const eur = (n: number | null | undefined) => n == null ? "—"
@@ -41,6 +55,15 @@ const eur = (n: number | null | undefined) => n == null ? "—"
 
 /** L'ufficio è il punto di partenza della merce: caricare LÌ non muove niente. */
 const UFFICIO = "Ufficio";
+
+/** Come si chiama il numero che sta addosso al pezzo. Il vecchio carico lo
+ *  faceva scegliere e aveva ragione: un ICCID marcato «imei» è una bugia che
+ *  poi va a finire sulla scheda del pezzo e nella sua storia. */
+const TIPI_SERIALE = [
+    { v: "imei", et: "IMEI", nota: "telefoni" },
+    { v: "iccid", et: "ICCID", nota: "SIM" },
+    { v: "seriale", et: "Seriale", nota: "tutto il resto" },
+];
 
 type ArticoloTrovato = {
     codice: string; descrizione: string; barcode: string | null;
@@ -52,15 +75,22 @@ type Riga = {
     chiave: string;
     codice: string;
     descrizione: string;
-    haImei: boolean;
-    /** quanti pezzi: sui serializzati è il numero di seriali inseriti */
+    /** come si conta QUESTA riga. Parte da `mag_articoli.ha_imei`, ma si può
+     *  cambiare: l'anagrafica non sa tutto (v. `unoPerUno` più sotto). */
+    unoPerUno: boolean;
+    /** com'era in anagrafica, per accorgersi quando l'operatore la corregge */
+    haImeiInAnagrafica: boolean;
+    tipoSeriale: string;
     quantita: number;
     seriali: string[];
     costo: number | null;
     azienda: string;
 };
 
-export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo, chiudi }: {
+/* `utente` non si legge più da qui, ed è voluto: chi ha caricato la merce lo
+   scrive il database, prendendolo dalla sessione firmata. Il nome che arriva
+   dal browser è un nome che il browser può cambiare. */
+export default function CaricoMerce({ negozi, aziende, nomiAzienda, dopo, chiudi }: {
     negozi: string[]; aziende: string[]; nomiAzienda: Record<string, string>;
     utente: string; dopo: () => void; chiudi: () => void;
 }) {
@@ -74,6 +104,40 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
     /* IN UFFICIO NON NASCE NESSUN DOCUMENTO: la merce è già lì, non si sta
        trasportando niente. È la regola che Luca ha dato in una riga sola. */
     const inUfficio = negozio === UFFICIO;
+
+    /* ═══ LE SOCIETÀ CHE HANNO UNA CASSA IN QUEL NEGOZIO ════════════════════
+       Non tutte le società stanno in tutti i negozi: a Garbatella e Promontori
+       c'è solo Telefutura 2. Caricare lì merce dell'altra società vuol dire
+       che il giorno che la si vende la riga ESCE dallo scontrino in silenzio —
+       il server la scarta con «non ha un registratore in questo negozio».
+       Meglio non fargliela nemmeno scegliere.
+       In UFFICIO invece non si vende: lì entra la merce di tutte e due. */
+    const [casse, setCasse] = useState<string[] | null>(null);
+    useEffect(() => {
+        if (!negozio || inUfficio) { setCasse(null); return; }
+        let vivo = true;
+        (async () => {
+            const { data } = await supabase.from("pos_rt").select("azienda").eq("negozio", negozio);
+            if (vivo) setCasse(Array.from(new Set((data ?? []).map((r: { azienda: string }) => r.azienda).filter(Boolean))));
+        })();
+        return () => { vivo = false; };
+    }, [negozio, inUfficio]);
+
+    /* IL RIPIEGO CONTA: a magazzino vuoto `aziende` è vuoto, e senza ripiego
+       al passo 3 non ci sarebbe nessun bottone da premere — proprio nel caso
+       che il messaggio delle Giacenze pubblicizza («il primo carico si fa
+       qui»). */
+    const aziendeDelNegozio = useMemo(() => {
+        const tutte = Array.from(new Set([...aziende.filter(Boolean), "T1", "T2"]));
+        return casse?.length ? tutte.filter(a => casse.includes(a)) : tutte;
+    }, [aziende, casse]);
+    const aziendaDiDefault = aziendeDelNegozio.length === 1 ? aziendeDelNegozio[0] : "";
+
+    /* Cambiare negozio può togliere di mezzo una società: le righe che la
+       portavano restano senza, e il passo 3 lo dice. */
+    useEffect(() => {
+        setRighe(r => r.map(x => x.azienda && !aziendeDelNegozio.includes(x.azienda) ? { ...x, azienda: "" } : x));
+    }, [aziendeDelNegozio]);
 
     /* ═══ PASSO 2 — LA RICERCA DEGLI ARTICOLI ═══════════════════════════════
        Non si può tenere in pagina un catalogo da 17.000 voci: si cerca sul
@@ -89,25 +153,28 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
         let vivo = true;
         setCercando(true);
         const t = setTimeout(async () => {
-            const { data } = await supabase.from("mag_articoli")
+            /* le virgole e le parentesi spezzerebbero il filtro `or`: dentro
+               una ricerca scritta a mano ci finisce di tutto */
+            const s = q.replace(/[,()\\]/g, " ").trim();
+            const { data, error } = await supabase.from("mag_articoli")
                 .select("codice,descrizione,barcode,ha_imei,prezzo,costo_ultimo,gruppo,marca,reparto")
-                .or(`descrizione.ilike.%${q}%,codice.ilike.%${q}%,barcode.ilike.%${q}%`)
+                .or(`descrizione.ilike.%${s}%,codice.ilike.%${s}%,barcode.ilike.%${s}%`)
                 .eq("attivo", true).limit(40);
             if (!vivo) return;
             const lista = (data ?? []) as ArticoloTrovato[];
-            setTrovati(lista); setNessuno(!lista.length); setCercando(false);
+            /* SE LA RICERCA FALLISCE NON SI DICE «non esiste»: proporre di
+               creare un articolo che magari c'è già è il modo più veloce per
+               ritrovarsi due codici per lo stesso prodotto. */
+            setTrovati(lista); setNessuno(!error && !lista.length); setCercando(false);
         }, 250);
         return () => { vivo = false; clearTimeout(t); };
     }, [cerca]);
 
-    /** La società di partenza: quella del negozio scelto, se ne ha una sola. */
-    const aziendeDelNegozio = useMemo(() => aziende.filter(Boolean), [aziende]);
-    const aziendaDiDefault = aziendeDelNegozio.length === 1 ? aziendeDelNegozio[0] : "";
-
     const aggiungi = (a: ArticoloTrovato) => {
         setRighe(r => [...r, {
             chiave: `${a.codice}|${Date.now()}|${Math.random().toString(36).slice(2, 7)}`,
-            codice: a.codice, descrizione: a.descrizione, haImei: !!a.ha_imei,
+            codice: a.codice, descrizione: a.descrizione,
+            unoPerUno: !!a.ha_imei, haImeiInAnagrafica: !!a.ha_imei, tipoSeriale: "imei",
             quantita: a.ha_imei ? 0 : 1, seriali: [],
             costo: a.costo_ultimo, azienda: aziendaDiDefault,
         }]);
@@ -121,24 +188,39 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
        Luca: «se un articolo non esiste e non lo trova nella lista, gli chiede:
        lo vuoi creare? E procede alla creazione come se il flusso partisse da
        lì». Un carico che si interrompe per andare in un'altra schermata è un
-       carico che non si fa. */
-    const [nuovo, setNuovo] = useState<{ codice: string; descrizione: string; haImei: boolean; costo: string; prezzo: string } | null>(null);
+       carico che non si fa.
+
+       IL REPARTO IVA È OBBLIGATORIO, e non è una formalità: un articolo senza
+       reparto, il giorno che lo si vende, ESCE dallo scontrino — il server lo
+       scarta con «reparto IVA non assegnato». Merce venduta, riga assente. */
+    const [reparti, setReparti] = useState<{ reparto: number; descrizione: string }[]>([]);
+    useEffect(() => {
+        supabase.from("pos_reparti").select("reparto,descrizione").eq("attivo", true).order("reparto")
+            .then(({ data }) => setReparti((data ?? []) as { reparto: number; descrizione: string }[]));
+    }, []);
+
+    const [nuovo, setNuovo] = useState<{ codice: string; descrizione: string; haImei: boolean; costo: string; prezzo: string; reparto: string } | null>(null);
     const creaArticolo = async () => {
-        if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim()) return;
-        setBusy(true);
-        const a = {
-            codice: nuovo.codice.trim().toUpperCase(),
-            descrizione: nuovo.descrizione.trim(),
-            ha_imei: nuovo.haImei,
-            costo_ultimo: nuovo.costo.trim() ? Number(nuovo.costo.replace(",", ".")) : null,
-            prezzo: nuovo.prezzo.trim() ? Number(nuovo.prezzo.replace(",", ".")) : null,
-            attivo: true, fonte: "carico merce",
-        };
-        const { error } = await supabase.from("mag_articoli").insert(a);
+        if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !nuovo.reparto) return;
+        setBusy(true); setEsito(null);
+        const num = (s: string) => s.trim() ? Number(s.replace(",", ".")) : null;
+        /* PASSA DAL DATABASE, non dal browser: su `mag_articoli` chi è loggato
+           ha il permesso di LEGGERE e basta — l'insert dal browser falliva
+           sempre, per chiunque, admin compreso. E il ruolo si controlla di là,
+           dove non si può mentire su chi si è. */
+        const { data, error } = await supabase.rpc("mag_crea_articolo", {
+            p_codice: nuovo.codice.trim(),
+            p_descrizione: nuovo.descrizione.trim(),
+            p_reparto: Number(nuovo.reparto),
+            p_ha_imei: nuovo.haImei,
+            p_costo: num(nuovo.costo),
+            p_prezzo: num(nuovo.prezzo),
+        });
         setBusy(false);
         if (error) { setEsito({ ok: false, testo: "Articolo non creato: " + error.message }); return; }
-        aggiungi({ ...a, barcode: null, gruppo: null, marca: null, reparto: null } as ArticoloTrovato);
-        setNuovo(null);
+        const a = data as { codice: string; descrizione: string; ha_imei: boolean; costo_ultimo: number | null };
+        aggiungi({ ...a, barcode: null, gruppo: null, marca: null, reparto: Number(nuovo.reparto), prezzo: null } as ArticoloTrovato);
+        setNuovo(null); setCerca("");
     };
 
     /* ═══ PASSO 3 — DI CHI È LA MERCE ═══════════════════════════════════════
@@ -153,7 +235,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
     };
 
     /* ═══ QUANTI PEZZI, E QUANTO VALGONO ════════════════════════════════════ */
-    const pezziDi = (r: Riga) => r.haImei ? r.seriali.length : (Number(r.quantita) || 0);
+    const pezziDi = (r: Riga) => r.unoPerUno ? r.seriali.length : (Number(r.quantita) || 0);
     const totPezzi = righe.reduce((a, r) => a + pezziDi(r), 0);
     const totValore = righe.reduce((a, r) => a + pezziDi(r) * (Number(r.costo) || 0), 0);
     const perSocieta = useMemo(() => {
@@ -168,8 +250,8 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
         if (!negozio) out.push("scegli dove sta entrando la merce");
         if (!righe.length) out.push("aggiungi almeno un articolo");
         righe.forEach(r => {
-            if (r.haImei && !r.seriali.length) out.push(`«${r.descrizione}» vuole gli IMEI: non ne hai inserito nessuno`);
-            if (!r.haImei && pezziDi(r) <= 0) out.push(`«${r.descrizione}»: quanti pezzi?`);
+            if (r.unoPerUno && !r.seriali.length) out.push(`«${r.descrizione}» si conta uno per uno: non hai inserito nessun numero`);
+            if (!r.unoPerUno && pezziDi(r) <= 0) out.push(`«${r.descrizione}»: quanti pezzi?`);
             if (!r.azienda) out.push(`«${r.descrizione}»: di quale società è?`);
         });
         /* GLI STESSI SERIALI DUE VOLTE non sono due pezzi: sono un errore di
@@ -180,103 +262,50 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
         return out;
     }, [negozio, righe]);
 
-    /* ═══ LA CONFERMA ═══════════════════════════════════════════════════════ */
+    /* ═══ LA CONFERMA — una chiamata sola ═══════════════════════════════════ */
     const conferma = useCallback(async () => {
         if (manca.length || busy) return;
         setBusy(true); setEsito(null);
-        try {
-            /* I SERIALI GIÀ IN CASA si fermano qui: due pezzi con lo stesso
-               IMEI sono un pezzo contato due volte, e da lì in poi il magazzino
-               non torna più. */
-            const tuttiSer = righe.flatMap(r => r.seriali);
-            if (tuttiSer.length) {
-                const { data: gia } = await supabase.from("mag_unita").select("seriale").in("seriale", tuttiSer);
-                const esistono = (gia ?? []).map((x: { seriale: string }) => x.seriale);
-                if (esistono.length) {
-                    setEsito({ ok: false, testo: `Questi seriali sono già a magazzino: ${esistono.slice(0, 5).join(", ")}${esistono.length > 5 ? "…" : ""}. Il carico non è partito.` });
-                    setBusy(false); return;
-                }
-            }
+        const { data, error } = await supabase.rpc("mag_carico_merce", {
+            p_negozio: negozio,
+            p_con_accettazione: !inUfficio && conAccettazione,
+            p_righe: righe.map(r => ({
+                codice: r.codice, descrizione: r.descrizione, azienda: r.azienda,
+                costo: r.costo, tipo_seriale: r.tipoSeriale,
+                ...(r.unoPerUno ? { seriali: r.seriali } : { quantita: pezziDi(r) }),
+            })),
+        });
+        setBusy(false);
+        if (error) { setEsito({ ok: false, testo: error.message }); return; }
 
-            const documenti: string[] = [];
-            for (const [az, gruppo] of Object.entries(perSocieta)) {
-                let ddtId: string | null = null;
-                let numero: number | null = null;
+        const r = data as { pezzi: number; documenti: { numero: number; azienda: string }[] };
+        const docs = (r.documenti || []).map(d => `n.${d.numero} (${nomiAzienda[d.azienda] || d.azienda})`).join(" e ");
 
-                /* IL DOCUMENTO NASCE SOLO SE LA MERCE SI SPOSTA. In ufficio la
-                   merce è già dov'è: non c'è nessun trasporto da documentare. */
-                if (!inUfficio) {
-                    const { data: d, error: eD } = await supabase.from("mag_ddt").insert({
-                        da_negozio: UFFICIO, a_negozio: negozio,
-                        azienda_da: az, azienda_a: az,
-                        tipo: "trasferimento",
-                        stato: conAccettazione ? "in_transito" : "accettato",
-                        causale: conAccettazione
-                            ? "Carico merce dall'ufficio — in attesa di accettazione"
-                            : "Carico merce dall'ufficio — consegnata",
-                        creato_da: utente,
-                        ...(conAccettazione ? {} : { accettato_da: utente, accettato_il: new Date().toISOString() }),
-                    }).select("id, numero").single();
-                    if (eD || !d) throw new Error("documento non creato: " + (eD?.message || ""));
-                    ddtId = (d as { id: string }).id;
-                    numero = (d as { numero: number }).numero;
-                    documenti.push(`n.${numero} (${nomiAzienda[az] || az})`);
+        /* L'ANAGRAFICA IMPARA DA QUELLO CHE È SUCCESSO. Il flag `ha_imei` l'ho
+           dedotto dalla storia: chi non aveva storia è rimasto a «si conta a
+           quantità», e chi aveva tutte e due le forme è rimasto a «uno per
+           uno». Se l'operatore ha corretto la riga, la correzione vale anche
+           per la prossima volta — se no la ricorregge ogni volta a mano.
+           Se la scrittura non passa non è un guaio: la merce è entrata, e
+           questo è solo un promemoria per il carico successivo. */
+        const daImparare = righe.filter(x => x.unoPerUno !== x.haImeiInAnagrafica);
+        if (daImparare.length) {
+            await Promise.all(Array.from(new Set(daImparare.map(x => x.codice))).map(cod => {
+                const v = daImparare.find(x => x.codice === cod)!.unoPerUno;
+                return supabase.from("mag_articoli").update({ ha_imei: v }).eq("codice", cod);
+            })).catch(() => {});
+        }
 
-                    const righeDoc = gruppo.map((r, i) => ({
-                        ddt_id: ddtId, riga: i + 1, codice: r.codice, descrizione: r.descrizione,
-                        quantita: pezziDi(r), seriale: r.haImei ? r.seriali.join(", ") : null,
-                        valore_unitario: r.costo,
-                        negozio_da: UFFICIO, negozio_a: negozio, azienda_da: az, azienda_a: az,
-                        stato: conAccettazione ? "in_viaggio" : "accettata",
-                    }));
-                    const { error: eR } = await supabase.from("mag_ddt_righe").insert(righeDoc);
-                    if (eR) throw new Error("righe del documento: " + eR.message);
-                }
-
-                /* ⚠️ LA MERCE ENTRA SOLO SE È GIÀ ARRIVATA. Col flag
-                   dell'accettazione resta appesa al documento e il negozio la
-                   prende in carico dai Trasferimenti: caricarla adesso vorrebbe
-                   dire averla a scaffale prima che qualcuno l'abbia vista. */
-                if (!conAccettazione || inUfficio) {
-                    const conImei = gruppo.filter(r => r.haImei);
-                    const aQta = gruppo.filter(r => !r.haImei);
-                    if (conImei.length) {
-                        const unita = conImei.flatMap(r => r.seriali.map(s => ({
-                            seriale: s, tipo_seriale: "imei", codice: r.codice, descrizione: r.descrizione,
-                            azienda: az, negozio, valore: r.costo, stato: "disponibile",
-                            caricato_da: utente, ddt_id: ddtId,
-                            storia: [{ quando: new Date().toISOString(), evento: "carico", negozio, operatore: utente,
-                                note: inUfficio ? "carico merce in ufficio" : `carico merce dall'ufficio${numero ? ` — DDT n.${numero}` : ""}` }],
-                        })));
-                        const { error } = await supabase.from("mag_unita").insert(unita);
-                        if (error) throw new Error("pezzi con seriale: " + error.message);
-                    }
-                    if (aQta.length) {
-                        const mov = aQta.map(r => ({
-                            codice: r.codice, negozio, azienda: az, tipo: "carico",
-                            quantita: pezziDi(r), costo_unitario: r.costo, operatore: utente,
-                            ddt_id: ddtId,
-                            nota: inUfficio ? "carico merce in ufficio" : `carico merce dall'ufficio${numero ? ` — DDT n.${numero}` : ""}`,
-                        }));
-                        const { error } = await supabase.from("mag_movimenti").insert(mov);
-                        if (error) throw new Error("movimenti di magazzino: " + error.message);
-                    }
-                }
-            }
-
-            setEsito({
-                ok: true,
-                testo: inUfficio
-                    ? `Caricati ${totPezzi} pezzi in ufficio.`
-                    : conAccettazione
-                        ? `${totPezzi} pezzi in viaggio verso ${negozio}. Documenti ${documenti.join(" e ")}: il negozio li trova in Trasferimenti e deve accettarli.`
-                        : `Caricati ${totPezzi} pezzi a ${negozio}, già a scaffale. Documenti ${documenti.join(" e ")}.`,
-            });
-            setRighe([]); setPasso(1); dopo();
-        } catch (e) {
-            setEsito({ ok: false, testo: (e as Error)?.message || "carico non riuscito" });
-        } finally { setBusy(false); }
-    }, [manca, busy, righe, perSocieta, negozio, inUfficio, conAccettazione, utente, nomiAzienda, totPezzi, dopo]);
+        setEsito({
+            ok: true,
+            testo: inUfficio
+                ? `Caricati ${r.pezzi} pezzi in ufficio.`
+                : conAccettazione
+                    ? `${r.pezzi} pezzi in viaggio verso ${negozio}. Document${docs.includes(" e ") ? "i" : "o"} ${docs}: il negozio li trova in Trasferimenti e deve accettarli.`
+                    : `Caricati ${r.pezzi} pezzi a ${negozio}, già a scaffale. Document${docs.includes(" e ") ? "i" : "o"} ${docs}.`,
+        });
+        setRighe([]); setSpuntate(new Set()); setPasso(1); dopo();
+    }, [manca, busy, righe, negozio, inUfficio, conAccettazione, nomiAzienda, dopo]);
 
     /* ═══ IL DISEGNO ════════════════════════════════════════════════════════ */
     const PASSI = [
@@ -324,6 +353,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
                             La merce parte sempre dall&apos;ufficio. Se la stai caricando in un negozio,
                             nasce un <b>documento di trasporto</b> — uno per società — che il negozio ritrova in Trasferimenti.
                             {negozio && inUfficio && <> Qui invece stai caricando <b>in ufficio</b>: nessun documento, la merce è già dov&apos;è.</>}
+                            {negozio && !inUfficio && casse?.length === 1 && <> A {negozio} c&apos;è solo la cassa di <b>{nomiAzienda[casse[0]] || casse[0]}</b>: la merce entra tutta lì.</>}
                         </div>
                     </div>
                     <div className="rvBarra rvBarra-c mt-3 justify-end">
@@ -363,7 +393,7 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
                         <div className="rvNota rvNota-att mt-2">
                             <div className="rvNota-t">Nessun articolo con «{cerca}»</div>
                             <div className="rvNota-s">Se non esiste ancora, puoi crearlo adesso senza uscire dal carico.</div>
-                            <button onClick={() => setNuovo({ codice: "", descrizione: cerca, haImei: false, costo: "", prezzo: "" })}
+                            <button onClick={() => setNuovo({ codice: "", descrizione: cerca, haImei: false, costo: "", prezzo: "", reparto: "" })}
                                 className="rvPill rvPill-sm mt-2">➕ Crea l&apos;articolo</button>
                         </div>
                     )}
@@ -381,14 +411,20 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
                                 <label className="rvCampo rvCampo-xs"><span className="rvLab">Prezzo €</span>
                                     <input value={nuovo.prezzo} onChange={e => setNuovo({ ...nuovo, prezzo: e.target.value })} className="rvIn" /></label>
                             </div>
-                            <div className="rvCampo mt-2"><span className="rvLab">Ogni pezzo ha il suo IMEI?</span>
+                            <div className="rvBarra mt-2">
+                                <div className="rvCampo rvCampo-md"><span className="rvLab">Reparto IVA <span className="rvLabX">(senza, l&apos;articolo non esce sullo scontrino)</span></span>
+                                    <SelectOpzioni className="rvIn" value={nuovo.reparto}
+                                        onChange={v => setNuovo({ ...nuovo, reparto: String(v || "").split(" ·")[0] })}
+                                        opzioni={reparti.map(r => `${r.reparto} · ${r.descrizione}`)} placeholder="scegli…" /></div>
+                            </div>
+                            <div className="rvCampo mt-2"><span className="rvLab">Ogni pezzo ha il suo numero (IMEI, ICCID…)?</span>
                                 <div className="rvPillRow">
                                     <button onClick={() => setNuovo({ ...nuovo, haImei: false })} className={cn("rvPill rvPill-sm", !nuovo.haImei && "rvPill-on")}>No, si conta a quantità</button>
                                     <button onClick={() => setNuovo({ ...nuovo, haImei: true })} className={cn("rvPill rvPill-sm", nuovo.haImei && "rvPill-on")}>Sì, uno per uno</button>
                                 </div>
                             </div>
                             <div className="rvPillRow mt-2">
-                                <button onClick={creaArticolo} disabled={busy || !nuovo.codice.trim() || !nuovo.descrizione.trim()} className="rvAzione rvAzione-sm">Crea e aggiungi</button>
+                                <button onClick={creaArticolo} disabled={busy || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !nuovo.reparto} className="rvAzione rvAzione-sm">Crea e aggiungi</button>
                                 <button onClick={() => setNuovo(null)} className="rvPill rvPill-sm">Annulla</button>
                             </div>
                         </div>
@@ -402,11 +438,35 @@ export default function CaricoMerce({ negozi, aziende, nomiAzienda, utente, dopo
                                 <div key={r.chiave} className="rvDettR">
                                     <span className="rvTab-nome">{r.descrizione}</span>
                                     <span className="rvTab-cod">{r.codice}</span>
-                                    {r.haImei ? (
-                                        <label className="rvCampo rvCampo-flex"><span className="rvLab">IMEI <span className="rvLabX">(uno per riga)</span></span>
-                                            <textarea rows={3} className="rvIn font-mono"
-                                                value={r.seriali.join("\n")}
-                                                onChange={e => cambia(r.chiave, { seriali: e.target.value.split(/[\n,;\s]+/).map(s => s.trim()).filter(Boolean) })} /></label>
+
+                                    {/* COME SI CONTA QUESTA RIGA. L'anagrafica propone, l'operatore
+                                        decide: `ha_imei` l'ho dedotto dalla storia dei pezzi, e la
+                                        storia non sa tutto — un articolo nuovo non ce l'ha, e 23
+                                        articoli hanno tutte e due le forme (telefoni a IMEI e
+                                        accessori a quantità sotto lo stesso codice). Senza questo
+                                        interruttore quei carichi non si potevano proprio fare. */}
+                                    <div className="rvPillRow">
+                                        <button onClick={() => cambia(r.chiave, { unoPerUno: false, seriali: [], quantita: r.quantita || 1 })}
+                                            className={cn("rvPill rvPill-sm", !r.unoPerUno && "rvPill-on")}>a quantità</button>
+                                        <button onClick={() => cambia(r.chiave, { unoPerUno: true, quantita: 0 })}
+                                            className={cn("rvPill rvPill-sm", r.unoPerUno && "rvPill-on")}>uno per uno</button>
+                                    </div>
+
+                                    {r.unoPerUno ? (
+                                        <>
+                                            <label className="rvCampo rvCampo-flex"><span className="rvLab">Numeri <span className="rvLabX">(uno per riga)</span></span>
+                                                <textarea rows={3} className="rvIn font-mono"
+                                                    value={r.seriali.join("\n")}
+                                                    onChange={e => cambia(r.chiave, { seriali: e.target.value.split(/[\n,;\s]+/).map(s => s.trim()).filter(Boolean) })} /></label>
+                                            <div className="rvCampo rvCampo-xs"><span className="rvLab">Che numero è</span>
+                                                <div className="rvPillRow">
+                                                    {TIPI_SERIALE.map(t => (
+                                                        <button key={t.v} onClick={() => cambia(r.chiave, { tipoSeriale: t.v })} title={t.nota}
+                                                            className={cn("rvPill rvPill-sm", r.tipoSeriale === t.v && "rvPill-on")}>{t.et}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </>
                                     ) : (
                                         <label className="rvCampo rvCampo-xs"><span className="rvLab">Quantità</span>
                                             <input type="number" min={1} className="rvQta" value={r.quantita || ""}
