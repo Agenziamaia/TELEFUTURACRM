@@ -39,3 +39,45 @@ export async function societaDelNegozio(negozio: string): Promise<Societa | null
     cache.set(chiave, s);
     return s;
 }
+
+/* ═══ COME SI CHIAMANO, IN BREVE ═══════════════════════════════════════════
+   Qui sopra c'è il dato COMPLETO, preso da `aziende`: ragione sociale, partita
+   IVA e sede, cioè quello che serve su un contratto. Ma su una colonna di
+   tabella «TELEFUTURA 2 S.R.L.» ruba settanta pixel per dire una cosa che si
+   dice in due parole, e la lettura ne soffre.
+
+   ⚠️ ED ERANO QUATTRO GRAFIE DIVERSE, nessuna che sapesse delle altre.
+   Censite il 03/09: «Telefutura S.R.L.» in Documenti, «Telefutura S.r.l.» nel
+   file degli usati che va al commercialista, «Telefutura» nel pannello
+   PayStore e in Contabilità, «Telefutura 2SRL» in Chiusura. Due esportazioni
+   della stessa giornata, destinate allo stesso tavolo, non si incrociavano con
+   un cerca-verticale.
+
+   ⚠️ E UNA DELLE QUATTRO VENIVA DA `pos_rt.ragione_sociale`, che NON è una
+   ragione sociale: è l'etichetta della cassa — «Telefutura (Custom) -
+   Merulana» — e su dieci righe di T1 nove hanno la partita IVA vuota.
+   Leggendo il nome da lì, per un giorno intero OGNI documento di tutti e dieci
+   i negozi di Telefutura ha mostrato «Telefutura (Custom) - Acilia».
+
+   Il nome corto di una società non è un dato che cambia: sta scritto qui. */
+
+/** Il nome corto, per gli schermi. */
+export const NOME_SOCIETA: Record<string, string> = {
+    T1: "Telefutura",
+    T2: "Telefutura 2",
+};
+
+/** Il nome per intero, per i file e i documenti che escono dall'azienda.
+ *  ⚠️ Queste grafie sono quelle già usate nei file mandati al commercialista:
+ *  cambiarle vorrebbe dire che il file di settembre non si incrocia con quelli
+ *  di agosto. Per l'anagrafica completa — partita IVA, sede — c'è `aziende`,
+ *  qui sopra: questa è solo la scritta. */
+export const RAGIONE_SOCIALE: Record<string, string> = {
+    T1: "Telefutura S.r.l.",
+    T2: "Telefutura 2 S.r.l.",
+};
+
+/** Il nome corto di un codice società. Un codice sconosciuto torna com'è: è
+ *  meglio vedere «T3» e chiedersi cos'è, che vedere il nome di un'altra. */
+export const nomeSocieta = (codice: string | null | undefined): string =>
+    codice ? (NOME_SOCIETA[codice] || codice) : "";

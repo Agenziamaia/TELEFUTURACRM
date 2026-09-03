@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { RAGIONE_SOCIALE } from "@/lib/societa";
 
 /* ═══ GLI USATI CHE CAMBIANO SOCIETÀ ═══════════════════════════════════════
    Luca 02/09: «noi compriamo i telefoni da una società e li vendiamo a
@@ -46,10 +47,15 @@ export const acquistoPerCommercialista = (v: number | null | undefined): number 
     return n > 0 ? Math.max(n, ACQUISTO_MINIMO) : null;
 };
 
-export const NOME_SOCIETA: Record<string, string> = {
-    T1: "Telefutura S.r.l.",
-    T2: "Telefutura 2 S.r.l.",
-};
+/* ⚠️ IL NOME DELLE SOCIETÀ STA IN UN POSTO SOLO, adesso: `@/lib/societa`.
+   Qui serve quello PER INTERO, perché questo file esce dall'azienda e va al
+   commercialista — e i valori sono gli stessi di prima, così il file di
+   settembre si incrocia con quelli già mandati. */
+/* ⚠️ IL NOME DELLE SOCIETÀ STA IN UN POSTO SOLO, adesso: `@/lib/societa`.
+   Qui serve quello PER INTERO, perché questo file esce dall'azienda e va al
+   commercialista — e i valori sono identici a prima, così il resoconto di
+   settembre si incrocia con quelli già mandati. */
+export const NOME_SOCIETA = RAGIONE_SOCIALE;
 
 export type RigaContabilita = {
     id: number;

@@ -2152,7 +2152,11 @@ html.light .rvTabBox{background:linear-gradient(180deg,#ffffff 0%,#f8f9ff 100%);
    prendono tutto e quella del contenuto crolla del 75%: una riga sola diventa
    alta mezza schermata. Con una larghezza minima il `rvTabBox` scorre — che e'
    la risposta onesta: meglio una barra che un testo spappolato. */
-.rvTab-large{min-width:920px}
+/* ⚠️ 7 COLONNE, NON PIÙ 6 (Documenti, 03/09: negozio e società separati). La
+   pastiglia della società non va a capo e prenota ~165px rigidi: lasciando
+   920px, tutto il taglio lo assorbiva la colonna del contenuto, cioè le
+   descrizioni degli articoli — proprio quella che si legge. */
+.rvTab-large{min-width:1060px}
 .rvTab thead th{padding:11px 14px;white-space:nowrap;font-size:10.5px;font-weight:800;letter-spacing:.75px;text-transform:uppercase;
   color:var(--tf-8892b0);background:var(--tf-w50);border-bottom:1px solid var(--tf-w80)}
 /* `html.light thead th` (riga ~601) è `!important`: senza !important qui

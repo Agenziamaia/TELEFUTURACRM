@@ -12,6 +12,7 @@
    rotta lo ricontrolla lato server, questa è solo la porta. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { NOME_SOCIETA } from "@/lib/societa";
 import { Loader2, RefreshCw, Download, ChevronLeft, Receipt, Smartphone, ChevronDown, Send } from "lucide-react";
 import { cn } from "@/utils";
 

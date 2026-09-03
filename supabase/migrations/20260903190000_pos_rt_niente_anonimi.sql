@@ -1,0 +1,17 @@
+-- ═══ LE CASSE NON SI LEGGONO SENZA ENTRARE ═════════════════════════════════
+-- Trovato il 03/09 dalla revisione indipendente su Documenti: `pos_rt` aveva
+-- una politica `pos_rt_anon_read` che concedeva SELECT al ruolo `anon` con
+-- condizione `true` — cioè chiunque avesse la chiave pubblica del CRM poteva
+-- leggere l'elenco completo dei registratori di cassa: negozio, società,
+-- partita IVA e `rt_url`, l'indirizzo a cui si parla col registratore.
+--
+-- ⚠️ LA GRAVITÀ È MINORE DI QUANTO SEMBRI, ed è giusto dirlo: gli indirizzi
+-- sono di rete interna (192.168.x) o identificatori del driver Custom, quindi
+-- da fuori non ci si arriva. Ma resta l'impianto dell'azienda — quali negozi
+-- esistono, quante casse hanno, sotto quale partita IVA — servito a chi non ha
+-- fatto login. Non c'è nessuna ragione perché sia leggibile: tutte e venti le
+-- letture di questa tabella nel codice avvengono da pagine autenticate o da
+-- rotte che usano la chiave di servizio.
+--
+-- Resta `tf_blindata`, che chiede un utente vero nel token.
+drop policy if exists "pos_rt_anon_read" on public.pos_rt;

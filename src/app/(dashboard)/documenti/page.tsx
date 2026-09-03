@@ -47,6 +47,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useVisibleStores, stessoMagazzino, negozioInValues } from "@/lib/visibleStores";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { FileDown, RefreshCw, Receipt, Loader2 } from "lucide-react";
+import { nomeSocieta } from "@/lib/societa";
 
 const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 /** Gli euro come li scrive il resto del CRM: col punto delle migliaia. Prima
@@ -474,30 +475,12 @@ function Documenti() {
        si distinguono per SOCIETÀ: che è quello che li separa davvero, visto
        che sono due partite IVA. */
     const [perAgente, setPerAgente] = useState<Record<string, { negozio: string; azienda: string }>>({});
-    const [nomiSoc, setNomiSoc] = useState<Record<string, string>>({});
     useEffect(() => {
-        supabase.from("pos_rt").select("negozio, azienda, agente, ragione_sociale, piva").then(({ data }) => {
+        supabase.from("pos_rt").select("negozio, azienda, agente").then(({ data }) => {
             const m: Record<string, { negozio: string; azienda: string }> = {};
-            const nomi: Record<string, string> = {};
-            ((data ?? []) as { negozio: string; azienda: string; agente: string | null; ragione_sociale: string | null; piva: string | null }[])
-                .forEach(r => {
-                    if (r.agente) m[r.agente] = { negozio: r.negozio, azienda: r.azienda };
-                    /* ═══ «RAGIONE_SOCIALE» IN pos_rt NON È UNA RAGIONE SOCIALE ═══
-                       ⚠️ È l'etichetta della CASSA. Su dieci righe T1, nove
-                       contengono cose come «Telefutura (Custom) - Merulana» o
-                       «Telefutura - Magliana W3», con la partita IVA vuota:
-                       una sola, Donna, porta il nome vero. Questa mappa era
-                       chiavata solo sul codice società, quindi per T1 vinceva
-                       l'ULTIMA riga letta — e l'ordine non era nemmeno deciso.
-                       Risultato visto da Luca il 03/09: ogni documento di
-                       Baleniere mostrava «Telefutura (Custom) - Acilia», come se
-                       una vendita di un negozio appartenesse a un altro. Erano
-                       tutti e dieci i negozi di Telefutura, 350 documenti.
-                       Il nome vero è quello delle righe che hanno la PARTITA
-                       IVA: una società senza partita IVA non è una società. */
-                    if (r.azienda && r.ragione_sociale && r.piva) nomi[r.azienda] = r.ragione_sociale;
-                });
-            setPerAgente(m); setNomiSoc(nomi);
+            ((data ?? []) as { negozio: string; azienda: string; agente: string | null }[])
+                .forEach(r => { if (r.agente) m[r.agente] = { negozio: r.negozio, azienda: r.azienda }; });
+            setPerAgente(m);
         });
     }, []);
 
@@ -636,13 +619,30 @@ function Documenti() {
     }, [miei]);
 
     /** «Telefutura 2 S.R.L.», non «T2». */
-    /* ⚠️ E SE LA PARTITA IVA NON C'È DA NESSUNA PARTE, si scrive il nome, non
-       il codice: «T1» su uno schermo che guarda l'amministrazione non dice
-       niente a nessuno. */
-    const NOME_SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" };
-    const nomeSoc = useCallback((c: string | null) => (c ? (nomiSoc[c] || NOME_SOCIETA[c] || c) : ""), [nomiSoc]);
-    const societaInElenco = useMemo(
-        () => Array.from(new Set((docs || []).map(d => nomeSoc(d.azienda)).filter(Boolean))).sort(), [docs, nomeSoc]);
+    /* ⚠️ IL NOME NON SI CHIEDE PIÙ AL DATABASE. Veniva da
+       `pos_rt.ragione_sociale`, che è l'etichetta della CASSA e non una ragione
+       sociale: la mappa era chiavata solo sul codice società, senza un ordine,
+       e per Telefutura vinceva l'ultima riga letta — «Telefutura (Custom) -
+       Acilia» su ogni documento di tutti e dieci i negozi.
+       Filtrare per «ha la partita IVA» sarebbe bastato OGGI, con una sola riga
+       T1 che ce l'ha: il giorno che qualcuno completa l'anagrafica — la
+       pulizia più prevedibile che ci sia, visto che nove righe su dieci l'hanno
+       vuota — lo stesso identico difetto tornerebbe, in silenzio. Il nome di
+       una società non è un dato che cambia: sta scritto in `@/lib/societa`. */
+    const nomeSoc = useCallback((c: string | null) => nomeSocieta(c), []);
+    /* ⚠️ «SENZA SOCIETÀ» È UNA RISPOSTA POSSIBILE, e va potuta chiedere.
+       Misurato: 28 documenti fiscali su 571 non hanno la società registrata —
+       ventuno sono del 1° settembre, il giorno in cui si accendevano le casse.
+       Con `.filter(Boolean)` non erano un'opzione, e siccome il filtro scarta
+       chi non è nella lista scelta, premere «tutte e due» ne faceva sparire
+       cinquanta senza dirlo. Adesso hanno una voce loro, e compare solo se ce
+       ne sono davvero. */
+    const SENZA_SOC = "senza società";
+    const societaInElenco = useMemo(() => {
+        const nomi = new Set((docs || []).map(d => nomeSoc(d.azienda)).filter(Boolean));
+        const fuori = (docs || []).some(d => !d.azienda);
+        return [...Array.from(nomi).sort(), ...(fuori ? [SENZA_SOC] : [])];
+    }, [docs, nomeSoc]);
 
     const operatori = useMemo(() => Array.from(new Set((docs || []).map(d => d.operatore).filter(Boolean) as string[])).sort(), [docs]);
 
@@ -650,7 +650,7 @@ function Documenti() {
     const passa = useCallback((d: Doc) => {
         if (scelti.length && !scelti.some(n => stessoMagazzino(n, d.negozio))) return false;
         if (utenti.length && !utenti.includes(d.operatore || "")) return false;
-        if (societa.length && !societa.includes(nomeSoc(d.azienda))) return false;
+        if (societa.length && !societa.includes(d.azienda ? nomeSoc(d.azienda) : SENZA_SOC)) return false;
         const q = cerca.trim().toLowerCase();
         if (q) {
             const qs = q.replace(/[\s./-]/g, "");
@@ -1096,7 +1096,9 @@ function Documenti() {
                     {societaInElenco.length > 1 && (
                         <div className="rvCampo rvCampo-md"><span className="rvLab">Punto vendita (società)</span>
                             <SelectMulti className="rvIn" values={societa} onChange={setSocieta} opzioni={societaInElenco}
-                                maxVoci={10} tuttiLabel="Tutte e due" placeholder="tutte" /></div>
+                                /* «tutte e due» era cablato al numero due: con la voce «senza società»
+                                   sono tre, e il giorno di una terza società diventerebbe falso */
+                                maxVoci={10} tuttiLabel="Tutte" placeholder="tutte" /></div>
                     )}
                     <div className="rvCampo rvCampo-md"><span className="rvLab">Operatore</span>
                         <SelectMulti className="rvIn" values={utenti} onChange={setUtenti} opzioni={operatori}
@@ -1188,18 +1190,22 @@ function Documenti() {
                                                     <span className="rvTab-ap">{apertaQui ? "▾" : "▸"}</span>
                                                     {gg(d.quando)} <b>{ora(d.quando)}</b>
                                                 </td>
-                                                                <td className="rvTab-min">{d.negozio}</td>
+                                                                {/* ⚠️ IL NEGOZIO È IL NOME PORTANTE DELLA RIGA, e va scritto
+                                                    come tale: con `rvTab-min` — lo stile più smorto della
+                                                    tabella — restava più silenzioso della pastiglia colorata
+                                                    accanto, cioè si rovesciava di nuovo la gerarchia che
+                                                    dividere le colonne doveva sistemare. */}
+                                                <td className="rvTab-nome">{d.negozio}</td>
                                                 <td className="rvTab-min">
                                                     {d.azienda
                                                         ? <span className="rvBadge rvBadge-acc">{nomeSoc(d.azienda)}</span>
-                                                        /* ⚠️ VUOTO NON È «NESSUNA SOCIETÀ»: è un documento
-                                                            che non l'ha registrata. Un trattino lo dice senza
-                                                            far credere che sia stato emesso da nessuno. */
-                                                        /* `rvTab-vuoto` no: è lo stile del messaggio a
-                                                            tutta larghezza quando la tabella è vuota, e
-                                                            dentro una cella centrerebbe il trattino
-                                                            spostandolo dalla colonna. */
-                                                        : <span className="text-slate-600">—</span>}
+                                                        /* ⚠️ VUOTO NON È «NESSUNA SOCIETÀ»: è un documento che
+                                                            non l'ha registrata. Il trattino lo dice — con lo
+                                                            stesso grigio che due colonne più in là usa per
+                                                            l'operatore mancante, che si legge; un
+                                                            `text-slate-600` sul fondo scuro sta a 2,4:1 e
+                                                            sparisce, proprio sulla colonna appena aggiunta. */
+                                                        : <span className="rvTab-min">—</span>}
                                                 </td>
                                                 <td className="rvTab-min">
                                                     {/* ⚠️ SE SONO USCITI IN DUE, SI VEDONO IN DUE. Mostrare solo

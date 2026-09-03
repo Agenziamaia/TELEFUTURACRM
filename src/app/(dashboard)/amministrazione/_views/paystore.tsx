@@ -27,6 +27,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import { RefreshCw, ChevronLeft, ChevronRight, Plus, Power, Trash2, Check, Loader2, Copy } from "lucide-react";
 import { cn } from "@/utils";
+import { NOME_SOCIETA } from "@/lib/societa";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { OPERATORI_PAYSTORE } from "../../registra-vendita/PayStore";
 import { STATI_RICARICA } from "@/lib/paystore";
@@ -113,7 +114,10 @@ type Dati = {
 };
 
 /* i codici delle due società, scritti come li conosce chi legge */
-const SOCIETA: Record<string, string> = { T1: "Telefutura", T2: "Telefutura 2" };
+/* ⚠️ IL NOME DELLE SOCIETÀ NON SI RISCRIVE A OGNI SCHERMATA: era in quattro
+   grafie diverse nel CRM, e due file destinati allo stesso commercialista non
+   si incrociavano. Sta in `@/lib/societa`, una volta. */
+const SOCIETA = NOME_SOCIETA;
 
 /* ═══ COPIARE IL NUMERO SENZA APRIRE NIENTE ════════════════════════════════
    Luca 03/09: «a fianco ai numeri mettici un bottoncino che clicco e mi copia
