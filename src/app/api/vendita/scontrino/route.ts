@@ -380,9 +380,20 @@ export async function POST(req: Request) {
             esclusi.push({ description: desc, motivo: `${az} non ha un registratore in questo negozio` });
             continue;
         }
-        // Il reparto LOGICO del CRM va tradotto nel reparto FISICO del registratore
-        // di QUESTO negozio (la numerazione può differire — vedi posRepartoMap).
-        const repFisico = repartoFisico(negozio, (reparto ?? 0) as number);
+        /* Il reparto LOGICO del CRM va tradotto nel reparto FISICO del
+           REGISTRATORE che stamperà questa riga (la numerazione può differire —
+           vedi posRepartoMap). ⚠️ La chiave è la MACCHINA, non il negozio: a
+           Magliana le due insegne sono un solo `stores.name` dal 02/09, e una
+           delle due casse è programmata bene mentre l'altra no. `rtFor(az)` dà
+           l'indirizzo della cassa della società di questa riga — la stessa che
+           riceverà il documento. */
+        const repFisico = repartoFisico(rtFor(az), (reparto ?? 0) as number);
+        if (repFisico == null) {
+            // macchina con mappa nota, ma questo reparto non è fra quelli
+            // misurati: non si tira a indovinare su un documento fiscale
+            esclusi.push({ description: desc, motivo: `reparto ${reparto} non tradotto per il registratore di questo negozio` });
+            continue;
+        }
         (gruppi[az] ||= []).push({ description: desc, quantity: qty, unitPrice: price, department: repFisico });
     }
 

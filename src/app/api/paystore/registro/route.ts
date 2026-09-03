@@ -239,6 +239,18 @@ async function completaDalloScontrino(da: string, a: string) {
                 const num = desc.match(/\b(\d{7,11})\s*$/)?.[1];
                 if (!num) continue;
                 if (!/ricarica/i.test(desc) && !NOMI_OPERATORE.some(([n]) => desc.toUpperCase().startsWith(n))) continue;
+                /* ⚠️ QUESTO È IL REPARTO **FISICO**, NON QUELLO DEL CATALOGO (03/09/2026).
+                   Il numero si rilegge dall'XML già mandato, cioè DOPO la traduzione di
+                   `posRepartoMap`: sulle macchine programmate fuori standard i due numeri
+                   NON coincidono. Su Magliana Multi (192.168.1.106) una ricarica — reparto
+                   logico 1, non soggetta — qui si registra come **4**, che su QUELLA cassa
+                   è appunto «non soggetta».
+                   Quindi la regola scritta nel commento della colonna
+                   (`20260901220000_paystore_dallo_scontrino.sql`: «deve essere 1, se è un
+                   altro la ricarica è stata assoggettata a IVA per errore») vale solo per i
+                   registratori NON mappati: applicata così com'è a Magliana Multi darebbe
+                   solo falsi allarmi. Chi un giorno rimetterà quel controllo deve
+                   confrontare la NATURA, non il numero — o ritradurre all'indietro. */
                 stampate.push({ negozio: neg, t, importo: Number(m[2]), numero: num, reparto: Number(m[3]), emesso, azienda: az, errore: emesso ? null : String(j.status) });
             }
         }
