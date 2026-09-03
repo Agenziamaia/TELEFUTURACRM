@@ -35,8 +35,9 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CaricoMerce from "./CaricoMerce";
 import NuovoArticolo from "./NuovoArticolo";
+import StoricoCarichi from "./StoricoCarichi";
 import { createPortal } from "react-dom";
-import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
+import { Boxes, FileDown, History, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { famigliaDalNome } from "@/lib/cassaCatalogo";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -519,6 +520,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
     ricarica: () => void; utente: string;
 }) {
     const [apriCarico, setApriCarico] = useState(false);
+    const [apriStorico, setApriStorico] = useState(false);
 
     /* IL MIO NEGOZIO, GIÀ SPUNTATO (Luca 31/08, «un pochettino come funziona
        Gestione Usato»): chi lavora al banco entra e vede la SUA merce, senza
@@ -1241,6 +1243,17 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                                 <PackagePlus size={14} className="inline-block align-[-3px] mr-1.5" /> Carico merce
                             </button>
                         )}
+                        {/* LO STORICO STA ACCANTO AL CARICO (Luca 03/09), perché è la
+                            domanda che viene subito dopo: «l'ho già caricata?».
+                            È una pastiglia e non un pulsante pieno: guardare non è
+                            fare, e i due pieni sono le due azioni che producono
+                            qualcosa. */}
+                        {puoCaricare && (
+                            <button onClick={() => setApriStorico(true)}
+                                className="rvPill rvPill-sm" title="Tutti i caricamenti fatti: quando, chi, dove e cosa">
+                                <History size={14} className="inline-block align-[-3px] mr-1.5" /> Storico caricamenti
+                            </button>
+                        )}
                         <button onClick={esporta} disabled={vistaVenduto ? !vendutiInCategoria.length : vistaTrasf ? !inViaggioInCategoria?.length : !righe.length} className="rvAzione rvAzione-sm">
                             <FileDown size={14} className="inline-block align-[-2px] mr-1.5" /> Excel
                         </button>
@@ -1251,6 +1264,10 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     carico ritrova il carrello com'era invece di ricominciare.
                     È anche il motivo per cui chiudere non chiede conferma —
                     non c'è niente da perdere. */}
+                {puoCaricare && (
+                    <StoricoCarichi aperto={apriStorico} chiudi={() => setApriStorico(false)}
+                        negozi={negozi} nomiAzienda={nomiAzienda} />
+                )}
                 {puoCaricare && (
                     <CaricoMerce aperto={apriCarico} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
                         utente={utente} dopo={ricarica} chiudi={() => setApriCarico(false)} />
