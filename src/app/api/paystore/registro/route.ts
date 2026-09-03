@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { stessoMagazzino } from "@/lib/negoziNomi";
 import { isAdminOrAbove } from "@/lib/roles";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto, NOMI_OPERATORE, eStatoValido } from "@/lib/paystore";
@@ -240,26 +241,40 @@ async function completaDalloScontrino(da: string, a: string) {
         for (const r of daFare) {
             const t = new Date(r.creata_il).getTime();
             const vicino = (x: { t: number }) => x.t <= t + 60000 && x.t >= t - 300000;
+            /* ⚠️ IL NEGOZIO NON SI CONFRONTA A LETTERE. Lo scontrino porta
+               l'INSEGNA — «Magliana W3», «Collatina Multi», «Acilia VS» —
+               mentre la ricarica porta il nome corto del punto vendita:
+               «Magliana». Il confronto esatto non trovava mai niente.
+               Misurato il 03/09: 44 righe su 46 dicevano «scontrino non
+               risulta» avendone uno emesso tre secondi prima, e una cliente si
+               è presentata in negozio con lo scontrino in mano.
+               `stessoMagazzino` è la regola che il resto del CRM usa già per
+               riconoscere le due insegne dello stesso bancone. */
+            const stessoPosto = (nome: string) => stessoMagazzino(nome, String(r.negozio || ""));
             const patch: Record<string, unknown> = {};
 
             /* 1. IL NUMERO E IL REPARTO: dalla riga stampata dello stesso
                   negozio, con lo stesso importo, nell'intorno */
             if (!r.numero) {
-                const cand = stampate.filter((x) => x.negozio === r.negozio && vicino(x) && Math.abs(x.importo - Number(r.importo)) < 0.005);
+                const cand = stampate.filter((x) => stessoPosto(x.negozio) && vicino(x) && Math.abs(x.importo - Number(r.importo)) < 0.005);
                 const numeri = [...new Set(cand.map((x) => x.numero))];
                 if (numeri.length === 1) {                       // uno solo: è quello
                     patch.numero = numeri[0];
                     patch.reparto_usato = cand[0].reparto;
                 }
             } else {
-                const suo = stampate.find((x) => x.negozio === r.negozio && vicino(x) && x.numero === r.numero);
+                const suo = stampate.find((x) => stessoPosto(x.negozio) && vicino(x) && x.numero === r.numero);
                 if (suo) patch.reparto_usato = suo.reparto;
             }
 
             /* 2. LO SCONTRINO È USCITO? e con quale società. Se nella finestra
                   c'è un solo scontrino la risposta è certa; se ce ne sono due
                   con esiti o società diversi non si indovina. */
-            const sc = (scontriniPerNegozio[String(r.negozio || "")] || []).filter(vicino);
+            /* ⚠️ E NON SI PESCA PIÙ DA UNA CASELLA COL NOME ESATTO: si guardano
+               tutte le insegne dello stesso posto. */
+            const sc = Object.entries(scontriniPerNegozio)
+                .filter(([nome]) => stessoPosto(nome))
+                .flatMap(([, v]) => v).filter(vicino);
             if (sc.length) {
                 const esiti = [...new Set(sc.map((x) => x.emesso))];
                 if (esiti.length === 1 && !r.scontrino_stato) {

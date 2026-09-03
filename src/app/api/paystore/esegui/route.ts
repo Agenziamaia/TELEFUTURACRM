@@ -5,6 +5,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { eseguiRicarica } from "@/lib/paystoreEsegui";
 import type { RigaRicarica } from "@/lib/paystoreEsegui";
 import { COLONNE_ESEGUI } from "@/lib/paystoreEsegui";
+import { annota } from "@/lib/paystoreEventi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "far partire una ricarica è cosa dell'amministrazione." }, { status: 403 });
     }
 
-    let b: { id?: string };
+    let b: { id?: string; forza?: boolean };
     try { b = await request.json(); } catch { return NextResponse.json({ error: "corpo non valido" }, { status: 400 }); }
     if (!b.id) return NextResponse.json({ error: "id mancante" }, { status: 400 });
 
@@ -47,7 +48,12 @@ export async function POST(request: Request) {
 
     /* è una persona che ha premuto il pulsante: la riga lo deve dire */
     const { data: chi } = await supabase.from("app_users").select("full_name").eq("id", g.sess.id).maybeSingle();
-    const esito = await eseguiRicarica(r as RigaRicarica, { daPersona: true, chi: (chi as { full_name?: string } | null)?.full_name || undefined });
+    const nome = (chi as { full_name?: string } | null)?.full_name || undefined;
+    /* ⚠️ LA FORZATURA RESTA SCRITTA. È il gesto con cui si eroga credito senza
+       la prova dell'incasso: fra un mese deve sapersi che è stata una scelta di
+       qualcuno, e di chi. */
+    if (b.forza) await annota(b.id, "invio", "forzata a mano: lo scontrino non risultava agganciato", nome);
+    const esito = await eseguiRicarica(r as RigaRicarica, { daPersona: true, chi: nome, forza: !!b.forza });
     if (!esito.ok) {
         return NextResponse.json(
             { error: esito.errore, definitivo: esito.definitivo, correlationId: esito.correlationId },

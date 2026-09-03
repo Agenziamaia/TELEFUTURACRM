@@ -89,7 +89,7 @@ async function trovaListino(operatore: string, importo: number, cred: Credenzial
     return { id: t.priceListId };
 }
 
-export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number; daPersona?: boolean; chi?: string }): Promise<EsitoEsecuzione> {
+export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number; daPersona?: boolean; chi?: string; forza?: boolean }): Promise<EsitoEsecuzione> {
     /* ⚠️ OGNI INVIO LASCIA UNA RIGA, riuscito o no. La ricarica porta solo
        l'ULTIMO tentativo: senza diario, tre risottomissioni sullo stesso numero
        sono indistinguibili da una, e quando qualcuno chiede «ma quante volte
@@ -105,10 +105,16 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
     }
     /* ── SI PUÒ PARTIRE? Le stesse regole della presa automatica, qui, così
        valgono anche per il pulsante. Erano solo in SQL. ─────────────────── */
-    if (riga.scontrino_stato !== undefined && riga.scontrino_stato !== "emesso") {
+    /* ⚠️ IL MOTORE NON FORZA MAI, UNA PERSONA SÌ (Luca 03/09: «anche lì dove
+       non risulta, se voglio devo poterlo forzare e fare comunque la
+       ricarica»). Lo scontrino che «non risulta» spesso c'è davvero — il
+       CRM non è riuscito ad agganciarlo — e la cliente è al banco con la
+       carta in mano: chi la guarda in faccia deve poter decidere.
+       Automaticamente no: senza la prova dell'incasso, erogare è regalare. */
+    if (!opz?.forza && riga.scontrino_stato !== undefined && riga.scontrino_stato !== "emesso") {
         return {
             ok: false, definitivo: true, stato: 409,
-            errore: `lo scontrino di questa ricarica non è stato emesso (${riga.scontrino_stato || "nessuno"}): l'incasso non è provato. Sistema prima lo scontrino.`,
+            errore: `lo scontrino di questa ricarica non risulta emesso (${riga.scontrino_stato || "non agganciato"}): l'incasso non è provato. Se lo scontrino ce l'hai davanti, puoi forzarla.`,
         };
     }
     if (String(riga.nota || "").toUpperCase().includes("SOSPESO")) {

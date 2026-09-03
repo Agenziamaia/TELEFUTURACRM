@@ -1099,10 +1099,14 @@ function RifaiRicarica({ r, onFatto }: { r: Riga; onFatto: () => void }) {
     // su una già fatta non c'è niente da rifare
     if (r.stato === "ok_automatico" || r.stato === "ok_manuale") return null;
 
-    const esegui = async () => {
+    /* ⚠️ FORZARE VUOL DIRE EROGARE SENZA LA PROVA DELL'INCASSO. Si può, perché
+       lo scontrino che «non risulta» spesso c'è davvero e la cliente è al banco
+       — ma lo si fa premendo un pulsante diverso, non lo stesso. */
+    const senzaScontrino = r.scontrino_stato !== "emesso";
+    const esegui = async (forza = false) => {
         setLavoro(true);
         try {
-            const x = await fetch("/api/paystore/esegui", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.id }) });
+            const x = await fetch("/api/paystore/esegui", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.id, forza }) });
             const j = await x.json().catch(() => ({}));
             if (x.ok && j?.ok) {
                 setEsito(j.collaudo ? {
@@ -1155,10 +1159,22 @@ function RifaiRicarica({ r, onFatto }: { r: Riga; onFatto: () => void }) {
                             <div><span>Numero</span><span style={{ fontFamily: "monospace" }}>{r.numero}</span></div>
                             <div><span>Plafond di</span><span>{r.negozio || "—"}{r.azienda ? ` · ${SOCIETA[r.azienda] || r.azienda}` : ""}</span></div>
                         </div>
+                        {senzaScontrino && (
+                            <div className="rvNota rvNota-att" style={{ marginTop: 0, marginBottom: 14, textAlign: "left" }}>
+                                <div className="rvNota-t">⚠️ Lo scontrino non risulta agganciato</div>
+                                <div className="rvNota-s">
+                                    Spesso c&apos;è davvero e il CRM non l&apos;ha trovato. Ma se non è stato emesso,
+                                    erogare vuol dire regalare il credito: fallo solo se lo scontrino ce l&apos;hai
+                                    davanti. Resta scritto che l&apos;hai forzata tu.
+                                </div>
+                            </div>
+                        )}
                         <div className="rvBarra rvBarra-c justify-center">
                             <button onClick={() => setChiedo(false)} disabled={lavoro} className="rvPill">Lascia stare</button>
-                            <button onClick={() => void esegui()} disabled={lavoro} className="rvAzione rvAzione-att">
-                                {lavoro ? "⏳ sto chiamando PayStore…" : "⚡ Fai partire"}
+                            <button onClick={() => void esegui(senzaScontrino)} disabled={lavoro}
+                                className={cn("rvAzione", senzaScontrino ? "rvAzione-no" : "rvAzione-att")}>
+                                {lavoro ? "⏳ sto chiamando PayStore…"
+                                    : senzaScontrino ? "⚡ Forza e fai partire" : "⚡ Fai partire"}
                             </button>
                         </div>
                     </div>
