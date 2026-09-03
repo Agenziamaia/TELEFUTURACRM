@@ -33,6 +33,7 @@
 // Il COMPORTAMENTO non è cambiato: filtri, conteggi, colonna «Altrove»,
 // esplosione dei pezzi, cestino, DDT ed export sono gli stessi di prima.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CaricoMerce from "./CaricoMerce";
 import { createPortal } from "react-dom";
 import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { famigliaDalNome } from "@/lib/cassaCatalogo";
@@ -384,28 +385,19 @@ export default function MagazzinoPage() {
            pastiglie, riquadri, frecce d'ordinamento — la eredita. */
         <div className="max-w-[1500px]">
             <div className="rvTesta">
-                <h1 className="rvTit"><Boxes size={25} /> Magazzino</h1>
-                <div className="rvPillRow">
-                    {/* LA RICERCA SERIALE NON È PIÙ UNA SCHEDA A PARTE (Luca
-                        31/08): «il campo di ricerca seriale potrebbe essere un
-                        campo che integriamo dentro le giacenze, così abbiamo
-                        tutto in un'unica sezione». Il campo «Cerca» delle
-                        Giacenze prende anche gli IMEI, e ogni seriale a schermo
-                        si clicca e racconta la sua storia — compreso quello che
-                        gli è successo fuori dal magazzino, che era il motivo per
-                        cui la scheda separata esisteva. */}
-                    {([["giacenze", "📦 Giacenze"], ["trasferimenti", "🚚 Trasferimenti"], ["articoli", "📚 Articoli"]] as const).map(([k, l]) => (
-                        <button key={k} onClick={() => setTab(k)} className={cn("rvPill", tab === k && "rvPill-on")}>
-                            {l}
-                        </button>
-                    ))}
-                </div>
+                <h1 className="rvTit"><Boxes size={25} /> Magazzino · {tab === "giacenze" ? "Giacenze" : tab === "trasferimenti" ? "Trasferimenti" : "Articoli"}</h1>
+                {/* LE TRE SCHEDE NON STANNO PIU' QUI (Luca 03/09): «togliamole,
+                    non servono avendole nel menù di sinistra». Erano lo stesso
+                    comando scritto due volte a un centimetro di distanza, e la
+                    sezione la sceglie già il menù — che è anche il posto dove
+                    uno la cerca. Lo stato `tab` resta, perché arriva
+                    dall'indirizzo: cambia solo che non lo si ripete a schermo. */}
             </div>
             {loading ? (
                 <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico il magazzino…</div>
             ) : tab === "giacenze" ? (
                 <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
-                    anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare} vedeValori={vedeValori}
+                    anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare} puoCaricare={puoCaricare} vedeValori={vedeValori}
                     ricarica={carica} utente={user?.name || "—"} />
             ) : tab === "articoli" ? (
                 <Articoli vedeCosti={puoCaricare} puoDefinire={puoCaricare} />
@@ -471,14 +463,18 @@ function operatoreDi(a: DatiArticolo | undefined, descrizione: string, codice?: 
     return null;
 }
 
-function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, vedeValori, ricarica, utente }: {
+function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, puoCaricare, vedeValori, ricarica, utente }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
     mioNegozio: string; puoCancellare: boolean;
+    /** carica merce: dall'amministrazione in su (Luca 03/09) */
+    puoCaricare: boolean;
     /** vede i due riquadri col valore del magazzino? (rotellina Permessi) */
     vedeValori: boolean;
     ricarica: () => void; utente: string;
 }) {
+    const [apriCarico, setApriCarico] = useState(false);
+
     /* IL MIO NEGOZIO, GIÀ SPUNTATO (Luca 31/08, «un pochettino come funziona
        Gestione Usato»): chi lavora al banco entra e vede la SUA merce, senza
        dover scegliere niente. Poi può allargare a tutti o guardare un altro
@@ -1140,6 +1136,25 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     non sono filtri e non si premono, e fuori dalla griglia non
                     devono più stare nella sagoma di un conteggio — che è il
                     motivo per cui uscivano dal bordo e disallineavano la fila. */}
+                {/* ⭐ IL CARICO STA QUI (Luca 03/09): «attualmente è posizionata un
+                    po' per errore dentro i trasferimenti, invece deve stare dentro
+                    Giacenze con un pulsante in alto». Ha ragione anche nella
+                    sostanza: caricare è un fatto delle giacenze — la merce entra
+                    a scaffale — mentre i trasferimenti sono merce che si sposta
+                    fra due posti che ce l'hanno già. */}
+                {puoCaricare && (
+                    <div className="rvPillRow">
+                        <button onClick={() => setApriCarico(v => !v)}
+                            className={cn("rvPill", apriCarico && "rvPill-on")}>
+                            <PackagePlus size={15} className="inline-block align-[-3px] mr-1.5" /> Carico merce
+                        </button>
+                    </div>
+                )}
+                {apriCarico && puoCaricare && (
+                    <CaricoMerce negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
+                        utente={utente} dopo={ricarica} chiudi={() => setApriCarico(false)} />
+                )}
+
                 <div className="rvBoxTop">
                     <div className="rvBoxT">🔎 Cosa guardo</div>
                     <div className="rvValori">
@@ -1655,7 +1670,7 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                         {!righe.length && <tr><td colSpan={colonne.length} className="rvTab-vuoto">
                             Nessun articolo con questi filtri.
                             {quadro !== "altrove" && " Prova il riquadro «🌐 Altrove» per vedere quello che sta in un altro negozio."}
-                            {!unita.length && !quantita.length && " Il magazzino parte vuoto: il primo carico si fa da 🚚 Trasferimenti → 📥 Carico merce."}
+                            {!unita.length && !quantita.length && " Il magazzino parte vuoto: il primo carico si fa qui sopra, con «Carico merce»."}
                         </td></tr>}
                     </tbody>
                 </table>
@@ -2611,7 +2626,7 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
             <div className="rvBarra rvBarra-c">
                 <div className="rvPillRow">
                     <button onClick={() => setVista("documenti")} className={cn("rvPill", vista === "documenti" && "rvPill-on")}>
-                        📄 Documenti<b className="rvPillN">{visibili.length}</b></button>
+                        📄 Documenti di trasporto<b className="rvPillN">{visibili.length}</b></button>
                     <button onClick={() => setVista("merce")} className={cn("rvPill", vista === "merce" && "rvPill-on")}>
                         📦 Merce mossa<b className="rvPillN">{merce.length}</b></button>
                 </div>
@@ -2631,11 +2646,10 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                             : "Per spedire serve un magazzino tuo: dichiara dove stai lavorando oggi, o chiedi all'amministrazione."}
                     </span>
                 )}
-                {puoCaricare && (
-                    <button onClick={() => { setApriCarico(v => !v); setApriNuovo(false); }}
-                        className={cn("rvPill", apriCarico && "rvPill-on")}>
-                        <PackagePlus size={15} className="inline-block align-[-3px] mr-1.5" /> Carico merce</button>
-                )}
+                {/* IL CARICO SI E' TRASFERITO IN GIACENZE (Luca 03/09): «e'
+                    posizionata un po' per errore dentro i trasferimenti, invece
+                    deve stare dentro giacenze con un pulsante in alto». Qui
+                    restano i documenti, che e' quello che i Trasferimenti sono. */}
                 <button onClick={esporta} disabled={!merce.length} className="rvPill rvPill-sm">
                     <FileDown size={14} className="inline-block align-[-2px] mr-1.5" />Excel</button>
                 {/* l'archivio dei documenti del periodo, in un file solo */}
@@ -2644,7 +2658,6 @@ function Trasferimenti({ unita, quantita, negozi, aziende, nomiAzienda, anagrafi
                     📄 PDF di tutti ({visibili.length})</button>
             </div>
 
-            {apriCarico && <Carico negozi={negozi} aziende={aziende} utente={utente} dopo={() => { setApriCarico(false); ricarica(); }} />}
             {apriNuovo && (
                 <NuovoTrasferimento unita={unita} quantita={quantita} negozi={negozi} negoziPartenza={negoziPartenza} negDati={negDati} casse={casse}
                     nomiAzienda={nomiAzienda} anagrafica={anagrafica} mioNegozio={mioNegozio} utente={utente}
