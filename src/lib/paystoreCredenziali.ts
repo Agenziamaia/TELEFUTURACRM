@@ -55,6 +55,16 @@ export async function credenzialeDi(negozio: string | null, azienda: string | nu
     const cand = righe.filter((r) => r.attivo !== false)
         .filter((r) => r.negozio === negozio || stessoMagazzino(r.negozio, negozio));
     if (!cand.length) {
+        /* ⚠️ «NON CE N'È» E «CE N'È UNA SPENTA» SONO DUE COSE DIVERSE, e chi
+           legge deve poterle distinguere: nel primo caso la terna va chiesta a
+           PayStore, nel secondo c'è già ed è stata rifiutata — va solo
+           ricopiata giusta. Dire «non ha credenziali» su una credenziale
+           presente ma spenta manda a cercare dalla parte sbagliata. */
+        const spente = righe.filter((r) => r.attivo === false)
+            .filter((r) => r.negozio === negozio || stessoMagazzino(r.negozio, negozio));
+        if (spente.length) {
+            return { ok: false, errore: `la credenziale PayStore di ${spente[0].identificativo} (${azienda}) è SPENTA perché PayStore l'ha rifiutata: va ricaricata in Amministrazione → PayStore → Credenziali. Fino ad allora, le ricariche di questo negozio si fanno dal portale.` };
+        }
         return { ok: false, errore: `PayStore non ha credenziali per ${negozio} come ${azienda}. Caricale in Amministrazione → PayStore → Credenziali.` };
     }
     /* ⚠️ SE SONO DUE, CI SI FERMA. Scegliere «la prima» vorrebbe dire tirare a

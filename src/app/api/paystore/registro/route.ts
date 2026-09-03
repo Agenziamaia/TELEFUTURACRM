@@ -4,6 +4,8 @@ import { stessoMagazzino } from "@/lib/negoziNomi";
 import { isAdminOrAbove } from "@/lib/roles";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { leggiRicaricaDaProdotto, eRicaricaSenzaNumero, nomeOperatoreCorto, NOMI_OPERATORE, eStatoValido } from "@/lib/paystore";
+import { percheNonParte, type RigaDaPesare } from "@/lib/paystorePerche";
+import { parametriAutomatismo } from "@/lib/automatismiConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +33,10 @@ type Riga = {
     scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null;
     /* emesso · errore · in_pausa · null (non lo sappiamo) */
     scontrino_stato: string | null;
+    /* servono per dire PERCHÉ una sospesa non parte: il contratto identifica lo
+       scontrino (e quindi le righe gemelle), la presa dice se il motore la sta
+       già lavorando proprio adesso */
+    contract_id: string | null; nota: string | null; motore_preso_il: string | null;
 };
 
 const giorno = (iso: string) => iso.slice(0, 10);
@@ -347,7 +353,7 @@ export async function GET(request: Request) {
        una mai toccata: il ragazzo al terminale la vedeva «da fare», la caricava
        a mano, e il cliente riceveva il credito due volte. È la strada più
        probabile verso il doppio credito, e non aveva nessun argine. */
-    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione, scontrino_emesso, scontrino_errore, reparto_usato, scontrino_stato, tentativi, tentata_il, rif_fornitore, ambiente, inviata_il";
+    const campi = "id, creata_il, negozio, venditore, operatore, operatore_nome, numero, taglio, importo, stato, errore, azienda, nota, stato_da, stato_il, con_attivazione, scontrino_emesso, scontrino_errore, reparto_usato, scontrino_stato, tentativi, tentata_il, rif_fornitore, ambiente, inviata_il, contract_id, motore_preso_il";
     const [{ data: righe }, { data: prima }, { data: tagli }] = await Promise.all([
         supabase.from("paystore_ricariche").select(campi)
             .gte("creata_il", da + "T00:00:00Z").lte("creata_il", a + "T23:59:59Z")
@@ -391,8 +397,45 @@ export async function GET(request: Request) {
         return { negozio: n, quante: d.length, euro: somma(d) };
     }).sort((x, y) => y.euro - x.euro);
 
+    /* ═══ PERCHÉ OGNI SOSPESA È FERMA ══════════════════════════════════════
+       Luca 03/09: «sembrano a tutto ok, non capisco perché non sono state
+       fatte in automatico». Il motivo c'era già — ma dentro la riga, dove
+       nessuno guarda. Qui si calcola con LE STESSE regole del motore, e la
+       riga se lo porta dietro.
+
+       ⚠️ LE GEMELLE SI CONTANO PRIMA, in una passata sola: chiedere al
+       database una volta per riga vorrebbe dire trecento interrogazioni per
+       disegnare una schermata. */
+    const impMotore = await (async () => {
+        const p = await parametriAutomatismo("paystore-motore");
+        const n = (k: string, d: number, min: number, max: number) => {
+            const v = Number((p as Record<string, unknown>)[k]);
+            return Number.isFinite(v) && v >= min && v <= max ? Math.round(v) : d;
+        };
+        return {
+            acceso: p.acceso === true || p.acceso === "true",
+            max: n("max", 10, 1, 50), finestra: n("finestra", 60, 5, 1440),
+            tetto: n("tetto", 50, 1, 500), tettoCorsa: n("tettoCorsa", 200, 10, 5000),
+            lasso: n("lasso", 10, 2, 60),
+        };
+    })();
+    const quanteGemelle = new Map<string, number>();
+    for (const r of R) {
+        const k = `${r.contract_id || r.id}|${String(r.numero || "").replace(/\D/g, "")}|${Number(r.importo || 0).toFixed(2)}`;
+        quanteGemelle.set(k, (quanteGemelle.get(k) || 0) + 1);
+    }
+    const adesso = Date.now();
+    const conPerche = R.map((r) => {
+        if (r.stato !== "sospeso") return r;
+        const k = `${r.contract_id || r.id}|${String(r.numero || "").replace(/\D/g, "")}|${Number(r.importo || 0).toFixed(2)}`;
+        return { ...r, perche: percheNonParte({ ...r, gemelle: quanteGemelle.get(k) || 1 } as unknown as RigaDaPesare, impMotore, adesso) };
+    });
+
     return NextResponse.json({
         ok: true, da, a, negozio, operatore, troncato,
+        /* così il pannello può dire «il motore è spento» invece di lasciare
+           indovinare perché non parte niente */
+        motoreAcceso: impMotore.acceso, finestraMotore: impMotore.finestra,
         totale: { quante: R.length, euro: somma(R), euroPrima: somma((prima || []) as { importo: number }[]) },
         /* ⚠️ QUELLE DA GUARDARE, in cima e contate a parte: una ricarica
            incassata e non erogata è l'unica ragione per cui uno apre questa
@@ -433,7 +476,7 @@ export async function GET(request: Request) {
            ricariche incassate — mostrando comunque il contatore giusto nella
            tendina. Un elenco che tace in silenzio è peggio di un elenco lungo:
            quante ne disegna è una decisione del browser, non del server. */
-        ultime: R,
+        ultime: conPerche,
         /* i negozi che si possono scegliere sono quelli che HANNO righe fra
            quelle mostrate: con un marchio attivo, elencare i negozi che non
            vendono quel marchio significa offrire dodici scelte di cui sei

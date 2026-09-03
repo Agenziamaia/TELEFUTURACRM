@@ -93,7 +93,7 @@ const TUTTI_N = "Tutti i negozi";
 const TUTTI_O = "Tutti gli operatori";
 const nomeOp = (id: string) => OPERATORI_PAYSTORE.find((o) => o.id === id)?.label || id;
 
-type Riga = { id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null; scontrino_stato: string | null; tentativi?: number | null; tentata_il?: string | null; rif_fornitore?: string | null; ambiente?: string | null; inviata_il?: string | null };
+type Riga = { perche?: string; id: string; creata_il: string; negozio: string | null; venditore: string | null; operatore: string; operatore_nome: string | null; numero: string; taglio: string | null; importo: number; stato: string; errore: string | null; azienda: string | null; nota: string | null; stato_da: string | null; stato_il: string | null; con_attivazione: boolean | null; scontrino_emesso: boolean | null; scontrino_errore: string | null; reparto_usato: number | null; scontrino_stato: string | null; tentativi?: number | null; tentata_il?: string | null; rif_fornitore?: string | null; ambiente?: string | null; inviata_il?: string | null };
 type Taglio = { id: string; operatore: string; etichetta: string; valore: number; ordine: number; attivo: boolean; origine: string };
 type Dati = {
     da: string; a: string;
@@ -370,7 +370,7 @@ export function PayStoreAdminView() {
         cerca: (r: Riga) => !cercaN || soloCifre(r.numero).includes(cercaN),
         stato: (r: Riga) => !!cercaN || toccate.has(r.id) || stati.has(r.stato),
         negozio: (r: Riga) => !!cercaN || !negoziSel || negoziSel.includes(String(r.negozio || "")),
-        societa: (r: Riga) => !!cercaN || !societa || String(r.azienda || "") === societa,
+        societa: (r: Riga) => !!cercaN || !societa || String(r.azienda || "—") === societa,
         origine: (r: Riga) => !!cercaN || !origine || String(r.con_attivazione === true) === origine,
         allarme: (r: Riga) => !!cercaN || !allarme
             || (allarme === "scontrino" && r.scontrino_stato === "errore")
@@ -409,7 +409,11 @@ export function PayStoreAdminView() {
        realtà ma un modo di leggere l'elenco: se togliesse anche i soldi,
        l'incassato CALEREBBE man mano che le ricariche vengono fatte — cioè
        l'esatto contrario di quello che è successo. */
-    const perTotali = tutte.filter((r) => F.negozio(r) && F.stato(r) && F.origine(r) && F.allarme(r));
+    /* ⚠️ E LA SOCIETÀ È UN FILTRO COME GLI ALTRI. Dimenticarla qui vuol dire
+       che premendo «Telefutura 2» l'elenco scende a 121 righe mentre i quadrati
+       in cima continuano a dire 326 e 4.007 € — il difetto esatto contro cui è
+       scritto il commento qui sopra, ripetuto sul filtro nuovo. */
+    const perTotali = tutte.filter((r) => F.negozio(r) && F.societa(r) && F.stato(r) && F.origine(r) && F.allarme(r));
     const somma = (g: Riga[]) => g.reduce((x, r) => x + Number(r.importo || 0), 0);
     const raggruppa = <K extends string | number>(g: Riga[], chiave: (r: Riga) => K) => {
         const m = new Map<K, { quante: number; euro: number }>();
@@ -812,8 +816,14 @@ export function PayStoreAdminView() {
                             <div className="rvCampo">
                                 <span className="rvLab">Società</span>
                                 <div className="rvPillRow">
-                                    {(["T1", "T2"] as const).map((x) => {
-                                        const n = quanteCon(["societa"], (r) => String(r.azienda || "") === x);
+                                    {/* ⚠️ E LA TERZA PASTIGLIA NON È UN VEZZO. A database ci sono
+                                        righe con la società VUOTA — succede col carrello misto,
+                                        dove a decidere è la merce — e con due sole pastiglie
+                                        sparivano da entrambe: fra queste ce n'erano tre SOSPESE
+                                        per 84 €, cioè proprio quelle da lavorare. Compare solo
+                                        se ce ne sono. */}
+                                    {(["T1", "T2", ...(tutte.some((r) => !r.azienda) ? ["—"] : [])] as const).map((x) => {
+                                        const n = quanteCon(["societa"], (r) => String(r.azienda || "—") === x);
                                         const on = societa === x;
                                         return (
                                             <button key={x} aria-pressed={on}
@@ -821,9 +831,10 @@ export function PayStoreAdminView() {
                                                    due: due pastiglie non hanno bisogno di un terzo pulsante
                                                    «tutte» che occupa spazio per dire niente */
                                                 onClick={() => setSocieta((v) => (v === x ? "" : x))}
-                                                title={`${n} ricarich${n === 1 ? "a" : "e"} di ${SOCIETA[x]}`}
-                                                className={cn("rvPill rvPill-tinta", x === "T1" ? "rvT-ciano" : "rvT-viola", on && "rvPill-on")}>
-                                                {SOCIETA[x]}{on ? " ✓" : ""}<span className="rvPillN">{n}</span>
+                                                title={x === "—" ? `${n} ricariche senza società: il carrello era misto, la società la sa solo lo scontrino`
+                                                    : `${n} ricarich${n === 1 ? "a" : "e"} di ${SOCIETA[x]}`}
+                                                className={cn("rvPill rvPill-tinta", x === "T1" ? "rvT-ciano" : x === "T2" ? "rvT-viola" : "rvT-ambra", on && "rvPill-on")}>
+                                                {x === "—" ? "senza società" : SOCIETA[x]}{on ? " ✓" : ""}<span className="rvPillN">{n}</span>
                                             </button>
                                         );
                                     })}
@@ -968,7 +979,7 @@ export function PayStoreAdminView() {
                                         allarme === "scontrino" ? "senza scontrino" : allarme === "indietro" ? "rimaste indietro" : null,
                                         origine ? (origine === "true" ? "con attivazione" : "sciolte") : null,
                                         negoziSel ? (negoziSel.length === 1 ? negoziSel[0] : `${negoziSel.length} negozi`) : null,
-                                        societa ? SOCIETA[societa] : null,
+                                        societa ? (SOCIETA[societa] || "senza società") : null,
                                     ].filter(Boolean).join(" · ")}
                                 </span>}
                             </h3>
@@ -1085,6 +1096,18 @@ export function PayStoreAdminView() {
                                                         <StatoRicarica r={r} onCambiato={() => { setToccate((t) => new Set(t).add(r.id)); void carica(); }} />
                                                         <RifaiRicarica r={r} onFatto={() => void carica()} />
                                                     </div>
+                                                    {/* ⚠️ E SOTTO, PERCHÉ È FERMA. Luca 03/09: «sembrano a
+                                                        tutto ok, non capisco il motivo per il quale non sono
+                                                        state fatte in automatico». Tredici righe sospese,
+                                                        quattro motivi diversi, tutte con la stessa faccia:
+                                                        una che il motore non farà MAI da sola e una che
+                                                        parte fra tre minuti erano indistinguibili. Il
+                                                        motivo lo calcola il server con le stesse regole del
+                                                        motore, così la schermata non racconta una versione
+                                                        diversa da quello che succede davvero. */}
+                                                    {r.stato === "sospeso" && r.perche && (
+                                                        <div className="psPerche" title={r.perche}>{r.perche}</div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
@@ -1909,7 +1932,7 @@ function SchedaRicarica({ id, onChiudi, onCambiato }: { id: string; onChiudi: ()
         vendita: Record<string, unknown> | null;
         cliente: { id: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; cf_piva: string | null; cellulare: string | null; email: string | null } | null;
         insieme: { id: string; brand: string; categoria: string; prodotto: string | null; stato: string | null }[];
-        scontrino: { id: string; created_at: string; status: string; negozio: string; kind: string; certo: boolean; meta: Record<string, unknown> | null } | null;
+        scontrino: { id: string; created_at: string; status: string; negozio: string; kind: string; certo: boolean; quanti: number; meta: Record<string, unknown> | null } | null;
         comeTrovate: string;
         righeScontrino: number | null;
         sorelle: { id: string; operatore: string; numero: string; importo: number; stato: string }[];
@@ -2031,13 +2054,24 @@ function SchedaRicarica({ id, onChiudi, onCambiato }: { id: string; onChiudi: ()
                                     </a>
                                     <span className="text-slate-500 text-[11px]">
                                         {" "}· {d.scontrino.negozio} · {new Date(d.scontrino.created_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" })}
-                                        {d.righeScontrino ? ` · ${d.righeScontrino} rig${d.righeScontrino === 1 ? "a" : "he"}` : ""}
+                                        {/* ⚠️ NON È «QUANTE COSE C'ERANO»: è il numero di righe di
+                                            carrello di quel gruppo società, e tre ricariche battute
+                                            insieme ci stanno dentro in una sola. Chiamarlo col suo
+                                            nome costa due parole e evita una conclusione sbagliata. */}
+                                        {d.righeScontrino ? ` · ${d.righeScontrino} rig${d.righeScontrino === 1 ? "a" : "he"} di carrello` : ""}
                                         {d.scontrino.status !== "done" ? " · NON uscito" : ""}
                                         {/* ⚠️ SI DICE SE È UNA CERTEZZA O UN ACCOSTAMENTO. Quando il
                                             documento porta scritto il contratto siamo sicuri; quando lo
                                             si è preso per vicinanza di orario, no — e chi legge deve
                                             saperlo prima di trarne conclusioni. */}
-                                        {!d.scontrino.certo ? " · accostato per orario, da confermare" : ""}
+                                        {!d.scontrino.certo
+                                            ? (d.scontrino.quanti > 1
+                                                /* se i candidati erano più d'uno, dirlo: «da confermare»
+                                                   e «ce n'erano tre nella stessa finestra» chiedono due
+                                                   livelli di attenzione diversi */
+                                                ? ` · accostato per orario fra ${d.scontrino.quanti} documenti vicini: da confermare`
+                                                : " · accostato per orario, da confermare")
+                                            : ""}
                                     </span>
                                 </span></div>
                             ) : (

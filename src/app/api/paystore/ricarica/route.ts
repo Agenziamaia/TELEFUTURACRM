@@ -101,7 +101,7 @@ export async function GET(request: Request) {
                 .eq("client_id", cli)
                 .eq("data_registrazione", String((c as { data_registrazione?: string } | null)?.data_registrazione || "1970-01-01"));
             insieme = altre || [];
-            comeTrovate = "stessa vendita (cliente e giorno)";
+            comeTrovate = insieme.length ? "stessa vendita: stesso cliente, stesso giorno" : "niente: su questa vendita c'era solo la ricarica";
         } else {
             const nato = new Date(String((c as { created_at?: string } | null)?.created_at || ric.creata_il)).getTime();
             const { data: altre } = await q
@@ -109,7 +109,14 @@ export async function GET(request: Request) {
                 .gte("created_at", new Date(nato - 15000).toISOString())
                 .lte("created_at", new Date(nato + 15000).toISOString());
             insieme = altre || [];
-            comeTrovate = "vendita al banco: righe battute nello stesso momento";
+            /* ⚠️ IL METODO NON È UNA RISPOSTA. Scrivere «righe battute nello
+               stesso momento» dentro la casella del valore, quando di righe non
+               ce n'è nessuna, fa leggere «venduta insieme a → righe battute nello
+               stesso momento»: una frase che non dice niente. Quando la risposta
+               è «niente», si scrive niente. */
+            comeTrovate = insieme.length
+                ? "vendita al banco senza anagrafica: righe battute nello stesso momento"
+                : (c ? "niente: è stata battuta da sola" : "la vendita collegata non si trova più");
         }
     }
 
@@ -124,16 +131,26 @@ export async function GET(request: Request) {
        sullo scontrino è «Magliana W3», la ricarica dice «Magliana» — e la
        finestra fra cinque minuti prima e uno dopo. */
     type Job = { id: string; created_at: string; status: string; negozio: string; kind: string; meta: Record<string, unknown> | null };
-    let scontrino: (Job & { certo: boolean }) | null = null;
+    let scontrino: (Job & { certo: boolean; quanti: number }) | null = null;
     {
         /* ⚠️ SE IL DOCUMENTO PORTA IL CONTRATTO, non si indovina niente. È il
            caso migliore e va provato per primo. */
         if (contractId) {
             const { data: dritto } = await supabaseAdmin.from("print_jobs")
                 .select("id, created_at, status, negozio, kind, meta")
-                .eq("meta->>contrattoId", contractId).order("created_at").limit(1);
-            const d = ((dritto || []) as Job[])[0];
-            if (d) scontrino = { ...d, certo: true };
+                .eq("meta->>contrattoId", contractId)
+                /* solo documenti fiscali: un incasso o un annullo non è «lo
+                   scontrino di questa vendita» */
+                .in("kind", ["fiscal_receipt", "fiscal"])
+                /* ⚠️ L'ULTIMO, NON IL PRIMO. Quando una stampa fallisce e viene
+                   rifatta, il primo tentativo è quello andato male: dandolo per
+                   buono la scheda scriverebbe «NON uscito» su uno scontrino
+                   uscito benissimo. Si preferisce quello riuscito, e a parità
+                   il più recente. */
+                .order("created_at", { ascending: false });
+            const tutti = (dritto || []) as Job[];
+            const d = tutti.find((x) => x.status === "done") || tutti[0];
+            if (d) scontrino = { ...d, certo: true, quanti: tutti.length };
         }
         if (!scontrino) {
             const t = new Date(String(ric.creata_il)).getTime();
@@ -142,23 +159,35 @@ export async function GET(request: Request) {
                 .in("kind", ["fiscal_receipt", "fiscal"])
                 .gte("created_at", new Date(t - 300000).toISOString())
                 .lte("created_at", new Date(t + 60000).toISOString());
-            const miei = ((jobs || []) as Job[]).filter((j) => stessoMagazzino(j.negozio, String(ric.negozio || "")));
+            /* ⚠️ E LA SOCIETÀ FA PARTE DELL'INDIRIZZO. «Collatina W3» e
+               «Collatina Multi» sono lo stesso bancone ma DUE partite IVA:
+               `stessoMagazzino` li fonde apposta, e senza questo filtro una
+               ricarica di Telefutura poteva finire agganciata allo scontrino
+               fiscale di Telefutura 2 — un altro documento, di un altro
+               cliente, di un'altra società. Misurato: col filtro gli agganci
+               unici salgono da 250 a 270 e gli ambigui scendono da 75 a 53. */
+            const miaAz = String(ric.azienda || "");
+            const miei = ((jobs || []) as Job[])
+                .filter((j) => stessoMagazzino(j.negozio, String(ric.negozio || "")))
+                .filter((j) => !miaAz || String(j.meta?.azienda || "") === miaAz);
             /* più d'uno non si sceglie a caso: si dà il più vicino nel tempo, e
                si dice che è un accostamento, non una certezza */
-            const vicino = miei.sort((a, b) =>
-                Math.abs(new Date(a.created_at).getTime() - t) - Math.abs(new Date(b.created_at).getTime() - t))[0];
-            if (vicino) scontrino = { ...vicino, certo: false };
+            const ordinati = miei.sort((a, b) =>
+                Math.abs(new Date(a.created_at).getTime() - t) - Math.abs(new Date(b.created_at).getTime() - t));
+            if (ordinati[0]) scontrino = { ...ordinati[0], certo: false, quanti: ordinati.length };
         }
     }
 
-    /* ⚠️ E LO SCONTRINO HA L'ULTIMA PAROLA SULLE COMPAGNE. Il documento porta
-       quante righe sono state battute: se ne dichiara UNA, quella ricarica è
-       stata venduta da sola — qualunque cosa suggerisca l'incrocio qui sopra. */
+    /* ⚠️ `meta.items` NON È «QUANTE COSE C'ERANO SULLO SCONTRINO». È il numero
+       di righe di CARRELLO di quel gruppo società — e tre ricariche battute
+       insieme viaggiano dentro una riga sola. Misurato: Baleniere 03/09, tre
+       ricariche per 23 € totali, un solo scontrino con `items: 1`.
+       C'era qui una regola che ne faceva un verdetto («una riga → venduta da
+       sola, cancella le compagne»): oggi non scatta mai, perché nessuno
+       scontrino porta il contratto di una ricarica; il giorno che lo portasse,
+       cancellerebbe compagne vere. Una regola che o dorme o sbaglia si toglie:
+       il conteggio resta, ma come informazione, chiamata col suo nome. */
     const righeScontrino = Number(scontrino?.meta?.items ?? NaN);
-    if (scontrino?.certo && righeScontrino === 1 && insieme.length) {
-        insieme = [];
-        comeTrovate = "lo scontrino ha una riga sola: venduta da sola";
-    }
 
     const { data: eventi } = await supabaseAdmin.from("paystore_eventi")
         .select("quando, chi, tipo, testo").eq("ricarica_id", id).order("quando", { ascending: false }).limit(100);

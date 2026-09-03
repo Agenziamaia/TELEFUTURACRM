@@ -8,6 +8,10 @@ import { credenzialeDi } from "@/lib/paystoreCredenziali";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/* ⚠️ QUESTA ROTTA ADESSO PARLA CON PAYSTORE, sedici volte: un login e una
+   lettura di saldo per credenziale. Senza dichiararlo, la piattaforma la
+   taglierebbe a metà lasciando metà foglio salvato e metà no. */
+export const maxDuration = 120;
 
 /* ═══ CARICARE LE CREDENZIALI PAYSTORE ════════════════════════════════════
    Sedici terne — client id, client secret, signing key — una per negozio e per
@@ -155,62 +159,83 @@ export async function POST(req: Request) {
            sulla forma resta come primo filtro, perché è gratis e coglie
            l'errore più comune — l'incollata a metà. */
         const cid = r.clientId!.trim();
-        const forma = !/^ps_(live|test)_[A-Za-z0-9_-]+$/.test(cid)
+        /* ⚠️ LA FORMA È UN AVVISO, NON UN CANCELLO. Trenta caratteri è quello
+           che hanno tutte e sedici le terne vere di oggi, ma è un numero
+           MISURATO, non una regola scritta da PayStore: il loro stesso esempio
+           nel manuale ne ha 27. Un cancello su un numero osservato rifiuterebbe
+           domani una chiave legittima. A decidere è PayStore, qui sotto: questo
+           serve solo a dire dove guardare quando rifiuta. */
+        const sospetto = !/^ps_(live|test)_[A-Za-z0-9_-]+$/.test(cid)
             ? "l'identificativo non ha la forma di una chiave PayStore (ps_live_… o ps_test_…)"
             : cid.length !== 30
-                ? `l'identificativo è lungo ${cid.length} caratteri invece di 30: sembra incollato a metà`
+                ? `l'identificativo è lungo ${cid.length} caratteri invece dei 30 delle altre: controlla di non averlo incollato a metà`
                 : "";
         const cred = { clientId: cid, clientSecret: r.secret!.trim(), signingKey: r.signingKey!.trim() };
         /* la prova vera: il saldo mette alla prova token E firma in un colpo */
         const provata = await saldo(cred);
-        const entra = provata.ok
-            ? ""
-            : /invalid_client|401/i.test(String(provata.errore || provata.descrizione || ""))
-                ? "PayStore rifiuta questa terna (invalid_client): identificativo o segreto sbagliati, o account non abilitato"
-                : `PayStore non l'ha accettata: ${provata.descrizione || provata.errore}`;
+        /* ═══ RIFIUTATA ≠ NON RAGGIUNGIBILE ════════════════════════════════
+           ⚠️ QUESTA DISTINZIONE VALE LE RICARICHE DI DODICI NEGOZI. Se si
+           trattasse ogni fallimento come «terna sbagliata», bastava ricaricare
+           il foglio BUONO mentre PayStore è giù — o mentre la rete singhiozza,
+           o al superamento del tetto di dieci token al minuto — per spegnere
+           tutte e sedici le credenziali in un colpo, e con esse le ricariche di
+           tutta la rete. Il client marca già `definitivo` (400/401/403/404/422):
+           solo quello è un verdetto sulla terna. Il resto è «non ho potuto
+           chiedere», e non si tocca niente. */
+        const rifiutata = !provata.ok && provata.definitivo;
+        const nonRaggiunta = !provata.ok && !provata.definitivo;
+        const perche = rifiutata
+            ? (/invalid_client|non valide/i.test(String(provata.errore || provata.descrizione || ""))
+                ? "PayStore rifiuta questa terna: identificativo o segreto sbagliati, o account non abilitato"
+                : `PayStore l'ha rifiutata: ${provata.descrizione || provata.errore}`)
+            : "";
 
         if (b.prova) {
             esiti.push({
                 societa: r.societa!, identificativo: r.identificativo!, negozio,
-                esito: forma || entra || "pronta — e PayStore la accetta",
+                esito: rifiutata ? `❌ ${perche}${sospetto ? " — " + sospetto : ""}`
+                    : nonRaggiunta ? `⚠️ non ho potuto provarla adesso (${provata.descrizione || provata.errore}): riprova fra un minuto${sospetto ? " — " + sospetto : ""}`
+                    : sospetto ? `✅ PayStore la accetta, ma ${sospetto}`
+                    : "✅ pronta — e PayStore la accetta",
             });
             continue;
         }
-        /* ⚠️ UNA TERNA CHE NON ENTRA NON SI SALVA ATTIVA. Salvarla accesa vuol
-           dire lasciare un negozio convinto di poter ricaricare: si mette da
-           parte, spenta, così si vede che c'è ed è da rifare. */
-        if (forma || entra) {
-            const { error: e2 } = await supabaseAdmin.from("paystore_credenziali").upsert({
-                negozio, azienda: az, identificativo: r.identificativo!.trim(),
-                client_id: cid,
-                secret_cifrato: cifraSegreto(r.secret!.trim()),
-                signing_cifrata: cifraSegreto(r.signingKey!.trim()),
-                attivo: false, creato_da: g.sess.id, aggiornato_il: new Date().toISOString(),
-            }, { onConflict: "negozio,azienda" });
-            esiti.push({
-                societa: r.societa!, identificativo: r.identificativo!, negozio,
-                esito: `NON attivata: ${forma || entra}${e2 ? " (e nemmeno salvata: " + e2.message + ")" : " — salvata spenta, da rifare"}`,
-            });
-            continue;
-        }
+
+        /* ⚠️ E LA RIGA CHE ERA ACCESA RESTA ACCESA. Si spegne SOLO su un
+           rifiuto vero: una terna che non entra lasciata accesa vuol dire un
+           negozio convinto di poter ricaricare, ma spegnerne una buona perché
+           la rete ha singhiozzato vuol dire fermare la cassa. Nel dubbio si
+           lascia com'era e lo si dice. */
+        const { data: eraCosi } = await supabaseAdmin.from("paystore_credenziali")
+            .select("attivo").eq("negozio", negozio).eq("azienda", az).maybeSingle();
+        const attivo = rifiutata ? false
+            : nonRaggiunta ? ((eraCosi as { attivo?: boolean } | null)?.attivo ?? true)
+            : true;
         const { error } = await supabaseAdmin.from("paystore_credenziali").upsert({
             negozio, azienda: az, identificativo: r.identificativo!.trim(),
-            client_id: r.clientId!.trim(),
+            client_id: cid,
             secret_cifrato: cifraSegreto(r.secret!.trim()),
             signing_cifrata: cifraSegreto(r.signingKey!.trim()),
-            attivo: true, creato_da: g.sess.id, aggiornato_il: new Date().toISOString(),
+            attivo, creato_da: g.sess.id, aggiornato_il: new Date().toISOString(),
         }, { onConflict: "negozio,azienda" });
         /* ⚠️ L'ERRORE GREZZO DI POSTGRES NON LO CAPISCE NESSUNO. «there is no
            unique or exclusion constraint matching the ON CONFLICT
            specification» vuol dire che manca un vincolo sul database: chi
            legge il pannello deve sapere che non è colpa del suo foglio. */
-        const spiegato = !error ? "salvata"
+        const spiegato = !error
+            ? (rifiutata ? `salvata SPENTA: ${perche}${sospetto ? " — " + sospetto : ""}`
+                : nonRaggiunta ? `salvata, ma non ho potuto provarla (${provata.descrizione || provata.errore}): è rimasta ${attivo ? "accesa" : "spenta"} com'era`
+                : sospetto ? `salvata e provata — nota: ${sospetto}`
+                : "salvata — e PayStore la accetta")
             : /ON CONFLICT/i.test(error.message)
                 ? "NON salvata: manca un vincolo sul database — non dipende dal foglio, va sistemato lato server"
                 : "NON salvata: " + error.message;
         esiti.push({ societa: r.societa!, identificativo: r.identificativo!, negozio, esito: spiegato });
     }
-    const salvate = esiti.filter((e) => e.esito === "salvata" || e.esito === "pronta").length;
+    /* ⚠️ SI CONTA QUELLO CHE È ANDATO BENE, non una parola esatta: gli esiti
+       adesso raccontano anche il perché, e cercarli per uguaglianza faceva
+       dire «zero salvate» su sedici salvataggi riusciti. */
+    const salvate = esiti.filter((e) => /^salvata|^✅/.test(e.esito)).length;
     return NextResponse.json({
         ok: true, prova: !!b.prova, esiti,
         salvate, fallite: esiti.length - salvate,

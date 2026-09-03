@@ -1,7 +1,13 @@
 "use client";
 
 // FILTRO MULTI-SELEZIONE STANDARD del CRM (estratto da Ricerca Vendite il
-// 10/08 per riuso — MOD-24 Archivio Malus; identico anche in Calendario).
+// 10/08 per riuso — MOD-24 Archivio Malus).
+// ⚠️ NON È PIÙ L'UNICO: Calendario (page.tsx:147) e Ricerca Vendite
+// (page.tsx:189) ne hanno una PROPRIA copia, che non passa nemmeno da
+// `posizionaTendina` — quelle non si aprono verso l'alto e hanno ancora la
+// lista bloccata a `max-h-64`. Chi tocca questo file sappia che sta
+// correggendo una schermata su tre: le altre due vanno portate qui, non
+// corrette a mano una quarta volta.
 // Convenzione: null = TUTTO selezionato (nessun filtro, default); [] = niente
 // spuntato; array = insieme scelto; rispuntare tutte le voci ricompatta a null.
 // In testa "Seleziona/Deseleziona tutto"; sul bottone la chip riassuntiva

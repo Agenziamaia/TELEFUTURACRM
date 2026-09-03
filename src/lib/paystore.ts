@@ -86,7 +86,12 @@ async function accessToken(c: Credenziale): Promise<string> {
     const inCorso = tokenInCorso.get(k);
     if (inCorso) return inCorso;                    // due ricariche insieme = una sola richiesta
     const p = (async () => {
+        /* ⚠️ ANCHE IL LOGIN HA UN TETTO DI TEMPO. Le chiamate vere ce l'hanno
+           (45s), questa no: una connessione che resta appesa teneva bloccata la
+           ricarica — e adesso anche il salvataggio delle credenziali, che ne
+           fa sedici in fila. */
         const r = await fetch(baseDi(c) + "/oauth/token", {
+            signal: AbortSignal.timeout(20000),
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ grant_type: "client_credentials", client_id: c.clientId, client_secret: c.clientSecret }),
