@@ -735,6 +735,38 @@ html.light .rvBox-sopra{background:#f7f8fc;border-color:rgba(30,41,82,.14);
    suo cestino. Prima era un riquadro solo in cui scriverli tutti, e a parte
    il difetto del ritorno a capo non si vedeva mai quanti pezzi si stessero
    caricando — bisognava contare le righe a occhio. */
+/* ═══ LA SCHERMATA DEL NUOVO ARTICOLO ═══════════════════════════════════════
+   Una griglia, non una fila di campi che va a capo dove capita: i sette campi
+   hanno pesi diversi — la descrizione è lunga, il prezzo è corto — e messi in
+   una riga elastica finivano ogni volta in un ordine diverso a seconda della
+   larghezza. Qui le colonne sono dodici e ogni campo dice quante ne prende. */
+.rvNuovoArt{padding:16px 18px;border-radius:14px;border:1px solid var(--tf-w100);
+  background:var(--tf-w20)}
+.rvNuovoArt-t{margin-bottom:14px}
+.rvNuovoArt-t > b{display:block;font-size:15px;font-weight:800;color:var(--tf-e2e8f0);margin-bottom:3px}
+.rvNuovoArt-t span b{color:var(--tf-e2e8f0);font-weight:800}
+.rvNuovoArt-t span{display:block;font-size:12px;line-height:1.5;color:var(--tf-94a3b8);max-width:70ch}
+.rvNuovoArt-g{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px 14px}
+.rvNuovoArt-c{display:flex;flex-direction:column;gap:5px;grid-column:span 4;min-width:0}
+.rvNuovoArt-c-lg{grid-column:span 12}
+.rvNuovoArt-c-sm{grid-column:span 4}
+/* il codice a barre sta per primo ed è largo: ci si spara dentro col lettore */
+.rvNuovoArt-c-bar{grid-column:span 4}
+/* «obbligatorio» detto con una parola, non con un asterisco da decifrare */
+.rvNuovoArt-ob{font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--tf-f59e0b);margin-left:6px}
+.rvNuovoArt-imei{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+.rvNuovoArt-p{display:flex;align-items:center;gap:10px;margin-top:16px;
+  padding-top:14px;border-top:1px solid var(--tf-w60)}
+@media (max-width:720px){
+  .rvNuovoArt-c,.rvNuovoArt-c-sm,.rvNuovoArt-c-bar{grid-column:span 12}
+}
+html.light .rvNuovoArt{background:#fff;border-color:rgba(15,23,42,.14)}
+html.light .rvNuovoArt-t > b,html.light .rvNuovoArt-t span b{color:#0f172a}
+html.light .rvNuovoArt-t span{color:#4b5a75}
+html.light .rvNuovoArt-ob{color:#a05a00}
+html.light .rvNuovoArt-p{border-top-color:rgba(15,23,42,.10)}
+
 /* LA SIGLA DELLA SOCIETÀ, accanto alla casella che si spunta. Due colori
    diversi perché la domanda vera non è «che società è questa riga» ma «ce
    n'è una fuori posto» — e a quella si risponde col colore, non leggendo

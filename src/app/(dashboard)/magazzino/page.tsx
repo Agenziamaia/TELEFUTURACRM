@@ -34,6 +34,7 @@
 // esplosione dei pezzi, cestino, DDT ed export sono gli stessi di prima.
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CaricoMerce from "./CaricoMerce";
+import NuovoArticolo from "./NuovoArticolo";
 import { createPortal } from "react-dom";
 import { Boxes, FileDown, Loader2, PackagePlus, Search, Truck } from "lucide-react";
 import { famigliaDalNome } from "@/lib/cassaCatalogo";
@@ -4123,30 +4124,6 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
         } finally { setSalvando(""); }
     };
 
-    const creaArticolo = async () => {
-        if (!nuovo || salvando) return;
-        setSalvando("__nuovo"); setErroreSalva("");
-        try {
-            const r = await fetch("/api/magazzino/articoli", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ azione: "crea", ...nuovo }),
-            });
-            const j = await r.json().catch(() => ({} as { ok?: boolean; error?: string }));
-            if (!r.ok || !j.ok) throw new Error(j.error || "riprova");
-            setArticoli(p => [{
-                codice: String(nuovo.codice).trim(), barcode: nuovo.barcode || null,
-                descrizione: String(nuovo.descrizione).trim(),
-                gruppo: nuovo.gruppo || null, sottogruppo: nuovo.sottogruppo || null, marca: nuovo.marca || null,
-                iva_acquisto: null, iva_vendita: null,
-                costo_ultimo: nuovo.costo_ultimo ? Number(nuovo.costo_ultimo) : null,
-                prezzo: Number(nuovo.prezzo), attivo: true,
-            } as Articolo, ...p]);
-            setNuovo(null);
-        } catch (e) {
-            setErroreSalva((e as Error)?.message || "non creato");
-        } finally { setSalvando(""); }
-    };
-
     const esporta = () => {
         const dati: CellaXlsx[][] = filtrati.map(a => [
             a.codice, a.barcode || "", a.descrizione, nomeFam(a._fam), a._sotto, a._op || "", a.marca || "",
@@ -4306,61 +4283,26 @@ function Articoli({ vedeCosti, puoDefinire }: { vedeCosti: boolean; puoDefinire:
             </div>
         </div>, document.body);
 
+    /* LA STESSA SCHEDA DEL CARICO MERCE (Luca 03/09: «allinea questa procedura
+       a quella che c'è su giacenze: la procedura dev'essere esattamente la
+       stessa»). Erano due schede con due regole — questa chiedeva descrizione
+       e prezzo ma non il reparto, teneva il codice a barre in fondo come un
+       ripensamento e non controllava che non fosse già di un altro articolo.
+       Adesso è un componente solo, e passa dalla stessa porta del database. */
     const pannelloNuovo = nuovo && createPortal(
         <div className="rvFattaSfondo" onClick={e => { if (e.target === e.currentTarget) setNuovo(null); }}>
-            <div className="rvStoria">
-                <div className="rvStoria-t">
-                    <div>
-                        <div className="rvStoria-tit">Nuovo articolo</div>
-                        <div className="rvStoria-sot">
-                            Gli articoli arrivano dall&apos;export del gestionale: qui si aggiunge quello che lì non c&apos;è.
-                            Il <b>codice</b> è la chiave e non si ripete; il <b>prezzo di vendita</b> senza il quale in cassa non si può vendere.
-                        </div>
-                    </div>
-                </div>
-                <div className="rvBarra">
-                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Codice *</span>
-                        <input className="rvIn" value={nuovo.codice} onChange={e => setNuovo({ ...nuovo, codice: e.target.value })} />
-                    </label>
-                    <label className="rvCampo rvCampo-flex"><span className="rvLab">Descrizione *</span>
-                        <input className="rvIn" value={nuovo.descrizione} onChange={e => setNuovo({ ...nuovo, descrizione: e.target.value })} />
-                    </label>
-                </div>
-                <div className="rvBarra">
-                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Prezzo di vendita € *</span>
-                        <input className="rvIn" inputMode="decimal" value={nuovo.prezzo} onChange={e => setNuovo({ ...nuovo, prezzo: e.target.value })} />
-                    </label>
-                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Costo d&apos;acquisto €</span>
-                        <input className="rvIn" inputMode="decimal" value={nuovo.costo_ultimo} onChange={e => setNuovo({ ...nuovo, costo_ultimo: e.target.value })} />
-                    </label>
-                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Reparto IVA</span>
-                        <select className="rvIn" value={nuovo.reparto} onChange={e => setNuovo({ ...nuovo, reparto: e.target.value })}>
-                            <option value="">— da assegnare —</option>
-                            {reparti.map(r => (
-                                <option key={r.reparto} value={r.reparto}>
-                                    {r.reparto} · {r.descrizione}{r.aliquota != null ? ` (${r.aliquota}%)` : r.natura ? ` (${r.natura})` : ""}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
-                <div className="rvBarra">
-                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
-                        <input className="rvIn" value={nuovo.marca} onChange={e => setNuovo({ ...nuovo, marca: e.target.value })} />
-                    </label>
-                    <label className="rvCampo rvCampo-sm"><span className="rvLab">Barcode</span>
-                        <input className="rvIn" value={nuovo.barcode} onChange={e => setNuovo({ ...nuovo, barcode: e.target.value })} />
-                    </label>
-                </div>
-                {erroreSalva && <div className="rvErr">{erroreSalva}</div>}
-                <div className="rvBarra rvBarra-c">
-                    <button type="button" className="rvPill rvPill-sm" onClick={() => setNuovo(null)}>Annulla</button>
-                    <span className="rvSpazio" />
-                    <button type="button" className="rvAzione rvAzione-sm" onClick={creaArticolo}
-                        disabled={!nuovo.codice.trim() || !nuovo.descrizione.trim() || !nuovo.prezzo.trim() || salvando === "__nuovo"}>
-                        {salvando === "__nuovo" ? "…" : "Crea l'articolo"}
-                    </button>
-                </div>
+            <div className="w-full max-w-3xl">
+                <NuovoArticolo origine="anagrafica articoli"
+                    annulla={() => setNuovo(null)}
+                    dopo={a => {
+                        setNuovo(null);
+                        setArticoli(p => [{
+                            codice: a.codice, barcode: a.barcode, descrizione: a.descrizione,
+                            gruppo: null, sottogruppo: null, marca: a.marca,
+                            iva_acquisto: null, iva_vendita: null,
+                            costo_ultimo: a.costo_ultimo, prezzo: a.prezzo, attivo: true,
+                        } as Articolo, ...p]);
+                    }} />
             </div>
         </div>, document.body);
 

@@ -49,6 +49,7 @@ import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { PackagePlus, Trash2, Plus, X } from "lucide-react";
+import NuovoArticolo from "./NuovoArticolo";
 
 const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 const eur = (n: number | null | undefined) => n == null ? "—"
@@ -65,23 +66,6 @@ const TIPI_SERIALE = [
     { v: "iccid", et: "ICCID", nota: "SIM" },
     { v: "seriale", et: "Seriale", nota: "tutto il resto" },
 ];
-
-/* IL PREZZO SERVE, e non è una pignoleria: la rotta che già crea articoli lo
-   pretende da sempre (Luca 29/08: «senza, in cassa quell'articolo non si può
-   vendere»). Due porte per la stessa cosa devono chiedere le stesse cose. */
-const prezzoValido = (v: string) => {
-    const n = Number(String(v || "").replace(",", "."));
-    return v.trim() !== "" && Number.isFinite(n) && n >= 0 && n <= 100000;
-};
-/* IL REPARTO È UNA TENDINA VERA, la stessa della scheda articolo che già
-   esiste in Articoli: un `<select>` tiene il NUMERO come valore e mostra il
-   nome con l'aliquota accanto. Prima tenevo il numero in una casella di testo
-   e me lo ritagliavo dall'etichetta: funzionava, ma era un passaggio in più
-   che poteva rompersi — e tre descrizioni un «·» ce l'hanno già dentro. */
-const numeroReparto = (v: string) => {
-    const n = Number(v);
-    return Number.isInteger(n) && n >= 1 && n <= 40 ? n : 0;
-};
 
 type ArticoloTrovato = {
     codice: string; descrizione: string; barcode: string | null;
@@ -306,41 +290,7 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
        IL REPARTO IVA È OBBLIGATORIO, e non è una formalità: un articolo senza
        reparto, il giorno che lo si vende, ESCE dallo scontrino — il server lo
        scarta con «reparto IVA non assegnato». Merce venduta, riga assente. */
-    type Reparto = { reparto: number; descrizione: string; aliquota: string | null; natura: string | null };
-    const [reparti, setReparti] = useState<Reparto[]>([]);
-    useEffect(() => {
-        supabase.from("pos_reparti").select("reparto,descrizione,aliquota,natura").eq("attivo", true).order("reparto")
-            /* IL 7 È L'USATO, e l'usato non entra a magazzino: offrirlo qui
-               vorrebbe dire far creare da questa porta proprio la cosa che
-               questa porta non deve far entrare. */
-            .then(({ data }) => setReparti(((data ?? []) as Reparto[]).filter(r => r.reparto !== 7)));
-    }, []);
-
-    const [nuovo, setNuovo] = useState<{ codice: string; barcode: string; descrizione: string; marca: string; haImei: boolean; costo: string; prezzo: string; reparto: string } | null>(null);
-    const creaArticolo = async () => {
-        if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto) || !prezzoValido(nuovo.prezzo)) return;
-        setBusy(true); setEsito(null);
-        const num = (s: string) => s.trim() ? Number(s.replace(",", ".")) : null;
-        /* PASSA DAL DATABASE, non dal browser: su `mag_articoli` chi è loggato
-           ha il permesso di LEGGERE e basta — l'insert dal browser falliva
-           sempre, per chiunque, admin compreso. E il ruolo si controlla di là,
-           dove non si può mentire su chi si è. */
-        const { data, error } = await supabase.rpc("mag_crea_articolo", {
-            p_codice: nuovo.codice.trim(),
-            p_descrizione: nuovo.descrizione.trim(),
-            p_reparto: numeroReparto(nuovo.reparto),
-            p_ha_imei: nuovo.haImei,
-            p_costo: num(nuovo.costo),
-            p_prezzo: num(nuovo.prezzo),
-            p_barcode: nuovo.barcode.trim() || null,
-            p_marca: nuovo.marca.trim() || null,
-        });
-        setBusy(false);
-        if (error) { setEsito({ ok: false, testo: "Articolo non creato: " + error.message }); return; }
-        const a = data as { codice: string; descrizione: string; ha_imei: boolean; costo_ultimo: number | null; barcode: string | null };
-        aggiungi({ ...a, gruppo: null, marca: nuovo.marca.trim() || null, reparto: numeroReparto(nuovo.reparto), prezzo: num(nuovo.prezzo) } as ArticoloTrovato);
-        setNuovo(null); setCerca("");
-    };
+    const [nuovo, setNuovo] = useState(false);
 
     /* ═══ PASSO 3 — DI CHI È LA MERCE ═══════════════════════════════════════
        «Magari trova un modo di attribuire gli articoli a una società, anche
@@ -625,63 +575,19 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                         <div className="rvNota rvNota-att mt-2">
                             <div className="rvNota-t">Nessun articolo con «{cerca}»</div>
                             <div className="rvNota-s">Se non esiste ancora, puoi crearlo adesso senza uscire dal carico.</div>
-                            <button onClick={() => setNuovo({ codice: "", barcode: "", descrizione: cerca, marca: "", haImei: false, costo: "", prezzo: "", reparto: "" })}
+                            <button onClick={() => setNuovo(true)}
                                 className="rvPill rvPill-sm mt-2">➕ Crea l&apos;articolo</button>
                         </div>
                     )}
 
                     {nuovo && (
-                        <div className="rvStoria rvScheda mt-3">
-                            <div className="rvDettT">➕ Nuovo articolo</div>
-                            {/* UN ARTICOLO HA DUE CODICI (Luca 03/09: «quando crei
-                                un articolo i codici sono due e poi c'è la
-                                descrizione — vatti a vedere come è composto un
-                                articolo importato da Suite Mobile»). Guardato:
-                                `0TSAGAA5OU7127` è il codice interno,
-                                `8032325398960` il codice a barre, e poi il nome.
-                                Il 77% del listino generale ce li ha tutti e due.
-                                Chiederne uno solo vuol dire un articolo che al
-                                banco, col lettore, non si trova. */}
-                            <div className="rvBarra mt-2">
-                                <label className="rvCampo rvCampo-sm"><span className="rvLab">Codice <span className="rvLabX">(interno)</span></span>
-                                    <input value={nuovo.codice} onChange={e => setNuovo({ ...nuovo, codice: e.target.value })} className="rvIn" autoFocus /></label>
-                                <label className="rvCampo rvCampo-sm"><span className="rvLab">Codice a barre <span className="rvLabX">(sparalo col lettore)</span></span>
-                                    <input value={nuovo.barcode} onChange={e => setNuovo({ ...nuovo, barcode: e.target.value })} className="rvIn font-mono" /></label>
-                                <label className="rvCampo rvCampo-flex"><span className="rvLab">Descrizione</span>
-                                    <input value={nuovo.descrizione} onChange={e => setNuovo({ ...nuovo, descrizione: e.target.value })} className="rvIn" /></label>
-                            </div>
-                            <div className="rvBarra mt-2">
-                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Costo €</span>
-                                    <input value={nuovo.costo} onChange={e => setNuovo({ ...nuovo, costo: e.target.value })} className="rvIn" inputMode="decimal" /></label>
-                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Prezzo € <span className="rvLabX">(serve)</span></span>
-                                    <input value={nuovo.prezzo} onChange={e => setNuovo({ ...nuovo, prezzo: e.target.value })} className="rvIn" inputMode="decimal" /></label>
-                                <label className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
-                                    <input value={nuovo.marca} onChange={e => setNuovo({ ...nuovo, marca: e.target.value })} className="rvIn" /></label>
-                                {/* l'etichetta sta su UNA riga: andando a capo
-                                    spingeva giù la sua tendina e la riga si
-                                    disallineava. Il perché lo dice il rifiuto,
-                                    quando serve, invece di occupare due righe
-                                    sempre. */}
-                                <label className="rvCampo rvCampo-md"><span className="rvLab">Reparto IVA <span className="rvLabX">(serve)</span></span>
-                                    <select className="rvIn" value={nuovo.reparto} onChange={e => setNuovo({ ...nuovo, reparto: e.target.value })}>
-                                        <option value="">— scegli —</option>
-                                        {reparti.map(r => (
-                                            <option key={r.reparto} value={r.reparto}>
-                                                {r.reparto} · {r.descrizione}{r.aliquota != null ? ` (${r.aliquota}%)` : r.natura ? ` (${r.natura})` : ""}
-                                            </option>
-                                        ))}
-                                    </select></label>
-                            </div>
-                            <div className="rvCampo mt-2"><span className="rvLab">Ogni pezzo ha il suo numero (IMEI, ICCID…)?</span>
-                                <div className="rvPillRow">
-                                    <button onClick={() => setNuovo({ ...nuovo, haImei: false })} className={cn("rvPill rvPill-sm", !nuovo.haImei && "rvPill-on")}>No, si conta a quantità</button>
-                                    <button onClick={() => setNuovo({ ...nuovo, haImei: true })} className={cn("rvPill rvPill-sm", nuovo.haImei && "rvPill-on")}>Sì, uno per uno</button>
-                                </div>
-                            </div>
-                            <div className="rvPillRow mt-2">
-                                <button onClick={creaArticolo} disabled={busy || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto) || !prezzoValido(nuovo.prezzo)} className="rvAzione rvAzione-sm">Crea e aggiungi</button>
-                                <button onClick={() => setNuovo(null)} className="rvPill rvPill-sm">Annulla</button>
-                            </div>
+                        <div className="mt-3">
+                            <NuovoArticolo descrizioneIniziale={cerca} chiediImei origine="carico merce"
+                                annulla={() => setNuovo(false)}
+                                dopo={a => {
+                                    aggiungi({ ...a, gruppo: null } as ArticoloTrovato);
+                                    setNuovo(false); setCerca("");
+                                }} />
                         </div>
                     )}
 
