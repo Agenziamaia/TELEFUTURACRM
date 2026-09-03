@@ -66,13 +66,6 @@ const TIPI_SERIALE = [
     { v: "seriale", et: "Seriale", nota: "tutto il resto" },
 ];
 
-/* IL REPARTO SI SCEGLIE LEGGENDO, NON A NUMERO. La tendina è una casella di
-   testo: quello che ci si tiene dentro è quello che si vede. Tenerci «2»
-   vorrebbe dire che dopo aver scelto «2 · IVA 22%» il campo mostra «2», che a
-   chi guarda non dice niente. Il numero lo si estrae al momento di creare —
-   e la descrizione può contenere altri «·» (c'è «7 · Usato · regime
-   margine»), quindi si prende quello che sta PRIMA del primo. */
-const etichettaReparto = (r: { reparto: number; descrizione: string }) => `${r.reparto} · ${r.descrizione}`;
 /* IL PREZZO SERVE, e non è una pignoleria: la rotta che già crea articoli lo
    pretende da sempre (Luca 29/08: «senza, in cassa quell'articolo non si può
    vendere»). Due porte per la stessa cosa devono chiedere le stesse cose. */
@@ -80,8 +73,13 @@ const prezzoValido = (v: string) => {
     const n = Number(String(v || "").replace(",", "."));
     return v.trim() !== "" && Number.isFinite(n) && n >= 0 && n <= 100000;
 };
-const numeroReparto = (etichetta: string) => {
-    const n = Number(String(etichetta || "").split("·")[0].trim());
+/* IL REPARTO È UNA TENDINA VERA, la stessa della scheda articolo che già
+   esiste in Articoli: un `<select>` tiene il NUMERO come valore e mostra il
+   nome con l'aliquota accanto. Prima tenevo il numero in una casella di testo
+   e me lo ritagliavo dall'etichetta: funzionava, ma era un passaggio in più
+   che poteva rompersi — e tre descrizioni un «·» ce l'hanno già dentro. */
+const numeroReparto = (v: string) => {
+    const n = Number(v);
     return Number.isInteger(n) && n >= 1 && n <= 40 ? n : 0;
 };
 
@@ -195,6 +193,14 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
             const { data, error } = await supabase.from("mag_articoli")
                 .select("codice,descrizione,barcode,ha_imei,prezzo,costo_ultimo,gruppo,marca,reparto")
                 .or(`descrizione.ilike.%${s}%,codice.ilike.%${s}%,barcode.ilike.%${s}%`)
+                /* L'USATO NON SI CARICA A MAGAZZINO (Luca 03/09: «fanno
+                   confusione, l'usato vive in un'altra sezione»). Erano 3.237
+                   articoli su 17.083 — uno su cinque — che non si possono
+                   caricare per definizione e che riempivano la ricerca.
+                   `usato` è una colonna calcolata dal database dai tre indizi
+                   che finora stavano scritti in tre posti diversi: gruppo
+                   USATO, codice RITUSATO*, reparto 7 / ART.36. */
+                .eq("usato", false)
                 .eq("attivo", true).limit(40);
             if (!vivo) return;
             const lista = (data ?? []) as ArticoloTrovato[];
@@ -229,13 +235,17 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
        IL REPARTO IVA È OBBLIGATORIO, e non è una formalità: un articolo senza
        reparto, il giorno che lo si vende, ESCE dallo scontrino — il server lo
        scarta con «reparto IVA non assegnato». Merce venduta, riga assente. */
-    const [reparti, setReparti] = useState<{ reparto: number; descrizione: string }[]>([]);
+    type Reparto = { reparto: number; descrizione: string; aliquota: string | null; natura: string | null };
+    const [reparti, setReparti] = useState<Reparto[]>([]);
     useEffect(() => {
-        supabase.from("pos_reparti").select("reparto,descrizione").eq("attivo", true).order("reparto")
-            .then(({ data }) => setReparti((data ?? []) as { reparto: number; descrizione: string }[]));
+        supabase.from("pos_reparti").select("reparto,descrizione,aliquota,natura").eq("attivo", true).order("reparto")
+            /* IL 7 È L'USATO, e l'usato non entra a magazzino: offrirlo qui
+               vorrebbe dire far creare da questa porta proprio la cosa che
+               questa porta non deve far entrare. */
+            .then(({ data }) => setReparti(((data ?? []) as Reparto[]).filter(r => r.reparto !== 7)));
     }, []);
 
-    const [nuovo, setNuovo] = useState<{ codice: string; descrizione: string; haImei: boolean; costo: string; prezzo: string; reparto: string } | null>(null);
+    const [nuovo, setNuovo] = useState<{ codice: string; barcode: string; descrizione: string; marca: string; haImei: boolean; costo: string; prezzo: string; reparto: string } | null>(null);
     const creaArticolo = async () => {
         if (!nuovo || !nuovo.codice.trim() || !nuovo.descrizione.trim() || !numeroReparto(nuovo.reparto) || !prezzoValido(nuovo.prezzo)) return;
         setBusy(true); setEsito(null);
@@ -251,11 +261,13 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
             p_ha_imei: nuovo.haImei,
             p_costo: num(nuovo.costo),
             p_prezzo: num(nuovo.prezzo),
+            p_barcode: nuovo.barcode.trim() || null,
+            p_marca: nuovo.marca.trim() || null,
         });
         setBusy(false);
         if (error) { setEsito({ ok: false, testo: "Articolo non creato: " + error.message }); return; }
-        const a = data as { codice: string; descrizione: string; ha_imei: boolean; costo_ultimo: number | null };
-        aggiungi({ ...a, barcode: null, gruppo: null, marca: null, reparto: Number(nuovo.reparto), prezzo: null } as ArticoloTrovato);
+        const a = data as { codice: string; descrizione: string; ha_imei: boolean; costo_ultimo: number | null; barcode: string | null };
+        aggiungi({ ...a, gruppo: null, marca: nuovo.marca.trim() || null, reparto: numeroReparto(nuovo.reparto), prezzo: num(nuovo.prezzo) } as ArticoloTrovato);
         setNuovo(null); setCerca("");
     };
 
@@ -499,7 +511,7 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                         <div className="rvNota rvNota-att mt-2">
                             <div className="rvNota-t">Nessun articolo con «{cerca}»</div>
                             <div className="rvNota-s">Se non esiste ancora, puoi crearlo adesso senza uscire dal carico.</div>
-                            <button onClick={() => setNuovo({ codice: "", descrizione: cerca, haImei: false, costo: "", prezzo: "", reparto: "" })}
+                            <button onClick={() => setNuovo({ codice: "", barcode: "", descrizione: cerca, marca: "", haImei: false, costo: "", prezzo: "", reparto: "" })}
                                 className="rvPill rvPill-sm mt-2">➕ Crea l&apos;articolo</button>
                         </div>
                     )}
@@ -507,21 +519,44 @@ export default function CaricoMerce({ aperto, negozi, aziende, nomiAzienda, dopo
                     {nuovo && (
                         <div className="rvStoria rvScheda mt-3">
                             <div className="rvDettT">➕ Nuovo articolo</div>
+                            {/* UN ARTICOLO HA DUE CODICI (Luca 03/09: «quando crei
+                                un articolo i codici sono due e poi c'è la
+                                descrizione — vatti a vedere come è composto un
+                                articolo importato da Suite Mobile»). Guardato:
+                                `0TSAGAA5OU7127` è il codice interno,
+                                `8032325398960` il codice a barre, e poi il nome.
+                                Il 77% del listino generale ce li ha tutti e due.
+                                Chiederne uno solo vuol dire un articolo che al
+                                banco, col lettore, non si trova. */}
                             <div className="rvBarra mt-2">
-                                <label className="rvCampo rvCampo-sm"><span className="rvLab">Codice</span>
-                                    <input value={nuovo.codice} onChange={e => setNuovo({ ...nuovo, codice: e.target.value })} className="rvIn" /></label>
+                                <label className="rvCampo rvCampo-sm"><span className="rvLab">Codice <span className="rvLabX">(interno)</span></span>
+                                    <input value={nuovo.codice} onChange={e => setNuovo({ ...nuovo, codice: e.target.value })} className="rvIn" autoFocus /></label>
+                                <label className="rvCampo rvCampo-sm"><span className="rvLab">Codice a barre <span className="rvLabX">(sparalo col lettore)</span></span>
+                                    <input value={nuovo.barcode} onChange={e => setNuovo({ ...nuovo, barcode: e.target.value })} className="rvIn font-mono" /></label>
                                 <label className="rvCampo rvCampo-flex"><span className="rvLab">Descrizione</span>
                                     <input value={nuovo.descrizione} onChange={e => setNuovo({ ...nuovo, descrizione: e.target.value })} className="rvIn" /></label>
-                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Costo €</span>
-                                    <input value={nuovo.costo} onChange={e => setNuovo({ ...nuovo, costo: e.target.value })} className="rvIn" /></label>
-                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Prezzo € <span className="rvLabX">(serve)</span></span>
-                                    <input value={nuovo.prezzo} onChange={e => setNuovo({ ...nuovo, prezzo: e.target.value })} className="rvIn" /></label>
                             </div>
                             <div className="rvBarra mt-2">
-                                <div className="rvCampo rvCampo-md"><span className="rvLab">Reparto IVA <span className="rvLabX">(senza, l&apos;articolo non esce sullo scontrino)</span></span>
-                                    <SelectOpzioni className="rvIn" value={nuovo.reparto}
-                                        onChange={v => setNuovo({ ...nuovo, reparto: v })}
-                                        opzioni={reparti.map(etichettaReparto)} placeholder="scegli…" /></div>
+                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Costo €</span>
+                                    <input value={nuovo.costo} onChange={e => setNuovo({ ...nuovo, costo: e.target.value })} className="rvIn" inputMode="decimal" /></label>
+                                <label className="rvCampo rvCampo-xs"><span className="rvLab">Prezzo € <span className="rvLabX">(serve)</span></span>
+                                    <input value={nuovo.prezzo} onChange={e => setNuovo({ ...nuovo, prezzo: e.target.value })} className="rvIn" inputMode="decimal" /></label>
+                                <label className="rvCampo rvCampo-sm"><span className="rvLab">Marca</span>
+                                    <input value={nuovo.marca} onChange={e => setNuovo({ ...nuovo, marca: e.target.value })} className="rvIn" /></label>
+                                {/* l'etichetta sta su UNA riga: andando a capo
+                                    spingeva giù la sua tendina e la riga si
+                                    disallineava. Il perché lo dice il rifiuto,
+                                    quando serve, invece di occupare due righe
+                                    sempre. */}
+                                <label className="rvCampo rvCampo-md"><span className="rvLab">Reparto IVA <span className="rvLabX">(serve)</span></span>
+                                    <select className="rvIn" value={nuovo.reparto} onChange={e => setNuovo({ ...nuovo, reparto: e.target.value })}>
+                                        <option value="">— scegli —</option>
+                                        {reparti.map(r => (
+                                            <option key={r.reparto} value={r.reparto}>
+                                                {r.reparto} · {r.descrizione}{r.aliquota != null ? ` (${r.aliquota}%)` : r.natura ? ` (${r.natura})` : ""}
+                                            </option>
+                                        ))}
+                                    </select></label>
                             </div>
                             <div className="rvCampo mt-2"><span className="rvLab">Ogni pezzo ha il suo numero (IMEI, ICCID…)?</span>
                                 <div className="rvPillRow">

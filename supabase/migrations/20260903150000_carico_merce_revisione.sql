@@ -234,6 +234,10 @@ begin
     end if;
   end if;
 
+  -- L'USATO NON ENTRA A MAGAZZINO (Luca 03/09): vive in Gestione Usati, e
+  -- caricarlo qui vuol dire lo stesso telefono in due registri.
+  perform mag_carico_no_usato(p_righe);
+
   -- ── OGNI RIGA DICE UNA COSA SOLA, E LA DICE PER INTERO ─────────────────
   for v_r in select x from jsonb_array_elements(p_righe) x loop
     v_desc := coalesce(nullif(btrim(coalesce(v_r->>'descrizione', '')), ''),
