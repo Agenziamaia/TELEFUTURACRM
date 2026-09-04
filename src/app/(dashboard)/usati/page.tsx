@@ -1191,7 +1191,24 @@ function DevicePanel({ device, onClose, onSave, onDeleted, onRicarica }: { devic
                       <input defaultValue={dev.model} onBlur={e => { const v = e.target.value.trim(); if (v && v !== dev.model) persist({ ...dev, model: v }); }}
                         className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white outline-none" /></div>
                     <div><div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">IMEI</div>
-                      <input defaultValue={dev.imei} onBlur={e => { const v = e.target.value.replace(/[^0-9A-Za-z]/g, ""); if (v && v !== dev.imei) persist({ ...dev, imei: v }); }}
+                      {/* ⚠️ IL MODELLO INCOLLATO DENTRO L'IMEI (04/09, Acilia).
+                          Questo campo ripuliva solo spazi e punteggiatura: chi
+                          incollava «864846076081059 zte a76 5g» si ritrovava
+                          «864846076081059ztea765g» salvato come IMEI. Alla
+                          vendita il CRM conta le cifre, ne trovava 18 invece di
+                          15, e il telefono non entrava nel carrello — con il
+                          cliente davanti e nessun messaggio che dicesse perché.
+                          Quattro telefoni bloccati così.
+                          Se il valore COMINCIA con 15 cifre, quelle sono l'IMEI
+                          e il resto è roba appiccicata: si taglia. Gli orologi e
+                          i tablet, che hanno un seriale con le lettere, restano
+                          come sono — lì 15 cifre non ci sono. */}
+                      <input defaultValue={dev.imei} onBlur={e => {
+                        const grezzo = e.target.value.replace(/[^0-9A-Za-z]/g, "");
+                        const v = /^[0-9]{15}/.test(grezzo) ? grezzo.slice(0, 15) : grezzo;
+                        if (v && v !== dev.imei) persist({ ...dev, imei: v });
+                        else e.target.value = dev.imei;
+                      }}
                         className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white font-mono outline-none" /></div>
                     <div><div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Negozio</div>
                       <SelectOpzioni value={dev.store} onChange={(v) => v && persist({ ...dev, store: v })}

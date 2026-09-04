@@ -732,7 +732,20 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
                       <div>
                         <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {u.model||"—"}</div>
                         <div style={{fontSize:11,color:"var(--tf-8892b0)",fontFamily:"monospace"}}>IMEI {u.imei}</div>
-                        <div style={{fontSize:10,color:"var(--tf-28a745)",fontWeight:700,marginTop:2}}>Dal magazzino usati — verrà scaricato alla registrazione</div>
+                        {/* ⚠️ QUANDO L'IMEI NON TORNA, LO SI DICE (04/09, Acilia).
+                            Un IMEI con dentro il modello — «864846076081059ztea765g»
+                            — non arriva mai a 15 cifre: la riga restava incompleta,
+                            il carrello non l'accettava e nessuno diceva perché. Con
+                            il cliente davanti si perde mezz'ora a cercare la causa
+                            sbagliata. Adesso c'è scritto cosa fare e a chi dirlo. */}
+                        {!done?(
+                          <div style={{fontSize:10,color:"var(--tf-fd7e14)",fontWeight:700,marginTop:2}}>
+                            ⚠ L&apos;IMEI di questa scheda non è di 15 cifre ({_di.length}): il telefono non si può vendere finché
+                            l&apos;amministrazione non lo corregge in Gestione Usati.
+                          </div>
+                        ):(
+                          <div style={{fontSize:10,color:"var(--tf-28a745)",fontWeight:700,marginTop:2}}>Dal magazzino usati — verrà scaricato alla registrazione</div>
+                        )}
                       </div>
                       <button onClick={()=>clearUnit(i)} className="rvPill rvPill-sm" style={{whiteSpace:"nowrap"}}>✕ cambia</button>
                     </div>
