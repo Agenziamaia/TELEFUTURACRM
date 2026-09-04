@@ -34,7 +34,14 @@ async function orfani(): Promise<{ nome: string; peso: number }[]> {
 }
 
 export async function GET(req: Request) {
-    if (!await autorizzato(req)) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+    /* il cron passa col suo token; per tutti gli altri vale il permesso della
+       sezione. Scritto qui dentro e non solo nel wrapper perché la guardia di
+       sicurezza controlla verbo per verbo — e ha ragione: un lucchetto su un
+       altro verbo dello stesso file non protegge questo. */
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "amministrazione");
+        if (!_g.ok) return _g.risposta;
+    }
     try {
         const o = await orfani();
         const mb = o.reduce((n, x) => n + x.peso, 0) / 1048576;
@@ -48,7 +55,14 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-    if (!await autorizzato(req)) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+    /* il cron passa col suo token; per tutti gli altri vale il permesso della
+       sezione. Scritto qui dentro e non solo nel wrapper perché la guardia di
+       sicurezza controlla verbo per verbo — e ha ragione: un lucchetto su un
+       altro verbo dello stesso file non protegge questo. */
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "amministrazione");
+        if (!_g.ok) return _g.risposta;
+    }
     try {
         const o = await orfani();
         let tolti = 0;

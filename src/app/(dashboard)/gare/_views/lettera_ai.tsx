@@ -35,7 +35,7 @@ const COLORE = { aggiorna: "text-amber-300", aggiungi: "text-emerald-300", rimuo
    darmi solamente queste due opzioni che scelgo e poi vado avanti».
    La lettera NON si carica prima: la si dà da leggere, e se la lettura va a
    buon fine finisce da sola nell'archivio del mese. */
-export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto = null }) {
+export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto = () => {} }) {
     const { user } = useAuth();
     const [proposte, setProposte] = useState(null);
     const [inArchivio, setInArchivio] = useState("");
@@ -56,14 +56,22 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto =
 
     const puoi = isAdminOrAbove(user?.role);
 
+    /* ⚠️ lo stato del mese si decide con le due query sulle piste e BASTA.
+       Prima stava nello stesso Promise.all della fetch all'AI: se quella
+       falliva (rete, 500 in HTML) `statoMese` restava null per sempre e la
+       card non compariva più — proprio il caso che non deve succedere. */
     const carica = async () => {
-        const [d, ora, prima] = await Promise.all([
-            fetch(`/api/ai/gare-lettera?brand=${brand}&month=${month}`, { credentials: "include", cache: "no-store" }).then((r) => r.json()),
-            supabase.from("gare_azienda_piste").select("id").eq("brand", brand).eq("month", month).limit(1),
-            supabase.from("gare_azienda_piste").select("id").eq("brand", brand).eq("month", prevMonth).limit(1),
-        ]);
-        setProposte(d.proposte || []);
-        setStatoMese({ vuoto: !(ora.data || []).length, prevHas: !!(prima.data || []).length });
+        try {
+            const [ora, prima] = await Promise.all([
+                supabase.from("gare_azienda_piste").select("id").eq("brand", brand).eq("month", month).limit(1),
+                supabase.from("gare_azienda_piste").select("id").eq("brand", brand).eq("month", prevMonth).limit(1),
+            ]);
+            setStatoMese({ vuoto: !(ora.data || []).length, prevHas: !!(prima.data || []).length });
+        } catch { setStatoMese({ vuoto: true, prevHas: false }); }
+        try {
+            const d = await fetch(`/api/ai/gare-lettera?brand=${brand}&month=${month}`, { credentials: "include", cache: "no-store" }).then((r) => r.json());
+            setProposte(d.proposte || []);
+        } catch { setProposte([]); }
     };
 
     const copiaMesePrima = async () => {
@@ -165,12 +173,17 @@ ${(p.avvisi || []).length ? `<div class="av"><b>Da controllare a mano:</b><br>${
 
     return (
         <div className="glass-panel rounded-2xl overflow-hidden">
-            {statoMese?.vuoto ? (
+            {statoMese === null ? (
+                <div className="px-4 py-3 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
+                    <span className="text-[12px] text-slate-500">Guardo com&apos;è messo {meseIt(month)}…</span>
+                </div>
+            ) : statoMese.vuoto ? (
                 /* il mese non è ancora impostato: si sceglie da dove partire */
                 <div className="p-5 text-center space-y-3">
                     <p className="text-sm text-slate-400">Lato azienda non ancora impostato per {meseIt(month)}. Da dove partiamo?</p>
                     <div className="flex flex-wrap items-center justify-center gap-2.5">
-                        {statoMese?.prevHas && (
+                        {puoi && statoMese.prevHas && (
                             <button onClick={copiaMesePrima} disabled={copiando || !!lavoro}
                                 className={cn("flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold border transition-colors",
                                     "bg-white/[0.04] border-white/10 text-slate-200 hover:bg-white/[0.08]", (copiando || lavoro) && "opacity-40")}>
@@ -178,7 +191,7 @@ ${(p.avvisi || []).length ? `<div class="av"><b>Da controllare a mano:</b><br>${
                                 Copia le regole di {meseIt(prevMonth)}
                             </button>
                         )}
-                        {puoi && (
+                        {puoi && statoMese.prevHas && (
                             <label className={cn("flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold cursor-pointer border transition-colors",
                                 lavoro ? "bg-white/5 border-white/10 text-slate-500" : "bg-indigo-500/20 border-indigo-400/30 text-indigo-200 hover:bg-indigo-500/30")}>
                                 {lavoro ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -190,7 +203,9 @@ ${(p.avvisi || []).length ? `<div class="av"><b>Da controllare a mano:</b><br>${
                         )}
                     </div>
                     <p className="text-[11px] text-slate-500">
-                        La lettera non serve caricarla prima: dalla qui, viene letta e poi finisce da sola in archivio.
+                        {statoMese.prevHas
+                            ? "La lettera non serve caricarla prima: dalla qui, viene letta e poi finisce da sola in archivio."
+                            : `Per questo operatore non c'è ancora nessun mese impostato: le regole vanno create una prima volta a mano, poi ogni mese si copiano e si correggono con la lettera.`}
                     </p>
                 </div>
             ) : (
@@ -215,7 +230,7 @@ ${(p.avvisi || []).length ? `<div class="av"><b>Da controllare a mano:</b><br>${
                 </div>
             )}
 
-            {(aperta && (!statoMese?.vuoto || (proposte && proposte.length) || errore)) && (
+            {(statoMese !== null && aperta && (!statoMese.vuoto || (proposte && proposte.length) || errore)) && (
                 <div className="px-4 pb-3 border-t border-white/5 pt-3 space-y-3">
                     {inArchivio && (
                         <p className="text-[11px] text-emerald-300/80">«{inArchivio}» è stata archiviata fra le lettere di {meseIt(month)}.</p>

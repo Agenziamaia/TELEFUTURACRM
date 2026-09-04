@@ -73,6 +73,9 @@ function GareInner() {
     const lato = searchParams.get("lato") === "ragazzi" ? "ragazzi" : "azienda";
     const go = (b?: string, l?: string) => router.push(b ? `/gare?brand=${b}${l ? `&lato=${l}` : ""}` : "/gare");
     const [month, setMonth] = useState(currentMonthKey());
+    // cambia quando il mese viene impostato (copia o lettera applicata): i
+    // pannelli sotto si rimontano e leggono le regole appena scritte
+    const [rev, setRev] = useState(0);
     useEffect(() => { setMostraCreazione(false); }, [brandId, lato, month]);
     // W3 azienda A SCHEDE (Luca 14/08: cinque pannelli impilati erano
     // «confusionari»): Partnership · Commissioning € · Lettera & tabellare
@@ -242,7 +245,8 @@ function GareInner() {
                         copiare le regole del mese prima, o dare la lettera all'AI.
                         Sta QUI e non dentro AziendaTab: su WindTre quel tab compare
                         solo dentro «Regole di gara» e la card non si vedeva mai. */}
-                    {lato === "azienda" && <LetteraAI brand={brand.id} month={month} colore={brand.color} />}
+                    {lato === "azienda" && <LetteraAI brand={brand.id} month={month} colore={brand.color}
+                        onFatto={() => setRev((r) => r + 1)} />}
 
                     {/* W3 AZIENDA A SCHEDE (riordino Luca 14/08, «era confusionario»):
                         il pannello PDV con segmento e target resta sempre in testa;
@@ -253,12 +257,12 @@ function GareInner() {
                             {/* SCHEDA RAGAZZI W3 (Luca 25/08): niente schemi-regole —
                                 solo le SOGLIE (tutte le piste, prime 3) e il tabellare
                                 dei PAY = commissioning azienda × % della soglia */}
-                            <W3RagazziSoglie key={`w3rsg|${month}`} mese={month.slice(0, 7)} />
-                            <W3CommissioningPanel key={`w3rcomm|${month}`} mese={month.slice(0, 7)} colore={brand.color} ragazzi />
+                            <W3RagazziSoglie key={`w3rsg|${month}|${rev}`} mese={month.slice(0, 7)} />
+                            <W3CommissioningPanel key={`w3rcomm|${month}|${rev}`} mese={month.slice(0, 7)} colore={brand.color} ragazzi />
                         </>
                     ) : PAY_CTX[brand.id] === "windtre" && lato === "azienda" ? (
                         <>
-                            <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
+                            <W3PdvPanel key={`w3pdv|${month}|${rev}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
                             {segW3 === "franchising" && (
                                 <>
                                     <div className="flex gap-1.5 flex-wrap">
@@ -277,17 +281,17 @@ function GareInner() {
                                         ))}
                                     </div>
                                     {tabW3 === "partnership" && (
-                                        <W3PartnershipPanel key={`w3pr|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                        <W3PartnershipPanel key={`w3pr|${month}|${rev}`} mese={month.slice(0, 7)} colore={brand.color} />
                                     )}
                                     {tabW3 === "comm" && (
                                         <>
-                                        <W3PercRagazzi key={`w3perc|${month}`} mese={month.slice(0, 7)} />
-                                        <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                                        <W3PercRagazzi key={`w3perc|${month}|${rev}`} mese={month.slice(0, 7)} />
+                                        <W3CommissioningPanel key={`w3comm|${month}|${rev}`} mese={month.slice(0, 7)} colore={brand.color} />
                                         </>
                                     )}
                                     {tabW3 === "lettera" && (
                                         <>
-                                            <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
+                                            <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|${rev}|tab`}
                                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
                                                 vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto}
                                                 nascondiVuoto={!mostraCreazione} nascondiSoglie soloRegole />
@@ -304,7 +308,7 @@ function GareInner() {
                                                 </button>
                                             )}
                                             {(vecchioSchema || tabVuoto) && (
-                                                <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
+                                                <AziendaTab key={`${brand.id}|${month}|${rev}|az`} brand={brand.id} month={month} />
                                             )}
                                         </>
                                     )}
@@ -315,7 +319,7 @@ function GareInner() {
                         <>
                             {/* TABELLARE PAY (Luca 11/08): gli altri brand e il lato
                                 ragazzi restano al flusso classico */}
-                            <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
+                            <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|${rev}|tab`}
                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
                                 vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto}
                                 nascondiVuoto={!mostraCreazione} />
@@ -333,7 +337,7 @@ function GareInner() {
                             )}
                             {(vecchioSchema || tabVuoto) && (
                                 lato === "azienda" ? (
-                                    <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
+                                    <AziendaTab key={`${brand.id}|${month}|${rev}|az`} brand={brand.id} month={month} />
                                 ) : rag ? (
                                     <RagazziTab key={`${rag.id}|${month}|rag`} garaId={rag.id} month={month} nota={rag.nota} />
                                 ) : null
@@ -341,7 +345,7 @@ function GareInner() {
                         </>
                     ) : (
                         lato === "azienda" ? (
-                            <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
+                            <AziendaTab key={`${brand.id}|${month}|${rev}|az`} brand={brand.id} month={month} />
                         ) : rag ? (
                             <RagazziTab key={`${rag.id}|${month}|rag`} garaId={rag.id} month={month} nota={rag.nota} />
                         ) : null

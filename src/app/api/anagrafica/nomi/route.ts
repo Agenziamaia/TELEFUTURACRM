@@ -26,7 +26,14 @@ async function autorizzato(req: Request): Promise<boolean> {
 }
 
 export async function GET(req: Request) {
-    if (!await autorizzato(req)) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+    /* il cron passa col suo token; per tutti gli altri vale il permesso della
+       sezione. Scritto qui dentro e non solo nel wrapper perché la guardia di
+       sicurezza controlla verbo per verbo — e ha ragione: un lucchetto su un
+       altro verbo dello stesso file non protegge questo. */
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "amministrazione");
+        if (!_g.ok) return _g.risposta;
+    }
     const { data, error } = await supabaseAdmin.rpc("tf_nomi_in_ordine", { p_prova: true });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const righe = (data ?? []) as { tabella: string; campo: string; sistemati: number }[];
@@ -38,7 +45,14 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-    if (!await autorizzato(req)) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+    /* il cron passa col suo token; per tutti gli altri vale il permesso della
+       sezione. Scritto qui dentro e non solo nel wrapper perché la guardia di
+       sicurezza controlla verbo per verbo — e ha ragione: un lucchetto su un
+       altro verbo dello stesso file non protegge questo. */
+    if (!(await eUnLavoroAutomatico(req))) {
+        const _g = await accesso(req, "amministrazione");
+        if (!_g.ok) return _g.risposta;
+    }
     const { data, error } = await supabaseAdmin.rpc("tf_nomi_in_ordine", { p_prova: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     const righe = (data ?? []) as { tabella: string; campo: string; sistemati: number }[];

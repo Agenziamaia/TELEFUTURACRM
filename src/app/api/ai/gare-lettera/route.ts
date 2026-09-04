@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
+import { isAdminOrAbove } from "@/lib/roles";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { chat, hasKey, MODEL_FAST } from "@/lib/ai/deepseek";
 import { registraConsumo } from "@/lib/ai/consumi";
@@ -38,6 +39,11 @@ const CAMPI: Record<NomeTab, string[]> = {
 };
 
 const meseIso = (m: string) => String(m).slice(0, 7) + "-01";
+const meseLungo = (m: string) => {
+    const [y, mm] = meseIso(m).split("-").map(Number);
+    const s = new Date(y, mm - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+    return s.charAt(0).toUpperCase() + s.slice(1);
+};
 const mesePrima = (m: string) => {
     const [y, mm] = meseIso(m).split("-").map(Number);
     const d = new Date(y, mm - 2, 1);
@@ -130,8 +136,23 @@ SOLO un oggetto JSON con questa forma, senza testo attorno:
 Rispondi solo con il JSON.`;
 }
 
+/* ⚠️ `accesso(request,"gare")` da solo NON basta: in permessiServer la chiave
+   "gare" non esiste, quindi torna ok a chiunque abbia una sessione valida.
+   Queste rotte riscrivono le regole che pagano le persone: il ruolo si
+   controlla qui, esplicitamente. */
+async function soloChiPuo(request: Request) {
+    const g = await accesso(request, "ai/gare-lettera");
+    if (!g.ok) return { ok: false as const, risposta: g.risposta };
+    const { data: chi } = await supabase.from("profiles").select("name, role").eq("id", g.sess.id).maybeSingle();
+    if (!isAdminOrAbove(chi?.role)) {
+        return { ok: false as const, risposta: NextResponse.json({ error: "Non hai i permessi per le gare." }, { status: 403 }) };
+    }
+    return { ok: true as const, sess: g.sess, autore: chi?.name || null };
+}
+
 export async function GET(request: Request) {
-    const g = await accesso(request, "gare");
+    const _g = await accesso(request, "ai/gare-lettera"); if (!_g.ok) return _g.risposta;
+    const g = await soloChiPuo(request);
     if (!g.ok) return g.risposta;
     const url = new URL(request.url);
     const brand = url.searchParams.get("brand") || "";
@@ -143,12 +164,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const g = await accesso(request, "gare");
+    const _g = await accesso(request, "ai/gare-lettera"); if (!_g.ok) return _g.risposta;
+    const g = await soloChiPuo(request);
     if (!g.ok) return g.risposta;
     const sess = g.sess;
-    // il nome per la firma della proposta: la sessione porta solo l'id
-    const { data: chiSono } = await supabase.from("profiles").select("name").eq("id", sess.id).maybeSingle();
-    const autore = chiSono?.name || null;
+    const autore = g.autore;
     const body = await request.json().catch(() => ({}));
     const azione = String(body.azione || "proponi");
     const brand = String(body.brand || "");
@@ -161,9 +181,23 @@ export async function POST(request: Request) {
         const testo = String(body.testo || "").trim();
         if (testo.length < 200) return NextResponse.json({ error: "Il testo della lettera è troppo corto: il file non è stato letto." }, { status: 400 });
 
-        const base = body.mese_base ? meseIso(String(body.mese_base)) : mesePrima(month);
+        /* ⚠️ SI LAVORA SUL MESE CHE SI STA IMPOSTANDO, NON SU QUELLO PRIMA.
+           Prendendo la fotografia del mese precedente, gli id delle righe erano
+           quelli di AGOSTO: un "aggiorna" avrebbe riscritto le regole del mese
+           già pagato, e un "rimuovi" le avrebbe cancellate. Il flusso giusto è
+           copiare il mese prima (le righe nascono in settembre con id propri) e
+           poi correggere QUELLE con la lettera. */
+        const base = month;
         const tutte = await divisioni(brand, base);
-        if (!tutte.length) return NextResponse.json({ error: `Il mese base (${base}) è vuoto: non c'è niente con cui confrontare la lettera.` }, { status: 400 });
+        if (!tutte.length) {
+            const prima = mesePrima(month);
+            const hasPrima = (await divisioni(brand, prima)).length > 0;
+            return NextResponse.json({
+                error: hasPrima
+                    ? `${meseLungo(month)} è ancora vuoto. Copia prima le regole di ${meseLungo(prima)}: la lettera serve a correggere quelle, non a scriverle da zero.`
+                    : `Non c'è nessun mese impostato per questo operatore: la lettera si può leggere solo per correggere un mese già esistente.`,
+            }, { status: 400 });
+        }
         // la lettera può riguardare una sola divisione: se il chiamante la indica
         // si fa un giro solo, altrimenti un giro per divisione
         const dovute = body.divisione ? [String(body.divisione)] : tutte;
@@ -269,11 +303,14 @@ export async function POST(request: Request) {
             const tabella = TAB[m.tabella as NomeTab];
             try {
                 if (m.operazione === "aggiorna") {
-                    const { error } = await supabase.from(tabella).update({ [m.campo]: m.a }).eq("id", m.id);
+                    // brand e mese anche qui: nessuna proposta può toccare un altro mese
+                    const { error } = await supabase.from(tabella).update({ [m.campo]: m.a })
+                        .eq("id", m.id).eq("brand", brand).eq("month", month);
                     if (error) throw error;
                     fatto.push({ ...m, esito: "aggiornata" });
                 } else if (m.operazione === "rimuovi") {
-                    const { error } = await supabase.from(tabella).delete().eq("id", m.id);
+                    const { error } = await supabase.from(tabella).delete()
+                        .eq("id", m.id).eq("brand", brand).eq("month", month);
                     if (error) throw error;
                     fatto.push({ ...m, esito: "rimossa" });
                 } else if (m.operazione === "aggiungi") {
