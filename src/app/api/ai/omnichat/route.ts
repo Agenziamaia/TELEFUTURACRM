@@ -12,7 +12,8 @@
 import { NextResponse } from "next/server";
 import { registraConsumo, codiceErrore } from "@/lib/ai/consumi";
 import { accesso } from "@/lib/permessiServer";
-import { chat, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
+import { MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
+import { chatAi as chat, chiavePer as hasKey } from "@/lib/ai/chatAi";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

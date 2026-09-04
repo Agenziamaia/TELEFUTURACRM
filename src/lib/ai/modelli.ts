@@ -53,6 +53,29 @@ export const MODELLI_AI: ModelloAi[] = [
         tettoMin: 4000,
         ragiona: true,
     },
+    /* I DUE DI ANTHROPIC, per il lavoro dove sbagliare costa più del modello
+       (Luca 04/09). Non entrano nel giro dell'assistente per abitudine: li
+       sceglie chi ha un motivo, e per ora il motivo è uno solo — la lettura
+       della lettera di gara, che riscrive le tabelle dei compensi.
+       ⚠️ PREZZI DA CONFERMARE SULLA PRIMA FATTURA. Questo file ha già una
+       cicatrice sul tema (il listino DeepSeek sbagliato che dimezzava il conto
+       fino al 31/08): finché la fattura non arriva, questi numeri sono la
+       stima migliore che ho, non un dato. La cache di Anthropic legge a circa
+       un decimo del token nuovo. */
+    {
+        id: "claude-sonnet-5",
+        nome: "Preciso",
+        descrizione: "Legge documenti lunghi e ne ricava tabelle senza inventare. È il modello delle lettere di gara.",
+        prezzo: { in: 3.0, inCache: 0.30, out: 15.0 },
+        tettoMin: 4000,
+    },
+    {
+        id: "claude-opus-5",
+        nome: "Massimo",
+        descrizione: "Il più capace e il più caro. Da usare sulla prima lettura di una lettera nuova, quando non sai ancora cosa aspettarti.",
+        prezzo: { in: 15.0, inCache: 1.50, out: 75.0 },
+        tettoMin: 4000,
+    },
 ];
 
 export const MODELLO_DI_SISTEMA = "deepseek-v4-flash";

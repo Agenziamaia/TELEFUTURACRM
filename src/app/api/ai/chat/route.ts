@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { registraConsumo, codiceErrore } from "@/lib/ai/consumi";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { chat, hasKey, type ChatMessage } from "@/lib/ai/deepseek";
+import { type ChatMessage } from "@/lib/ai/deepseek";
+import { chatAi as chat, chiavePer as hasKey } from "@/lib/ai/chatAi";
 import { modelloDi } from "@/lib/ai/modelloDi";
 import { tettoPer, costoChiamata, MODELLO_DI_SISTEMA } from "@/lib/ai/modelli";
 import { getScope } from "@/lib/ai/scope";
@@ -154,7 +155,10 @@ export async function POST(req: Request) {
     } catch (e) {
       const msg = String((e as Error)?.message || "");
       // errore del MODELLO (non della rete o della chiave): si riprova con quello di sistema
-      const colpaDelModello = /400|model|not found|unsupported|deprecat/i.test(msg);
+      // «non configurata» compresa: da quando i fornitori sono due, si può
+      // avere assegnato un modello Claude senza che la chiave sia sul server —
+      // e il ripiego serve proprio a non lasciare muta quella persona.
+      const colpaDelModello = /400|model|not found|unsupported|deprecat|non configurata/i.test(msg);
       if (!colpaDelModello || MODELLO === MODELLO_DI_SISTEMA) throw e;
       ripiegato = true;
       MODELLO = MODELLO_DI_SISTEMA;
