@@ -196,22 +196,48 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
         }
     }
 
-    // la chiave si scrive PRIMA di partire, e non cambia più
-    const chiave = f.idempotency_key || riga.idempotency_key || nuovaChiaveIdempotenza();
+    /* la chiave si scrive PRIMA di partire, e non cambia più */
+    const chiaveGiaSua = f.idempotency_key || riga.idempotency_key || null;
+    const primaVolta = !chiaveGiaSua;
+    const chiave = chiaveGiaSua || nuovaChiaveIdempotenza();
     const collaudo = ambienteOra;
     /* ⚠️ E SI SCRIVE SOLO SE LO STATO È ANCORA QUELLO. `.eq("stato", ...)` è
        quello che rende la presa una vera presa: se fra la rilettura e questa
        riga qualcuno ha cambiato lo stato, l'update non tocca niente e si
        vede — invece di erogare su una riga che nel frattempo è di qualcun
        altro. */
-    const { error: eChiave, data: scritta } = await supabase.from("paystore_ricariche").update({
+    /* ═══ E LA PRIMA CHIAVE SI SCRIVE SOLO SE NON C'È GIÀ ═══════════════════
+       ⚠️ QUESTA RIGA VALE IL DOPPIO CREDITO, e senza di essa il buco era reale.
+       Finché a eseguire era solo il motore, la presa era serializzata dalla sua
+       funzione SQL (`for update skip locked`). Dal 04/09 eseguono anche due
+       strade istantanee — quando esce lo scontrino e quando nascono le righe —
+       che sulla stessa vendita partono a due secondi l'una dall'altra.
+       Due chiamate in parallelo leggevano entrambe «sospeso, nessuna chiave»,
+       generavano DUE chiavi diverse, e la scrittura condizionata le lasciava
+       passare tutte e due: `.eq("stato", f.stato)` protegge da un CAMBIO di
+       stato, ma quell'update lo stato non lo cambia — quindi la condizione era
+       vera anche per la seconda. Due chiavi diverse, per PayStore, sono due
+       ricariche: le paga entrambe.
+       Con `.is("idempotency_key", null)` la prima scrittura è una presa vera:
+       la seconda tocca zero righe e si ferma.
+       ⚠️ E SOLO LA PRIMA. Su un ritentativo la chiave c'è già e va RIUSATA —
+       è lei a impedire il doppio lato PayStore — quindi lì la condizione non
+       si mette, se no la riga non si potrebbe più rimandare. */
+    let q = supabase.from("paystore_ricariche").update({
         idempotency_key: chiave,
         tentata_il: new Date().toISOString(),
         tentativi: (f.tentativi || riga.tentativi || 0) + 1,
         ambiente: collaudo ? "collaudo" : "produzione",
-    }).eq("id", riga.id).eq("stato", f.stato).select("id");
+    }).eq("id", riga.id).eq("stato", f.stato);
+    if (primaVolta) q = q.is("idempotency_key", null);
+    const { error: eChiave, data: scritta } = await q.select("id");
     if (!eChiave && !(scritta || []).length) {
-        return { ok: false, errore: "qualcun altro l'ha cambiata mentre la stavo prendendo: non parto", definitivo: true, stato: 409 };
+        return {
+            ok: false, definitivo: true, stato: 409,
+            errore: primaVolta
+                ? "un'altra esecuzione l'ha presa un istante prima: non parto, se no sarebbero due crediti"
+                : "qualcun altro l'ha cambiata mentre la stavo prendendo: non parto",
+        };
     }
     /* ⚠️ SE LA CHIAVE NON SI È SCRITTA, NON SI PARTE. Su questa unica scrittura
        poggia tutta la difesa contro il doppio credito: se resta solo in memoria
