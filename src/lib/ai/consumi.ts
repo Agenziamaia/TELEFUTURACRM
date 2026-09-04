@@ -29,7 +29,8 @@ export type SezioneAi =
     | "assistente"        // la chat personale
     | "triage_whatsapp"   // classifica le chat, gira da solo
     | "triage_email"      // classifica la posta, gira da solo
-    | "omnichat";         // recap e risposte suggerite, chiesti da una persona
+    | "omnichat"
+    | "gare_lettera";         // recap e risposte suggerite, chiesti da una persona
 
 /* ⚠️ IL CAMBIO, CONGELATO SU OGNI RIGA. Il fornitore fattura in dollari e Luca
    ragiona in euro. Sta qui e non in una tabella perché cambia di poco e di
