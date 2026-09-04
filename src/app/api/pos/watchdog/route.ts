@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { eUnLavoroAutomatico } from "@/lib/cronParola";
+import { accesso } from "@/lib/permessiServer";
 import { avvisaSuWhatsApp } from "@/lib/waAvviso";
 
 export const runtime = "nodejs";
@@ -36,8 +37,13 @@ const euroOra = (d: Date) =>
     d.toLocaleString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" });
 
 export async function POST(request: Request) {
+    /* O la parola dei lavori automatici (è pg_cron, non ha una sessione da
+       presentare) O una persona con il permesso della sezione — stesso schema
+       di /api/whatsapp/triage. Il secondo ramo serve a poterlo lanciare a mano
+       dal pannello per provarlo, senza aprire la rotta a chiunque. */
     if (!(await eUnLavoroAutomatico(request))) {
-        return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
+        const _g = await accesso(request, "pos/watchdog");
+        if (!_g.ok) return _g.risposta;
     }
     const ora = Date.now();
     const sogliaISO = new Date(ora - FERMO_DA_MIN * 60000).toISOString();
