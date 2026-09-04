@@ -28,6 +28,7 @@ import Image from "next/image";
 import { RefreshCw, ChevronLeft, ChevronRight, Plus, Power, Trash2, Check, Loader2, Copy } from "lucide-react";
 import { cn } from "@/utils";
 import { NOME_SOCIETA } from "@/lib/societa";
+import { erroreLeggibile } from "@/lib/paystoreErrori";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { OPERATORI_PAYSTORE } from "../../registra-vendita/PayStore";
 import { STATI_RICARICA } from "@/lib/paystore";
@@ -1121,7 +1122,12 @@ export function PayStoreAdminView() {
                                                     piena di trattini è rumore. */}
                                                 <td className="align-top" onClick={(e) => e.stopPropagation()}>
                                                     {(r.stato === "fallita" && r.errore) ? (
-                                                        <div className="psPerche psPerche-ko" title={r.errore}>{r.errore}</div>
+                                                        /* ⚠️ TRADOTTO, con l'originale nel suggerimento: «Utenza non
+                                                            Corretta» manda a controllare il contratto del cliente
+                                                            quando invece è il NUMERO scritto male. Il testo di
+                                                            PayStore resta lì sotto, perché è quello che loro
+                                                            riconoscono se bisogna aprire un ticket. */
+                                                        <div className="psPerche psPerche-ko" title={r.errore}>{erroreLeggibile(r.errore, r.numero)}</div>
                                                     ) : (r.stato === "sospeso" && r.perche) ? (
                                                         <div className="psPerche" title={r.perche}>{r.perche}</div>
                                                     ) : null}
@@ -2154,7 +2160,16 @@ function SchedaRicarica({ id, onChiudi, onCambiato }: { id: string; onChiudi: ()
                             {!!r!.rif_fornitore && <div className="psDato"><span>Operazione PayStore</span><span className="font-mono">{String(r!.rif_fornitore)}</span></div>}
                             {!!r!.inviata_il && <div className="psDato"><span>Erogata il</span><span>{quando(String(r!.inviata_il))}</span></div>}
                             {!!r!.ambiente && <div className="psDato"><span>Ambiente</span><span>{String(r!.ambiente)}</span></div>}
-                            {!!r!.errore && <div className="rvNota rvNota-ko" style={{ marginTop: 8 }}><div className="rvNota-s">{String(r!.errore)}</div></div>}
+                            {/* stessa traduzione dell'elenco: qui c'è spazio, quindi
+                                sotto si lascia anche la frase esatta di PayStore */}
+                            {!!r!.errore && (
+                                <div className="rvNota rvNota-ko" style={{ marginTop: 8 }}>
+                                    <div className="rvNota-s">{erroreLeggibile(String(r!.errore), r!.numero)}</div>
+                                    {erroreLeggibile(String(r!.errore), r!.numero) !== String(r!.errore) && (
+                                        <div className="text-[11px] text-slate-500 mt-1">PayStore ha risposto: «{String(r!.errore)}»</div>
+                                    )}
+                                </div>
+                            )}
                             {!!r!.nota && <div className="rvNota rvNota-info" style={{ marginTop: 8 }}><div className="rvNota-s">{String(r!.nota)}</div></div>}
                         </div>
 

@@ -73,6 +73,30 @@ export async function POST(request: Request) {
         const cr = await credenzialeDi(c.negozio, c.azienda);
         if (!cr.ok) { problemi.push(`${c.negozio}: ${cr.errore}`); continue; }
         const op = await elencoOperazioni(da, a, cr.cred);
+        /* ═══ QUESTO ELENCO NON ESISTE ═════════════════════════════════════
+           ⚠️ MISURATO IL 04/09, contro l'API di produzione: `GET /operations`
+           con qualunque combinazione di parametri risponde **404**, e così
+           `/operations/list`, `/operations/search`, `/transactions`,
+           `/reports/operations`. L'unica lettura che funziona è
+           `GET /operations/{id}`, cioè «dimmi com'è andata QUESTA», che serve
+           solo se l'identificativo ce l'hai già.
+
+           Vuol dire che a PayStore NON si può chiedere «cosa hai fatto che io
+           non so»: e quella era l'intera ragione di questa schermata. Peggio,
+           un 404 letto male diventa «zero operazioni trovate», cioè «nessuna
+           era già stata fatta» — la risposta che porta a erogare due volte.
+           Finché non espongono l'elenco, questo controllo si fa sul loro
+           portale, con gli occhi. E si dice, invece di rispondere un numero
+           che non significa niente. */
+        if (!op.ok && op.stato === 404) {
+            return NextResponse.json({
+                error: "PayStore non espone l'elenco delle sue operazioni (404 su /operations): da qui non si può sapere quali ha già fatto. "
+                    + "L'unica lettura disponibile è la singola operazione, e serve un identificativo che per queste righe non abbiamo. "
+                    + "Il confronto va fatto sul portale PayStore. ⚠️ Nel frattempo la difesa contro il doppio credito resta la chiave di "
+                    + "idempotenza: un secondo invio con la stessa chiave non eroga una seconda volta.",
+                nonDisponibile: true,
+            }, { status: 501 });
+        }
         if (!op.ok) { problemi.push(`${c.negozio}: ${op.descrizione || op.errore}`); continue; }
         for (const o of (op.dati || [])) {
             if (String(o.status || "").toLowerCase() !== "success") continue;
