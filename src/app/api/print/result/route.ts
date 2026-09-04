@@ -27,12 +27,26 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => ({} as any));
   if (!b.id) return NextResponse.json({ error: "id mancante" }, { status: 400 });
 
-  const { error } = await supabase.from("print_jobs").update({
+  /* ⚠️ UN ESITO SI SCRIVE UNA VOLTA SOLA, e da oggi non è più un dettaglio:
+     questa rotta fa partire le ricariche di quello scontrino. Senza condizione,
+     lo stesso messaggio ripetuto dall'agente — o rigiocato con il suo token su
+     un documento VECCHIO — rifarebbe partire le righe di quella finestra,
+     scavalcando la protezione dei sessanta minuti che esiste apposta per non
+     ri-erogare quello che nel frattempo è stato caricato a mano.
+     `.neq("status","done")` fa sì che il secondo messaggio non tocchi niente,
+     e con lui non parta niente. */
+  const { data: aggiornato, error } = await supabase.from("print_jobs").update({
     status: b.ok ? "done" : "error",
     result: String(b.response ?? "").slice(0, 4000),
     updated_at: new Date().toISOString(),
-  }).eq("id", b.id);
+  /* ⚠️ E SOLO SU UN LAVORO CHE STA ANCORA ASPETTANDO. Il token dell'agente è
+     UNO per tutti i negozi: chi ce l'ha può mandare l'esito di un `id`
+     qualunque. Limitando ai lavori in coda o in stampa, un messaggio su un
+     documento vecchio — o rigiocato — non lo può più «riaprire», e con lui non
+     riparte nessuna ricarica. */
+  }).eq("id", b.id).in("status", ["pending", "sent"]).select("id");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const eNuovo = (aggiornato || []).length > 0;
 
   /* ⚠️ IL CREDITO PARTE ADESSO, non fra cinque minuti (Luca 04/09: «aspettiamo
      veramente troppo tempo»). Questo è il momento in cui sappiamo che il
@@ -40,7 +54,7 @@ export async function POST(req: Request) {
      Si lancia SENZA aspettarlo — la cassa non deve restare ferma perché
      PayStore è lento — e se qualcosa va storto la ricarica torna al motore,
      che continua a passare ogni cinque minuti. */
-  if (b.ok) void ricaricheDelloScontrino(String(b.id));
+  if (b.ok && eNuovo) void ricaricheDelloScontrino(String(b.id));
 
   return NextResponse.json({ ok: true });
 }

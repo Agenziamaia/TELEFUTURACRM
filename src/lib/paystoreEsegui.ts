@@ -50,8 +50,13 @@ export type RigaRicarica = {
 
 /** Le colonne che servono a eseguire: una sola lista, così il pulsante e il
  *  motore non possono leggerne due diverse. */
+/* ⚠️ `contract_id` NON È FACOLTATIVO: senza, il controllo della riga gemella
+   qui sotto confronta su `undefined` e non trova MAI niente — cioè si spegne
+   in silenzio proprio dove serve. Il motore non se ne accorgeva perché la sua
+   funzione SQL restituisce la riga INTERA; le due strade istantanee, che
+   selezionano questa lista, ci sono cascate dentro il primo giorno. */
 export const COLONNE_ESEGUI =
-    "id, operatore, numero, importo, stato, idempotency_key, tentativi, rif_fornitore, negozio, azienda, scontrino_stato, nota, ambiente";
+    "id, operatore, numero, importo, stato, idempotency_key, tentativi, rif_fornitore, negozio, azienda, scontrino_stato, nota, ambiente, contract_id";
 
 export type EsitoEsecuzione =
     | { ok: true; gia?: true; collaudo: boolean; replay: boolean; operationId?: number; receiptId?: string | null; saldo?: number }
@@ -99,7 +104,7 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
     if (riga.stato === "ok_automatico" || riga.stato === "ok_manuale") {
         return { ok: false, errore: "questa ricarica risulta già fatta: se serve rifarla, rimettila prima in sospeso", definitivo: true, stato: 400 };
     }
-    const numero = String(riga.numero || "").replace(/\D/g, "");
+    let numero = String(riga.numero || "").replace(/\D/g, "");
     if (numero.length < 7 || numero.length > 11) {
         return { ok: false, errore: "manca il numero da ricaricare: scrivilo prima di eseguire", definitivo: true, stato: 400 };
     }
@@ -167,10 +172,29 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
        l'amministrazione può averla marcata a mano — succede davvero, 145 righe
        al giorno le marca una persona sola. Senza questa rilettura il motore la
        eseguiva lo stesso e poi SOVRASCRIVEVA il suo «ok manuale». */
+    /* ⚠️ E SI RILEGGE TUTTA, non solo lo stato. Numero, importo, negozio e
+       società venivano dalla fotografia presa quando la riga è stata scelta —
+       e fra quel momento e l'erogazione passano secondi o minuti, durante i
+       quali l'amministrazione può aver CORRETTO il numero (la rotta di
+       correzione lo permette finché è in sospeso). Il credito sarebbe uscito
+       sul numero vecchio mentre il registro mostra quello nuovo: un errore
+       impossibile da spiegare a un cliente. */
     const { data: fresca } = await supabase.from("paystore_ricariche")
-        .select("stato, idempotency_key, tentativi").eq("id", riga.id).maybeSingle();
-    const f = fresca as { stato: string; idempotency_key: string | null; tentativi: number } | null;
+        .select(COLONNE_ESEGUI).eq("id", riga.id).maybeSingle();
+    const f = fresca as unknown as (RigaRicarica & { contract_id?: string | null }) | null;
     if (!f) return { ok: false, errore: "la ricarica non esiste più", definitivo: true, stato: 404 };
+    /* da qui in poi vale QUELLO CHE C'È SCRITTO ADESSO */
+    riga = { ...riga, ...f };
+    numero = String(riga.numero || "").replace(/\D/g, "");
+    if (numero.length < 7 || numero.length > 11) {
+        return { ok: false, errore: "il numero è stato cambiato e adesso non è valido: non parto", definitivo: true, stato: 400 };
+    }
+    if (!(Number(riga.importo) > 0)) {
+        return { ok: false, errore: "l'importo è stato cambiato e adesso non è valido: non parto", definitivo: true, stato: 400 };
+    }
+    if (opz?.tetto && Number(riga.importo) > opz.tetto) {
+        return { ok: false, definitivo: true, stato: 409, errore: `${riga.importo} € supera il tetto di ${opz.tetto} € per ricarica.` };
+    }
     if (f.stato === "ok_automatico" || f.stato === "ok_manuale") {
         return { ok: false, errore: "nel frattempo risulta già fatta: non la rifaccio", definitivo: true, stato: 409 };
     }
@@ -184,9 +208,21 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
        Il motore si ferma; una persona può ancora forzarla dal pannello, ma
        guardandola. */
     if (!opz?.daPersona) {
+        /* ⚠️ E SE IL CONTRATTO NON C'È, NON SI TIRA DRITTO. Prima si metteva
+           «__nessuno__» e la ricerca tornava vuota: una protezione che, quando
+           il dato manca, dice «via libera» non è una protezione. Senza
+           contratto non si può escludere una gemella, quindi non si esegue da
+           soli — la fa una persona, guardandola. */
+        const contratto = (riga as { contract_id?: string }).contract_id;
+        if (!contratto) {
+            return {
+                ok: false, definitivo: true, stato: 409,
+                errore: "questa riga non è agganciata a nessuna vendita: non posso escludere che ce ne sia un'altra identica, quindi non la eseguo da solo. Guardala e falla partire a mano.",
+            };
+        }
         const { count } = await supabase.from("paystore_ricariche")
             .select("id", { count: "exact", head: true })
-            .eq("contract_id", (riga as { contract_id?: string }).contract_id || "__nessuno__")
+            .eq("contract_id", contratto)
             .eq("numero", numero).eq("importo", riga.importo).neq("id", riga.id);
         if ((count || 0) > 0) {
             await supabase.from("paystore_ricariche").update({

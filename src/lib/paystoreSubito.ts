@@ -34,6 +34,11 @@ import { parametriAutomatismo } from "@/lib/automatismiConfig";
 function numeriSulloScontrino(xml: string): Set<string> {
     const out = new Set<string>();
     for (const m of String(xml || "").matchAll(/description="([^"]*?)"/g)) {
+        /* ⚠️ SOLO LE RIGHE DI RICARICA. Senza questo filtro basta un articolo
+           la cui descrizione finisce con sette cifre — un codice, un seriale,
+           una data — perché lo scontrino di quella merce autorizzi la ricarica
+           di un'altra vendita. È lo stesso filtro che usa il registro. */
+        if (!/ricarica/i.test(m[1])) continue;
         const n = m[1].match(/\b(\d{7,11})\s*$/)?.[1];
         if (n) out.add(n);
     }
@@ -62,29 +67,55 @@ export async function ricaricheAppenaScritte(ids: string[]): Promise<void> {
         if (!(p.acceso === true || p.acceso === "true")) return;
         const n = Number((p as Record<string, unknown>).tetto);
         const tetto = Number.isFinite(n) && n >= 1 && n <= 500 ? Math.round(n) : 50;
+        const c = Number((p as Record<string, unknown>).tettoCorsa);
+        const tettoCorsa = Number.isFinite(c) && c >= 10 && c <= 5000 ? Math.round(c) : 200;
 
         const { data: righe } = await supabase.from("paystore_ricariche")
-            .select(COLONNE_ESEGUI + ", creata_il").in("id", ids).eq("stato", "sospeso");
+            .select(COLONNE_ESEGUI + ", creata_il").in("id", ids.slice(0, 20)).eq("stato", "sospeso").limit(20);
+        let erogato = 0;
         for (const r of ((righe || []) as unknown as (RigaRicarica & { negozio: string | null; nota: string | null; creata_il: string })[])) {
             if (String(r.nota || "").toUpperCase().includes("SOSPESO")) continue;
+            if (erogato + Number(r.importo || 0) > tettoCorsa) break;
+            erogato += Number(r.importo || 0);
             const num = String(r.numero || "").replace(/\D/g, "");
             if (!num) continue;
             const t = new Date(r.creata_il).getTime();
             /* lo scontrino c'è già? si cerca quello che porta stampato QUESTO
                numero, che è l'unico legame certo */
             const { data: jobs } = await supabase.from("print_jobs")
-                .select("id, negozio, request_xml, status, kind")
+                .select("id, negozio, request_xml, status, kind, created_at, meta")
                 .in("kind", ["fiscal_receipt", "fiscal"]).eq("status", "done")
                 .gte("created_at", new Date(t - 10 * 60000).toISOString())
                 .lte("created_at", new Date(t + 60000).toISOString());
-            const suo = ((jobs || []) as { negozio: string; request_xml: string }[])
+            /* ⚠️ NON «UNO QUALSIASI CHE CONTIENE IL NUMERO». Misurato: ci sono
+               righe con DUE documenti candidati nella stessa finestra — stesso
+               numero, vendite diverse — e prendere il primo che capita vuol dire
+               far pagare una vendita con lo scontrino di un'altra. Si sceglie
+               quello della stessa SOCIETÀ e più vicino nel tempo, e si scrive
+               QUALE è stato: la decisione va lasciata verificabile, se no fra un
+               mese nessuno può più dire perché quel credito è partito. */
+            const candidati = ((jobs || []) as { id: string; negozio: string; request_xml: string; created_at: string; meta: Record<string, unknown> | null }[])
                 .filter((j) => stessoMagazzino(j.negozio, String(r.negozio || "")))
-                .find((j) => numeriSulloScontrino(j.request_xml).has(num));
+                .filter((j) => !r.azienda || !j.meta?.azienda || String(j.meta.azienda) === String(r.azienda))
+                .filter((j) => numeriSulloScontrino(j.request_xml).has(num))
+                .sort((a, b) => Math.abs(new Date(a.created_at).getTime() - t) - Math.abs(new Date(b.created_at).getTime() - t));
+            const suo = candidati[0];
             if (!suo) continue;                    // ancora niente documento: ci penserà la stampa o il motore
-            await supabase.from("paystore_ricariche")
-                .update({ scontrino_stato: "emesso", scontrino_emesso: true })
-                .eq("id", r.id).eq("stato", "sospeso");
-            await eseguiRicarica({ ...r, scontrino_stato: "emesso" }, { tetto });
+            const { data: marcata } = await supabase.from("paystore_ricariche")
+                .update({ scontrino_stato: "emesso", scontrino_emesso: true, scontrino_id: suo.id })
+                .eq("id", r.id).eq("stato", "sospeso").is("scontrino_stato", null).select("id");
+            const marcataDaMe = (marcata || []).length > 0;
+            if (!marcataDaMe && r.scontrino_stato !== "emesso") continue;
+            const e = await eseguiRicarica({ ...r, scontrino_stato: "emesso" }, { tetto });
+            /* ⚠️ E SE NON È PARTITA, IL MARCHIO SI RITIRA. Lasciarlo vuol dire
+               che il motore, al giro dopo, trova una riga «con scontrino» e la
+               eroga lui — cioè l'aggancio sbagliato di adesso diventa un
+               credito fra cinque minuti, senza che nessuno l'abbia deciso. */
+            if (!e.ok && marcataDaMe) {
+                await supabase.from("paystore_ricariche")
+                    .update({ scontrino_stato: null, scontrino_emesso: null, scontrino_id: null })
+                    .eq("id", r.id).eq("stato", "sospeso").eq("scontrino_id", suo.id);
+            }
         }
     } catch { /* la vendita non si tocca: resta il motore */ }
 }
@@ -95,7 +126,7 @@ export async function ricaricheDelloScontrino(jobId: string): Promise<void> {
     try {
         const { data: j } = await supabase.from("print_jobs")
             .select("id, negozio, created_at, kind, status, meta, request_xml").eq("id", jobId).maybeSingle();
-        const job = j as { negozio: string; created_at: string; kind: string; status: string; meta: Record<string, unknown> | null; request_xml: string } | null;
+        const job = j as { id: string; negozio: string; created_at: string; kind: string; status: string; meta: Record<string, unknown> | null; request_xml: string } | null;
         if (!job || job.status !== "done") return;
         if (job.kind !== "fiscal_receipt" && job.kind !== "fiscal") return;
 
@@ -110,6 +141,12 @@ export async function ricaricheDelloScontrino(jobId: string): Promise<void> {
         if (!acceso) return;                            // motore spento: non si eroga niente
         const n = Number((p as Record<string, unknown>).tetto);
         const tetto = Number.isFinite(n) && n >= 1 && n <= 500 ? Math.round(n) : 50;
+        /* ⚠️ ANCHE IL FRENO COMPLESSIVO, che il motore chiama «il freno più
+           elementare» e che qui mancava: senza, uno scontrino con venti righe
+           da cinquanta euro erogava mille euro in un colpo, e la vendita non
+           ha un tetto sul numero di voci. */
+        const c = Number((p as Record<string, unknown>).tettoCorsa);
+        const tettoCorsa = Number.isFinite(c) && c >= 10 && c <= 5000 ? Math.round(c) : 200;
 
         const t = new Date(job.created_at).getTime();
         const { data: righe } = await supabase.from("paystore_ricariche")
@@ -125,16 +162,33 @@ export async function ricaricheDelloScontrino(jobId: string): Promise<void> {
             .filter((r) => !String(r.nota || "").toUpperCase().includes("SOSPESO"));
         if (!mie.length) return;
 
+        let erogato = 0;
         for (const r of mie) {
+            if (erogato + Number(r.importo || 0) > tettoCorsa) break;   // il freno complessivo
+            erogato += Number(r.importo || 0);
             /* ⚠️ LO SCONTRINO LO SAPPIAMO ADESSO, e va scritto PRIMA di
                eseguire: `eseguiRicarica` rifiuta le righe senza scontrino
                emesso, e qui la prova ce l'abbiamo in mano — l'ha appena detto
                il registratore. Senza questa riga la ricarica verrebbe rifiutata
                da sé stessa. */
-            await supabase.from("paystore_ricariche")
-                .update({ scontrino_stato: "emesso", scontrino_emesso: true })
-                .eq("id", r.id).eq("stato", "sospeso");
-            await eseguiRicarica({ ...r, scontrino_stato: "emesso" }, { tetto });
+            /* ⚠️ SI SCRIVE SOLO SU CHI NON HA ANCORA UNO STATO. Marcare
+               «emesso» alla cieca vuol dire promuovere anche una riga che
+               risultava `errore` — il registratore NON aveva stampato — e
+               quella promozione resta: se poi l'erogazione fallisce, la riga
+               è diventata eleggibile per il motore, che la fa al giro dopo.
+               Un incasso mai avvenuto che diventa un credito. */
+            const { data: marcata } = await supabase.from("paystore_ricariche")
+                .update({ scontrino_stato: "emesso", scontrino_emesso: true, scontrino_id: job.id })
+                .eq("id", r.id).eq("stato", "sospeso").is("scontrino_stato", null).select("id");
+            const marcataDaMe = (marcata || []).length > 0;
+            if (!marcataDaMe && r.scontrino_stato !== "emesso") continue;
+            const e = await eseguiRicarica({ ...r, scontrino_stato: "emesso" }, { tetto });
+            /* il marchio si ritira se non è partita: vedi l'altra funzione */
+            if (!e.ok && marcataDaMe) {
+                await supabase.from("paystore_ricariche")
+                    .update({ scontrino_stato: null, scontrino_emesso: null, scontrino_id: null })
+                    .eq("id", r.id).eq("stato", "sospeso").eq("scontrino_id", job.id);
+            }
         }
     } catch {
         /* vedi sopra: la stampa non si tocca. Il motore ripasserà. */

@@ -213,11 +213,17 @@ async function completaDalloScontrino(da: string, a: string) {
         /* i conti messi da parte: servono a distinguere «lo scontrino non è
            ancora uscito perché la vendita è in pausa» da «il registratore ha
            fallito» */
-        const { data: sosp } = await supabase.from("pos_sospesi")
+        /* ⚠️ LA TABELLA SI CHIAMA `vendite_sospese`, non `pos_sospesi`: con il
+           nome sbagliato la lettura falliva in silenzio e lo stato «in pausa»
+           non è MAI stato scritto su nessuna riga — quindi un conto tenuto in
+           sospeso era indistinguibile da un registratore guasto, che è
+           esattamente la distinzione per cui questo pezzo esiste. E
+           l'ordinamento era su una colonna che qui non c'è. */
+        const { data: sosp } = await supabase.from("vendite_sospese")
             .select("negozio, created_at, stato")
             .gte("created_at", new Date(new Date(da + "T00:00:00Z").getTime() - 3600000).toISOString())
             .lte("created_at", new Date(new Date(a + "T23:59:59Z").getTime() + 3600000).toISOString())
-            .order("creata_il", { ascending: false }).limit(5000);
+            .order("created_at", { ascending: false }).limit(5000);
         const sospesiPerNegozio: Record<string, { t: number }[]> = {};
         for (const x of sosp || []) (sospesiPerNegozio[String(x.negozio || "")] ||= []).push({ t: new Date(x.created_at).getTime() });
 
