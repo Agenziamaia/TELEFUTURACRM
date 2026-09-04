@@ -31,6 +31,12 @@ export const SEZIONE_DI: Record<string, string> = {
        manager — e i costi dell'azienda sarebbero usciti a chi apre una chat.
        Sta sotto la sezione del pannello, che Luca assegna dai Permessi. */
     "ai/spesa": "/amministrazione?sez=ai",
+    /* ⚠️ PIÙ PRECISA di «ai»: leggere la lettera dell'operatore e proporre le
+       regole del mese non è l'assistente. Senza questa riga la rotta ereditava
+       «/assistente» — aperto ai manager — e chiunque avrebbe potuto far
+       riscrivere all'AI le soglie che decidono i compensi. La sezione «/gare»
+       nel menù è admin+dev e il pannello la governa: è quello il lucchetto. */
+    "ai/gare-lettera": "/gare",
     "vendita": "/registra-vendita",
     /* ⚠️ PIÙ PRECISA di «vendita»: il registro delle ricariche non è la
        vendita. Chi sta in negozio deve poterne fare una (rotta

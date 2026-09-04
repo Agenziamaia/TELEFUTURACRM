@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
-import { isAdminOrAbove } from "@/lib/roles";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { chat, hasKey, MODEL_FAST } from "@/lib/ai/deepseek";
 import { registraConsumo } from "@/lib/ai/consumi";
@@ -136,24 +135,20 @@ SOLO un oggetto JSON con questa forma, senza testo attorno:
 Rispondi solo con il JSON.`;
 }
 
-/* ⚠️ `accesso(request,"gare")` da solo NON basta: in permessiServer la chiave
-   "gare" non esiste, quindi torna ok a chiunque abbia una sessione valida.
-   Queste rotte riscrivono le regole che pagano le persone: il ruolo si
-   controlla qui, esplicitamente. */
-async function soloChiPuo(request: Request) {
-    const g = await accesso(request, "ai/gare-lettera");
-    if (!g.ok) return { ok: false as const, risposta: g.risposta };
-    const { data: chi } = await supabase.from("profiles").select("name, role").eq("id", g.sess.id).maybeSingle();
-    if (!isAdminOrAbove(chi?.role)) {
-        return { ok: false as const, risposta: NextResponse.json({ error: "Non hai i permessi per le gare." }, { status: 403 }) };
-    }
-    return { ok: true as const, sess: g.sess, autore: chi?.name || null };
+/* CHI PUÒ. Il lucchetto è `accesso(request, "ai/gare-lettera")`: la mappa di
+   permessiServer manda questa chiave sulla sezione «/gare», che nel menù è
+   admin+dev e che Luca accende e spegne dal pannello. UNA sola verità.
+   ⚠️ Qui prima c'era una lista di ruoli scritta a mano che leggeva una tabella
+   `profiles` INESISTENTE — l'anagrafica del CRM è `app_users`, e il nome sta in
+   `full_name`. La riga tornava vuota, il ruolo vuoto, e la rotta rispondeva
+   «Non hai i permessi per le gare» perfino all'amministratore (04/09). */
+async function nomeDi(id: string): Promise<string | null> {
+    const { data } = await supabase.from("app_users").select("full_name").eq("id", id).maybeSingle();
+    return data?.full_name || null;
 }
 
 export async function GET(request: Request) {
-    const _g = await accesso(request, "ai/gare-lettera"); if (!_g.ok) return _g.risposta;
-    const g = await soloChiPuo(request);
-    if (!g.ok) return g.risposta;
+    const g = await accesso(request, "ai/gare-lettera"); if (!g.ok) return g.risposta;
     const url = new URL(request.url);
     const brand = url.searchParams.get("brand") || "";
     const month = meseIso(url.searchParams.get("month") || "");
@@ -164,11 +159,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-    const _g = await accesso(request, "ai/gare-lettera"); if (!_g.ok) return _g.risposta;
-    const g = await soloChiPuo(request);
-    if (!g.ok) return g.risposta;
+    const g = await accesso(request, "ai/gare-lettera"); if (!g.ok) return g.risposta;
     const sess = g.sess;
-    const autore = g.autore;
+    const autore = await nomeDi(sess.id);
     const body = await request.json().catch(() => ({}));
     const azione = String(body.azione || "proponi");
     const brand = String(body.brand || "");
