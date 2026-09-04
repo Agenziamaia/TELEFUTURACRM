@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ricaricheAppenaScritte } from "@/lib/paystoreSubito";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 
@@ -113,8 +114,17 @@ export async function POST(request: Request) {
 
     if (!righe.length) return NextResponse.json({ ok: false, scritte: 0, scartate }, { status: 400 });
 
-    const { error } = await supabase.from("paystore_ricariche").insert(righe);
+    const { data: nate, error } = await supabase.from("paystore_ricariche").insert(righe).select("id");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    /* ⚠️ E SE LO SCONTRINO È GIÀ USCITO, IL CREDITO PARTE ADESSO. Le due
+       scritture — il documento e queste righe — non hanno un ordine garantito:
+       misurato il 04/09, lo scontrino risultava stampato DUE SECONDI prima che
+       queste righe esistessero, e l'aggancio sulla stampa non trovava niente.
+       Si chiama qui l'altro capo: vince chi arriva secondo, e la funzione
+       rilegge sempre lo stato, quindi due partenze non fanno due crediti.
+       Senza aspettarla: la vendita non deve stare ferma per PayStore. */
+    if (!body.sospesa) void ricaricheAppenaScritte(((nate || []) as { id: string }[]).map((x) => x.id));
 
     return NextResponse.json({ ok: true, scritte: righe.length, scartate });
 }

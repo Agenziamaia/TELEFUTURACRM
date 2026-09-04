@@ -40,6 +40,55 @@ function numeriSulloScontrino(xml: string): Set<string> {
     return out;
 }
 
+/* ═══ E L'ALTRO CAPO ═══════════════════════════════════════════════════════
+   ⚠️ MISURATO IL 04/09 ALLE 19:31, e non era teoria: lo scontrino di
+   Garbatella risulta stampato alle 19:31:05, le due righe di ricarica sono
+   state scritte alle 19:31:07. Due secondi DOPO. L'aggancio sulla stampa
+   scattava su un registro in cui quelle righe non esistevano ancora: cercava,
+   non trovava niente, e la ricarica tornava ad aspettare il giro dei cinque
+   minuti — cioè il difetto che doveva togliere.
+
+   L'ordine fra le due scritture non è garantito e non conviene renderlo tale:
+   dipende da come il negozio conclude la vendita. Si aggancia allora ANCHE
+   dall'altra parte — appena le righe nascono — e vince chi arriva secondo.
+   Le due strade chiamano la stessa funzione, che rilegge sempre lo stato: se
+   scattassero tutte e due, la seconda non trova più niente da fare. */
+
+/** Fa partire le ricariche appena scritte, se il loro scontrino è già uscito. */
+export async function ricaricheAppenaScritte(ids: string[]): Promise<void> {
+    try {
+        if (!ids.length) return;
+        const p = await parametriAutomatismo("paystore-motore");
+        if (!(p.acceso === true || p.acceso === "true")) return;
+        const n = Number((p as Record<string, unknown>).tetto);
+        const tetto = Number.isFinite(n) && n >= 1 && n <= 500 ? Math.round(n) : 50;
+
+        const { data: righe } = await supabase.from("paystore_ricariche")
+            .select(COLONNE_ESEGUI + ", creata_il").in("id", ids).eq("stato", "sospeso");
+        for (const r of ((righe || []) as unknown as (RigaRicarica & { negozio: string | null; nota: string | null; creata_il: string })[])) {
+            if (String(r.nota || "").toUpperCase().includes("SOSPESO")) continue;
+            const num = String(r.numero || "").replace(/\D/g, "");
+            if (!num) continue;
+            const t = new Date(r.creata_il).getTime();
+            /* lo scontrino c'è già? si cerca quello che porta stampato QUESTO
+               numero, che è l'unico legame certo */
+            const { data: jobs } = await supabase.from("print_jobs")
+                .select("id, negozio, request_xml, status, kind")
+                .in("kind", ["fiscal_receipt", "fiscal"]).eq("status", "done")
+                .gte("created_at", new Date(t - 10 * 60000).toISOString())
+                .lte("created_at", new Date(t + 60000).toISOString());
+            const suo = ((jobs || []) as { negozio: string; request_xml: string }[])
+                .filter((j) => stessoMagazzino(j.negozio, String(r.negozio || "")))
+                .find((j) => numeriSulloScontrino(j.request_xml).has(num));
+            if (!suo) continue;                    // ancora niente documento: ci penserà la stampa o il motore
+            await supabase.from("paystore_ricariche")
+                .update({ scontrino_stato: "emesso", scontrino_emesso: true })
+                .eq("id", r.id).eq("stato", "sospeso");
+            await eseguiRicarica({ ...r, scontrino_stato: "emesso" }, { tetto });
+        }
+    } catch { /* la vendita non si tocca: resta il motore */ }
+}
+
 /** Fa partire le ricariche dello scontrino appena stampato.
  *  Non solleva mai: al peggio non fa niente e resta il motore. */
 export async function ricaricheDelloScontrino(jobId: string): Promise<void> {
