@@ -13,10 +13,11 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
 import { isAdminOrAbove } from "@/lib/roles";
 import { leggiAllegato } from "@/lib/ai/allegati";
 import { cn } from "@/utils";
-import { Sparkles, Loader2, Check, X, FileDown, ChevronDown, ChevronUp, AlertTriangle, Plus, Minus, PencilLine } from "lucide-react";
+import { Sparkles, Loader2, Check, X, FileDown, ChevronDown, ChevronUp, AlertTriangle, Plus, Minus, PencilLine, Copy } from "lucide-react";
 
 const meseIt = (iso) => {
     const [y, m] = String(iso).split("-").map(Number);
@@ -29,9 +30,15 @@ const numIt = (v) => (v === null || v === undefined || v === "" ? "—" :
 const ICONA = { aggiorna: PencilLine, aggiungi: Plus, rimuovi: Minus };
 const COLORE = { aggiorna: "text-amber-300", aggiungi: "text-emerald-300", rimuovi: "text-rose-300" };
 
-export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)" }) {
+/* Il mese si imposta in un modo solo: o si copia quello prima, o si dà la
+   lettera all'AI. I due pulsanti stanno QUI, insieme — Luca 04/09: «devi
+   darmi solamente queste due opzioni che scelgo e poi vado avanti».
+   La lettera NON si carica prima: la si dà da leggere, e se la lettura va a
+   buon fine finisce da sola nell'archivio del mese. */
+export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", vuoto = false, prevMonth, onCopia, copiando = false, onFatto }) {
     const { user } = useAuth();
     const [proposte, setProposte] = useState(null);
+    const [inArchivio, setInArchivio] = useState("");
     const [lavoro, setLavoro] = useState("");
     const [errore, setErrore] = useState("");
     const [aperta, setAperta] = useState(true);
@@ -60,6 +67,17 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)" }) {
             });
             const d = await r.json();
             if (!r.ok || d.error) throw new Error(d.error || "il server non ha risposto");
+            // letta bene: adesso la lettera va in archivio, con il file vero
+            setLavoro("Archivio la lettera…");
+            try {
+                const pulito = file.name.replace(/[^A-Za-z0-9àèéìòù._ -]/g, "_");
+                const path = `lettere/${brand}/${String(month).slice(0, 7)}/${Date.now()}-${pulito}`;
+                const { error } = await supabase.storage.from("contracts").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+                if (!error) {
+                    await supabase.from("gare_lettere").insert({ brand, month, filename: file.name, path, created_by: user?.name || null });
+                    setInArchivio(file.name);
+                }
+            } catch { /* la proposta c'è comunque: l'archivio non deve bloccare il lavoro */ }
             await carica();
         } catch (e) { setErrore(String(e?.message || e)); }
         setLavoro("");
@@ -83,6 +101,7 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)" }) {
             if (!r.ok || d.error) throw new Error(d.error || "non riuscito");
             if (d.errori?.length) setErrore("Alcune righe non sono passate: " + d.errori.join(" · "));
             await carica();
+            if (azione === "applica" && onFatto) onFatto();
         } catch (e) { setErrore(String(e?.message || e)); }
         setLavoro("");
     };
@@ -122,28 +141,61 @@ ${(p.avvisi || []).length ? `<div class="av"><b>Da controllare a mano:</b><br>${
 
     return (
         <div className="glass-panel rounded-2xl overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-2 cursor-pointer select-none" onClick={() => setAperta((v) => !v)}>
-                <Sparkles className="w-4 h-4" style={{ color: colore }} />
-                <h3 className="text-[13px] font-bold text-slate-200 tracking-wide">Leggi la lettera con l&apos;AI</h3>
-                <span className="text-[10px] text-slate-500">propone le modifiche, non le applica</span>
-                <div className="ml-auto flex items-center gap-2">
-                    {puoi && (
-                        <label onClick={(e) => e.stopPropagation()}
-                            className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors",
-                                lavoro ? "bg-white/5 text-slate-500" : "bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25")}>
-                            {lavoro ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                            {lavoro || `Leggi la lettera di ${meseIt(month)}`}
-                            <input type="file" className="hidden" disabled={!!lavoro}
-                                accept=".pdf,.pptx,.xlsx,.xls,.csv,.txt"
-                                onChange={(e) => leggiEProponi(e.target.files?.[0])} />
-                        </label>
-                    )}
-                    {aperta ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+            {vuoto ? (
+                /* il mese non è ancora impostato: si sceglie da dove partire */
+                <div className="p-5 text-center space-y-3">
+                    <p className="text-sm text-slate-400">Lato azienda non ancora impostato per {meseIt(month)}. Da dove partiamo?</p>
+                    <div className="flex flex-wrap items-center justify-center gap-2.5">
+                        {onCopia && (
+                            <button onClick={onCopia} disabled={copiando || !!lavoro}
+                                className={cn("flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold border transition-colors",
+                                    "bg-white/[0.04] border-white/10 text-slate-200 hover:bg-white/[0.08]", (copiando || lavoro) && "opacity-40")}>
+                                {copiando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                                Copia le regole di {prevMonth ? meseIt(prevMonth) : "il mese prima"}
+                            </button>
+                        )}
+                        {puoi && (
+                            <label className={cn("flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold cursor-pointer border transition-colors",
+                                lavoro ? "bg-white/5 border-white/10 text-slate-500" : "bg-indigo-500/20 border-indigo-400/30 text-indigo-200 hover:bg-indigo-500/30")}>
+                                {lavoro ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                {lavoro || "Leggi la lettera con l'AI"}
+                                <input type="file" className="hidden" disabled={!!lavoro}
+                                    accept=".pdf,.pptx,.xlsx,.xls,.csv,.txt"
+                                    onChange={(e) => leggiEProponi(e.target.files?.[0])} />
+                            </label>
+                        )}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                        La lettera non serve caricarla prima: dalla qui, viene letta e poi finisce da sola in archivio.
+                    </p>
                 </div>
-            </div>
+            ) : (
+                <div className="px-4 py-3 flex items-center gap-2 cursor-pointer select-none" onClick={() => setAperta((v) => !v)}>
+                    <Sparkles className="w-4 h-4" style={{ color: colore }} />
+                    <h3 className="text-[13px] font-bold text-slate-200 tracking-wide">Lettera dell&apos;operatore</h3>
+                    <span className="text-[10px] text-slate-500">l&apos;AI propone le modifiche, ad applicarle sei tu</span>
+                    <div className="ml-auto flex items-center gap-2">
+                        {puoi && (
+                            <label onClick={(e) => e.stopPropagation()}
+                                className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors",
+                                    lavoro ? "bg-white/5 text-slate-500" : "bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25")}>
+                                {lavoro ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                                {lavoro || `Leggi la lettera di ${meseIt(month)}`}
+                                <input type="file" className="hidden" disabled={!!lavoro}
+                                    accept=".pdf,.pptx,.xlsx,.xls,.csv,.txt"
+                                    onChange={(e) => leggiEProponi(e.target.files?.[0])} />
+                            </label>
+                        )}
+                        {aperta ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                    </div>
+                </div>
+            )}
 
-            {aperta && (
+            {(aperta && (!vuoto || (proposte && proposte.length) || errore)) && (
                 <div className="px-4 pb-3 border-t border-white/5 pt-3 space-y-3">
+                    {inArchivio && (
+                        <p className="text-[11px] text-emerald-300/80">«{inArchivio}» è stata archiviata fra le lettere di {meseIt(month)}.</p>
+                    )}
                     {errore && (
                         <div className="flex items-start gap-2 rounded-lg bg-rose-500/10 border border-rose-500/20 px-3 py-2 text-[11px] text-rose-200">
                             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>{errore}</span>
@@ -153,7 +205,7 @@ ${(p.avvisi || []).length ? `<div class="av"><b>Da controllare a mano:</b><br>${
                         <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin text-slate-500" /></div>
                     ) : !proposte.length ? (
                         <p className="text-xs text-slate-500 py-1">
-                            Nessuna lettura per {meseIt(month)}. Carica la lettera dell&apos;operatore: il modello la confronta con il mese precedente e ti propone riga per riga cosa cambia.
+                            Nessuna lettura per {meseIt(month)}. Dai la lettera dell&apos;operatore: il modello la confronta con il mese precedente e ti propone riga per riga cosa cambia.
                         </p>
                     ) : proposte.map((p) => {
                         const diff = p.diff || [];

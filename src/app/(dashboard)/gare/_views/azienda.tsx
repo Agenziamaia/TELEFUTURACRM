@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { notify, dbError } from "../../amministrazione/_views/toast";
 import { addMonths, monthLabel } from "../../amministrazione/_views/months";
+import { LetteraAI } from "./lettera_ai";
 import {
     type Pista, type SogliaAz, type VoceAz, type RegolaAz, type NegozioAz,
     BRAND_DIVISIONI, DIVISIONE_PREFIX, CLUSTER_SUGGERITI, UM_SOGLIA, REWARD_TIPI_AZ, VOCE_TIPI, REGOLA_TIPI, eur,
@@ -139,15 +140,15 @@ export function AziendaTab({ brand, month }: { brand: string; month: string }) {
 
     return (
         <div className="space-y-4">
-            {vuoto && prevHas && (
-                <div className="glass-panel p-5 text-center space-y-3">
-                    <p className="text-sm text-slate-400">Lato azienda non ancora impostato per {monthLabel(month)}.</p>
-                    <button onClick={copyPrev} disabled={copying} className={cn("primary-btn flex items-center gap-2 mx-auto", copying && "opacity-40")}>
-                        {copying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
-                        Copia da {monthLabel(prevMonth)}
-                    </button>
-                </div>
-            )}
+            {/* Da dove parte il mese: si copia quello prima, oppure si dà la
+                lettera all'AI. Le due strade stanno nello stesso posto, e la
+                lettera si archivia da sola dopo essere stata letta. */}
+            <div className="glass-panel rounded-2xl overflow-hidden">
+                <LetteraAI brand={brand} month={month} vuoto={vuoto}
+                    prevMonth={prevHas ? prevMonth : null}
+                    onCopia={prevHas ? copyPrev : null} copiando={copying}
+                    onFatto={load} />
+            </div>
             {/* mese impostato con una base alle spalle: si può annullare l'import
                 (svuota SOLO questo mese, la base resta e si ricopia) */}
             {!vuoto && prevHas && (
