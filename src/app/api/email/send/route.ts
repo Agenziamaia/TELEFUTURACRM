@@ -106,7 +106,19 @@ export async function POST(request: Request) {
         for (const a of lista) {
             const path = String(a?.path || "");
             const { data: blob, error: eDl } = await supabase.storage.from("email-attachments").download(path);
-            if (eDl || !blob) return NextResponse.json({ error: `l'allegato «${a?.nome || path}» non si è potuto rileggere: riprova a caricarlo.` }, { status: 502 });
+            if (eDl || !blob) {
+                /* ⚠️ QUI SI DICE PERCHÉ. Il 04/09 sei tentativi di fila sono
+                   morti su questa riga — otto file parcheggiati nel deposito e
+                   uno solo spedito — e il messaggio «riprova a caricarlo» non
+                   ha aiutato nessuno: chi lo legge ricarica lo stesso file e
+                   sbatte di nuovo. L'errore vero del deposito adesso esce, sia
+                   nei log del server sia a schermo. */
+                console.error("[email] allegato non rileggibile:", path, "→", eDl?.message || "nessun contenuto");
+                return NextResponse.json({
+                    error: `Non riesco a rileggere l'allegato «${a?.nome || path}» dall'archivio (${eDl?.message || "vuoto"}). `
+                        + `La mail NON è partita. Riprova; se succede ancora, segnalalo: è un problema nostro, non del file.`,
+                }, { status: 502 });
+            }
             const buf = Buffer.from(await blob.arrayBuffer());
             peso += buf.length;
             files.push({ filename: String(a?.nome || "allegato"), content: buf, contentType: a?.mime || undefined });

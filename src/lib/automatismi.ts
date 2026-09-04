@@ -183,6 +183,42 @@ export const AUTOMATISMI: Automatismo[] = [
         },
     },
     {
+        id: "nomi-in-ordine",
+        /* AMMINISTRAZIONE: è anagrafica, non comunicazione. Chi cerca «perché
+           i nomi dei clienti sono tutti maiuscoli» lo cerca lì. */
+        area: "amministrazione",
+        nome: "I nomi in ordine",
+        emoji: "🔤",
+        cosaFa: "Ogni notte rimette nomi e cognomi di clienti e utenti nella forma «Prima lettera maiuscola». Tocca solo quelli scritti TUTTI MAIUSCOLI o tutti minuscoli — come escono da un'importazione o da una tastiera col blocco acceso; quelli scritti a mano in modo misto non li tocca, perché magari sono giusti così.",
+        perche: "Luca, 04/09: «quel fix va fatto assolutamente… sarebbe meglio se lo facessi automaticamente, almeno per i clienti, una volta al giorno tutte le sere».",
+        lavori: [{ nome: "nomi-in-ordine", ruolo: "la corsa, ogni notte all'una" }],
+        rotta: "/api/anagrafica/nomi",
+        registro: { tabella: "automatismi_eventi", quando: "quando", etichetta: "dettaglio" },
+        parametri: [],
+        prova: {
+            etichetta: "Conta quanti nomi sono da sistemare",
+            corpo: {}, sicura: true, metodo: "GET",
+            spiega: "Guarda e basta: dice quanti nomi sarebbero sistemati, senza toccare niente.",
+        },
+    },
+    {
+        id: "pulizia-allegati",
+        area: "sicurezza",
+        nome: "Allegati di posta senza padrone",
+        emoji: "🗑",
+        cosaFa: "Ogni notte butta dal deposito della posta gli allegati che nessun messaggio nomina più: copie rimaste da vecchie risincronizzazioni delle caselle, e file caricati in una mail poi abbandonata. Tocca solo quelli con più di tre giorni — un allegato appena caricato in una mail non ancora spedita è orfano per definizione, e cancellarlo vorrebbe dire toglierlo di mano a chi sta scrivendo.",
+        perche: "Erano 630 file per 572 MB, cresciuti in silenzio: nessun lavoro automatico aveva mai toccato i depositi.",
+        lavori: [{ nome: "pulizia-allegati", ruolo: "la corsa, ogni notte alle due" }],
+        rotta: "/api/email/pulizia-allegati",
+        registro: { tabella: "automatismi_eventi", quando: "quando", etichetta: "dettaglio" },
+        parametri: [],
+        prova: {
+            etichetta: "Conta quanti se ne butterebbero",
+            corpo: {}, sicura: true, metodo: "GET",
+            spiega: "Guarda e basta: dice quanti file e quanti MB, senza cancellare niente.",
+        },
+    },
+    {
         id: "otp-pulizia",
         /* ⚠️ COMUNICAZIONI, non «sicurezza» (Luca 01/09: «dentro comunicazione
            ci avrei messo quelle di WhatsApp, email e dei codici usa e getta»).

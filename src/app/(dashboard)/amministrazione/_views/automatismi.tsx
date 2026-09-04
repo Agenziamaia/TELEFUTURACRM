@@ -487,6 +487,14 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
     const [orari, setOrari] = useState<Record<string, string>>({});
     const [apriOrario, setApriOrario] = useState<Record<string, boolean>>({});
     const [tocco, setTocco] = useState<string | null>(null);
+    /* ⚠️ CHIUSI DI DEFAULT (Luca 04/09: «una volta che apro non si capisce
+       niente, sono ormai diventati troppi; ogni automatismo deve essere
+       racchiuso e io devo poter vedere da fuori, in una riga, come sta
+       andando; se è un errore ci clicco sopra e mi esplode il dettaglio,
+       che invece oggi è esploso per definizione»).
+       Nella riga chiusa ci sta quello che serve per decidere se aprire:
+       nome, come sta, quando è girato l'ultima volta e cosa non è andato. */
+    const [aperto, setAperto] = useState(false);
 
     const valore = (chiave: string): string => {
         if (bozza[chiave] !== undefined) return bozza[chiave];
@@ -599,18 +607,34 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
         ricarica();
     };
 
+    /* l'ultima corsa, in due parole: è il dato per cui si apre la pagina */
+    const ultimo = a.lavori.map((l) => perNome.get(l.nome)).find(Boolean);
+
     return (
         <div className="glass-card p-5 space-y-3">
+            <button type="button" onClick={() => setAperto((v) => !v)}
+                className="w-full text-left flex flex-wrap items-center gap-2.5 group">
+                <span className="text-slate-500 shrink-0 transition-transform group-hover:text-slate-300"
+                    style={{ transform: aperto ? "rotate(90deg)" : "none" }}>▸</span>
+                <h3 className="text-sm font-black text-white shrink-0">{a.emoji} {a.nome}</h3>
+                <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0", colore[salute.stato])}>
+                    {parola[salute.stato]}
+                </span>
+                <span className="text-[11px] text-slate-500 truncate min-w-0">{salute.perche}</span>
+                <span className="ml-auto flex items-center gap-3 shrink-0 text-[10px] text-slate-500">
+                    {ultimo && <span>ultima: <b className={ultimo.ultima_esito === "ok" ? "text-emerald-300" : ultimo.ultima_esito && ultimo.ultima_esito !== "in corso" ? "text-rose-300" : "text-slate-400"}>{quando(ultimo.ultima_il ?? null)}</b></span>}
+                    {Number(ultimo?.ko_7g || 0) > 0 && <span className="text-rose-300">{Number(ultimo?.ko_7g)} non arrivate</span>}
+                    {!aperto && <span className="text-slate-600 group-hover:text-slate-400">apri</span>}
+                </span>
+            </button>
+            {ultimo?.ultimo_errore && !aperto && (
+                <p className="text-[11px] text-rose-300/80 truncate pl-6" title={ultimo.ultimo_errore}>«{ultimo.ultimo_errore}»</p>
+            )}
+
+            {aperto && (<>
             <div className="flex flex-wrap items-start gap-3">
                 <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-black text-white">{a.emoji} {a.nome}</h3>
-                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border", colore[salute.stato])}>
-                            {parola[salute.stato]}
-                        </span>
-                        <span className="text-[10px] text-slate-600">{salute.perche}</span>
-                    </div>
-                    <p className="text-[12px] text-slate-400 leading-relaxed mt-1.5">{a.cosaFa}</p>
+                    <p className="text-[12px] text-slate-400 leading-relaxed">{a.cosaFa}</p>
                     {a.perche && <p className="text-[11px] text-slate-600 italic mt-1">{a.perche}</p>}
                 </div>
                 {a.prova && (
@@ -793,6 +817,7 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
                 <p className={cn("text-[11px] rounded-lg px-3 py-2 border",
                     esito.startsWith("⛔") ? "text-rose-200 bg-rose-500/10 border-rose-500/25" : "text-emerald-200 bg-emerald-500/10 border-emerald-500/25")}>{esito}</p>
             )}
+            </>)}
         </div>
     );
 }

@@ -434,6 +434,7 @@ function Magazzino() {
                 <div className="rvCarico"><Loader2 className="w-6 h-6 animate-spin" /> Carico il magazzino…</div>
             ) : tab === "giacenze" ? (
                 <Giacenze unita={unita} quantita={quantita} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
+                    negoziCarico={seesAll || !visibiliPronti ? negozi : negozi.filter((n) => negoziVisibili.some((m) => stessoMagazzino(n, m)))}
                     anagrafica={anagrafica} mioNegozio={user?.negozio || ""} puoCancellare={puoCaricare} puoCaricare={puoCaricare}
                     guardaTutto={isAdminOrAbove(user?.role)} vedeValori={vedeValori}
                     ricarica={carica} utente={user?.name || "—"} />
@@ -501,9 +502,11 @@ function operatoreDi(a: DatiArticolo | undefined, descrizione: string, codice?: 
     return null;
 }
 
-function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, puoCaricare, guardaTutto, vedeValori, ricarica, utente }: {
+function Giacenze({ unita, quantita, negozi, negoziCarico, aziende, nomiAzienda, anagrafica, mioNegozio, puoCancellare, puoCaricare, guardaTutto, vedeValori, ricarica, utente }: {
     unita: Unita[]; quantita: RigaQta[]; negozi: string[]; aziende: string[];
     nomiAzienda: Record<string, string>; anagrafica: Map<string, DatiArticolo>;
+    /** i magazzini in cui questa persona può far ENTRARE merce */
+    negoziCarico: string[];
     mioNegozio: string; puoCancellare: boolean;
     /** carica merce: dall'amministrazione in su (Luca 03/09) */
     puoCaricare: boolean;
@@ -1268,8 +1271,13 @@ function Giacenze({ unita, quantita, negozi, aziende, nomiAzienda, anagrafica, m
                     <StoricoCarichi aperto={apriStorico} chiudi={() => setApriStorico(false)}
                         negozi={negozi} nomiAzienda={nomiAzienda} />
                 )}
+                {/* ⚠️ ANCHE IL CARICO HA UN PERIMETRO. Il cancello era il solo
+                    ruolo: un amministrativo con la visibilità ristretta poteva
+                    far comparire merce in un negozio che non vede. La lista è
+                    la stessa dei trasferimenti — chi vede tutto continua a
+                    vedere tutto. */}
                 {puoCaricare && (
-                    <CaricoMerce aperto={apriCarico} negozi={negozi} aziende={aziende} nomiAzienda={nomiAzienda}
+                    <CaricoMerce aperto={apriCarico} negozi={negoziCarico} aziende={aziende} nomiAzienda={nomiAzienda}
                         utente={utente} dopo={ricarica} chiudi={() => setApriCarico(false)} />
                 )}
 
