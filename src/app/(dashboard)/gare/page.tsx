@@ -18,6 +18,7 @@ import { W3PdvPanel } from "./_views/w3_pdv";
 import { W3CommissioningPanel, W3PercRagazzi, W3RagazziSoglie } from "./_views/w3_commissioning";
 import { W3PartnershipPanel } from "./_views/w3_partnership";
 import { LettereGara } from "./_views/lettere";
+import { LetteraAI } from "./_views/lettera_ai";
 import { CalendarioGareView } from "./_views/calendario_gare";
 
 /* GARE — le condizioni degli operatori (lato AZIENDA) e la gara interna della squadra
@@ -236,6 +237,12 @@ function GareInner() {
                     {/* ARCHIVIO LETTERE (Luca 19/08): l'unico posto delle lettere
                         mensili del brand — lato azienda */}
                     {lato === "azienda" && <LettereGara brand={brand.id} month={month} colore={brand.color} />}
+
+                    {/* DA DOVE PARTE IL MESE (Luca 04/09): due pulsanti soli —
+                        copiare le regole del mese prima, o dare la lettera all'AI.
+                        Sta QUI e non dentro AziendaTab: su WindTre quel tab compare
+                        solo dentro «Regole di gara» e la card non si vedeva mai. */}
+                    {lato === "azienda" && <LetteraAI brand={brand.id} month={month} colore={brand.color} />}
 
                     {/* W3 AZIENDA A SCHEDE (riordino Luca 14/08, «era confusionario»):
                         il pannello PDV con segmento e target resta sempre in testa;
