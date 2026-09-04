@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
-import { chat, hasKey, MODEL_FAST } from "@/lib/ai/deepseek";
+import { MODEL_FAST } from "@/lib/ai/deepseek";
+import { chatAi as chat, chiavePer as hasKey } from "@/lib/ai/chatAi";
 import { registraConsumo } from "@/lib/ai/consumi";
+import {
+    TAB, TABELLE, CAMPI, type NomeTab, type Riga, type Foto, type Grezza,
+    recuperaTroncato, setaccia, riassuntoDa,
+} from "@/lib/gareLettera";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,23 +24,22 @@ export const maxDuration = 300;
    numero letto male si propagherebbe su Analisi, Calcolatore e pagamenti.
 
    Si lavora SEMPRE sul lato azienda: il lato ragazzi è una percentuale di
-   quello (pay_mappa_soglie / pay_piste.perc_ragazzi) e si ricalcola da sé. */
+   quello (pay_mappa_soglie / pay_piste.perc_ragazzi) e si ricalcola da sé.
 
-const TAB = {
-    piste: "gare_azienda_piste",
-    soglie: "gare_azienda_soglie",
-    voci: "gare_azienda_voci",
-    regole: "gare_azienda_regole",
-} as const;
-type NomeTab = keyof typeof TAB;
+   Qui dentro c'è il GIRO: cosa si chiede al modello e in che pezzi. Le regole
+   che decidono cosa di quella risposta è verificabile — e come si legge in
+   italiano — stanno in `src/lib/gareLettera.ts`, fuori dalla rete, così si
+   rileggono e si provano da sole.
 
-const CAMPI: Record<NomeTab, string[]> = {
-    piste: ["gara", "codice", "nome", "descrizione", "sort_order"],
-    soglie: ["pista", "scope", "cluster", "store_name", "tier", "soglia_valore", "soglia_um",
-             "reward_tipo", "reward_valore", "reward_um", "reward_descr", "note"],
-    voci: ["pista", "nome", "tipo", "valore", "um", "condizione", "scope", "tier", "note"],
-    regole: ["pista", "tipo", "condizione", "effetto", "valore", "um", "bersaglio", "scope", "note"],
-};
+   ⚠️ IL FORNITORE PASSA DAL CENTRALINO (`ai/chatAi`), non da DeepSeek diretto:
+   l'id del modello decide chi risponde. Oggi è `MODEL_FAST` perché è quello su
+   cui il prompt qui sotto è stato MISURATO (04/09). Il giorno che in
+   `.env.local` e sul server c'è una ANTHROPIC_API_KEY vera — quella di adesso
+   è il segnaposto «sk-ant-...», e l'API la rifiuta — per spostare la lettura
+   della lettera su `claude-sonnet-5` basta cambiare questa costante: è la
+   sezione che riscrive gli stipendi, ed è il posto giusto dove pagare il
+   modello migliore. Ma prima si rimisura, non si dà per scontato. */
+const MODELLO = MODEL_FAST;
 
 const meseIso = (m: string) => String(m).slice(0, 7) + "-01";
 const meseLungo = (m: string) => {
@@ -51,8 +55,8 @@ const mesePrima = (m: string) => {
 
 /** la fotografia del mese base, in forma compatta: è l'esempio migliore che
  *  possiamo dare al modello — sa già che forma devono avere le righe */
-async function fotografia(brand: string, month: string, divisione?: string) {
-    const out: Record<string, any[]> = {};
+async function fotografia(brand: string, month: string, divisione?: string): Promise<Foto> {
+    const out = {} as Foto;
     const { data: piste } = await supabase.from(TAB.piste)
         .select(["id", ...CAMPI.piste].join(","))
         .eq("brand", brand).eq("month", month).order("sort_order", { ascending: true });
@@ -60,15 +64,21 @@ async function fotografia(brand: string, month: string, divisione?: string) {
        token e la risposta satura il tetto: il JSON torna TRONCATO e si perde
        tutto il lavoro (misurato: 16.000 token di output, tagliato a metà).
        La lettera del franchising parla solo delle piste franchising, quindi
-       mandarle anche il multibrand è rumore che paghiamo due volte. */
-    const mie = (piste || []).filter((p: any) => !divisione || p.gara === divisione);
-    const codici = new Set(mie.map((p: any) => p.codice));
+       mandarle anche il multibrand è rumore che paghiamo due volte.
+       ⚠️ MISURATO IL 04/09: dando la lettera del franchising anche alle altre
+       due divisioni sono uscite 109 proposte su piste che quella lettera non
+       nomina nemmeno — il modello lo scriveva pure negli avvisi («la lettera
+       non menziona la divisione multibrand») e le proponeva lo stesso. Per
+       questo adesso la card fa scegliere la divisione, e il nome del file la
+       riconosce da solo. */
+    const mie = ((piste || []) as unknown as Riga[]).filter((p) => !divisione || p.gara === divisione);
+    const codici = new Set(mie.map((p) => p.codice));
     out.piste = mie;
     for (const nome of ["soglie", "voci", "regole"] as NomeTab[]) {
         const { data } = await supabase.from(TAB[nome])
             .select(["id", ...CAMPI[nome]].join(","))
             .eq("brand", brand).eq("month", month).order("sort_order", { ascending: true });
-        out[nome] = (data || []).filter((r: any) => !divisione || codici.has(r.pista));
+        out[nome] = ((data || []) as unknown as Riga[]).filter((r) => !divisione || codici.has(r.pista));
     }
     return out;
 }
@@ -76,64 +86,108 @@ async function fotografia(brand: string, month: string, divisione?: string) {
 /** le divisioni di gara impostate nel mese base (franchising, multibrand, …) */
 async function divisioni(brand: string, month: string): Promise<string[]> {
     const { data } = await supabase.from(TAB.piste).select("gara").eq("brand", brand).eq("month", month);
-    return [...new Set((data || []).map((r: any) => r.gara).filter(Boolean))];
+    return [...new Set(((data || []) as unknown as { gara?: string }[]).map((r) => r.gara).filter(Boolean) as string[])];
 }
 
-function prompt(brand: string, mese: string, base: string, foto: Record<string, any[]>, lettera: string, divisione?: string) {
+/* ── IL PROMPT ────────────────────────────────────────────────────────────
+   UNA TABELLA PER GIRO, e nella risposta la tabella NON si nomina: il modello
+   può parlare solo di quella che gli abbiamo mostrato.
+
+   ⚠️ PERCHÉ COSÌ. Il 04/09 la prima lettura vera ha prodotto 334 proposte, di
+   cui 319 «aggiungi». Misurato riga per riga: nel giro delle PISTE — dove la
+   fotografia conteneva sei righe di piste e nient'altro — il modello ha
+   risposto con 34 aggiunte di VOCI e 11 di REGOLE, tabelle che in quel giro
+   non vedeva nemmeno. La vecchia regola «se la lettera introduce una pista
+   nuova proponi anche le sue soglie e voci» era un invito a farlo, e ogni giro
+   riproponeva le stesse voci della lettera: 99 copie ridondanti su 274.
+   Togliendo il campo `tabella` dalla risposta il problema non si corregge, si
+   estingue: non c'è più modo di scriverlo.
+
+   L'altro pezzo è la LUNGHEZZA. Con il prompt vecchio il giro «soglie» (86
+   righe) tornava con finish_reason=length e completion_tokens=16000 — il tetto
+   intero — e il JSON monco si buttava; stessa cosa su «voci» (33 righe). Il
+   tetto ARRIVA al modello (provato: `max_tokens` 16000 accettato da
+   deepseek-v4-flash) e `reasoning_effort:"none"` funziona (zero token di
+   ragionamento): era proprio la risposta a essere lunghissima. Con questo
+   prompt, sulla STESSA lettera e sulle STESSE righe: soglie 153 token, voci
+   4.102, piste 177, regole 1.982 — tutte con finish_reason=stop. I vincoli che
+   contano sono «non riscrivere ciò che non cambia», «non scrivere il valore
+   vecchio» e «perche in dieci parole». */
+/* ⚠️ LE PAROLE SONO QUELLE DEL DATABASE, non quelle che suonano bene. Il
+   CHECK di `voci.tipo` ammette punti|gettone|bonus|moltiplicatore|
+   pay_ricorrente: qui c'era scritto «euro», ed era pure l'esempio da copiare —
+   ogni voce nuova che lo seguiva sarebbe esplosa all'inserimento, in fondo
+   all'elenco, dopo essere stata letta e spuntata. Stessa storia per
+   `reward_tipo` (niente «gettone»), per `scope` (niente «cluster») e per
+   `regole.tipo` (malus|gate|storno, non «cap» o «esclusioni»). */
+const SCHEMA_TAB: Record<NomeTab, string> = {
+    piste: "Le gare del mese. Campi: gara (franchising | multibrand | multibrand_t2), codice, nome, descrizione, sort_order.",
+    soglie: "Gli scalini di ogni pista. Campi: pista (il codice della pista), scope (pdv | ragione_sociale), cluster, store_name, tier (1,2,3...), soglia_valore, soglia_um (punti | pezzi | percent), reward_tipo (bonus | moltiplicatore | pay | sblocco), reward_valore, reward_um, reward_descr, note.",
+    voci: "Quanto vale ogni cosa dentro una pista. È una MATRICE: la stessa voce può esistere una volta per soglia, con `tier` diverso e valore diverso. Campi: pista, nome, tipo (punti | gettone | bonus | moltiplicatore | pay_ricorrente), valore, um, condizione (quando si applica), scope (pdv | ragione_sociale), tier (la soglia a cui vale quel valore, vuoto se vale sempre), note.",
+    regole: "I vincoli della gara. Campi: pista, tipo (malus | gate | storno), condizione, effetto, valore, um, bersaglio, scope (pdv | ragione_sociale), note.",
+};
+const CAMPO_ESEMPIO: Record<NomeTab, string> = { piste: "nome", soglie: "soglia_valore", voci: "valore", regole: "valore" };
+const CHE_CONTA: Record<NomeTab, string> = {
+    piste: "i codici e i nomi delle piste",
+    soglie: "`soglia_valore` e `reward_valore`",
+    voci: "`valore`",
+    regole: "`valore` e `effetto`",
+};
+const ESEMPIO_NUOVA: Record<NomeTab, string> = {
+    piste: '"gara":"franchising","codice":"extra_piva","nome":"Extra Gara P.IVA","sort_order":90',
+    soglie: '"pista":"mobile","scope":"pdv","store_name":"Mazzini","tier":1,"soglia_valore":42,"soglia_um":"punti"',
+    voci: '"pista":"mobile","nome":"Roaming ITZ P.IVA","tipo":"gettone","valore":15,"um":"eur","condizione":"50% del canone","tier":null',
+    regole: '"pista":"fisso","tipo":"gate","condizione":"Raggiunta la 2ª soglia Fisso","effetto":"abilita 4ª soglia mobile"',
+};
+
+function prompt(brand: string, mese: string, tab: NomeTab, righe: Riga[], piste: Riga[], lettera: string, divisione: string) {
     const nomiBrand: Record<string, string> = {
         w3: "WindTre", vs: "Vodafone e Fastweb", sky: "Sky", fastweb: "Fastweb", s4: "S4 Energia",
     };
+    const elencoPiste = piste.map((p) => `${p.codice} = ${p.nome}`).join(" · ");
     return `Sei l'analista che tiene aggiornate le gare di Telefutura, un gruppo di negozi di telefonia a Roma.
 
-Ogni mese l'operatore ${nomiBrand[brand] || brand} manda una LETTERA DI GARA con i target e i compensi del mese. Il tuo compito: leggere la lettera nuova e dire COSA CAMBIA rispetto al mese precedente, già impostato nel gestionale.\n\n${divisione ? `⚠️ Stai lavorando SOLO sulla divisione «${divisione}». Nel mese base qui sotto ci sono solo le sue piste: se la lettera parla di altre divisioni, ignorale.` : ""}
+Ogni mese l'operatore ${nomiBrand[brand] || brand} manda una LETTERA DI GARA con i target e i compensi del mese. Il tuo compito: leggere la lettera e dire cosa cambia nella tabella «${tab}» della divisione «${divisione}» rispetto a com'è impostata adesso nel gestionale.
 
-## Come è fatto il gestionale (lato azienda)
+## La tabella «${tab}»
 
-Quattro tabelle, tutte per brand e per mese:
+${SCHEMA_TAB[tab]}
 
-- **piste**: le gare del mese. Campi: gara (franchising | multibrand | multibrand_t2), codice, nome, descrizione, sort_order.
-- **soglie**: gli scalini di ogni pista. Campi: pista (il codice della pista), scope (pdv | ragione_sociale | cluster), cluster, store_name, tier (1,2,3...), soglia_valore, soglia_um (punti | pezzi | eur), reward_tipo (bonus | moltiplicatore | gettone), reward_valore, reward_um, reward_descr, note.
-- **voci**: quanto vale ogni cosa dentro una pista. Campi: pista, nome, tipo (punti | gettone | euro | moltiplicatore), valore, um, condizione (quando si applica), scope, tier, note.
-- **regole**: i vincoli (gate, malus, cap, esclusioni). Campi: pista, tipo, condizione, effetto, valore, um, bersaglio, scope, note.
+Le piste di questa divisione: ${elencoPiste || "(nessuna)"}
 
-## La lettera nuova (${mese})
+## La lettera (${mese})
 
 """
 ${lettera}
 """
 
-## Il mese base già impostato (${base})
+## Com'è adesso la tabella «${tab}» (divisione ${divisione})
 
-⚠️ Qui sotto c'è SOLO la tabella su cui devi lavorare adesso. Non proporre
-modifiche a righe che non vedi: di quelle si occupa un altro giro.
+Queste sono TUTTE e SOLE le righe su cui puoi lavorare.
 
 \`\`\`json
-${JSON.stringify(foto, null, 0)}
+${JSON.stringify(righe)}
 \`\`\`
 
 ## Cosa devi restituire
 
-SOLO un oggetto JSON con questa forma, senza testo attorno:
+Un solo oggetto JSON, scritto su UNA RIGA, senza spazi superflui e senza testo attorno:
 
-{
-  "riassunto": "tre o quattro righe in italiano su cosa cambia davvero questo mese",
-  "avvisi": ["cose che non sei riuscito a leggere con certezza dalla lettera"],
-  "modifiche": [
-    {"tabella":"soglie","operazione":"aggiorna","id":"<id della riga base>","campo":"soglia_valore","da":39,"a":42,"motivo":"nella lettera la 1ª soglia fisso di Magliana passa da 39 a 42 punti"},
-    {"tabella":"voci","operazione":"aggiungi","dati":{"pista":"mobile","nome":"Roaming ITZ P.IVA","tipo":"euro","valore":null,"um":"eur","condizione":"50% del canone"},"motivo":"voce nuova di settembre"},
-    {"tabella":"voci","operazione":"rimuovi","id":"<id>","motivo":"non compare più nella lettera"}
-  ]
-}
+{"avvisi":["…"],"modifiche":[
+{"op":"mod","id":"<id di una riga qui sopra>","campo":"${CAMPO_ESEMPIO[tab]}","a":42,"perche":"1ª soglia Mazzini"},
+{"op":"new","dati":{${ESEMPIO_NUOVA[tab]}},"perche":"voce nuova del mese"},
+{"op":"del","id":"<id di una riga qui sopra>","perche":"non c'è più nella lettera"}]}
 
-## Regole a cui devi attenerti
+## Regole (violarle rende la risposta inutilizzabile)
 
-1. **Solo le differenze.** Se un valore è identico al mese base non metterlo fra le modifiche. Meglio dieci modifiche giuste che cento righe rumorose.
-2. **Un campo per modifica.** Se di una riga cambiano due campi, scrivi due modifiche.
-3. **Gli id li prendi dal mese base** che ti ho dato: per "aggiorna" e "rimuovi" l'id è obbligatorio e deve esistere in quella fotografia.
-4. **Non inventare.** Se la lettera è ambigua o non copre una parte, NON proporre la modifica: scrivila in "avvisi". Un numero inventato qui diventa un compenso sbagliato per una persona vera.
-5. **I valori numerici in cifre**, con il punto decimale (42.5, non "42,5 punti"). L'unità va nel campo um.
-6. Se la lettera introduce una pista che non esiste nel mese base, proponi prima la pista (tabella "piste") e poi le sue soglie e voci.
-7. Se non cambia nulla, restituisci "modifiche": [] e spiegalo nel riassunto.
+1. **SOLO la tabella «${tab}».** Non esistono altri \`op\` e non si nominano altre tabelle: qui dentro non si propongono righe di soglie/voci/regole/piste diverse da questa. Se la lettera cambia qualcos'altro NON scriverlo, se ne occupa un altro giro.
+2. **Solo ciò che CAMBIA.** Una riga già uguale a quello che dice la lettera NON si riscrive. Se non cambia niente rispondi "modifiche":[].
+3. **Prima i NUMERI.** Ciò che conta sono ${CHE_CONTA[tab]}. Descrizioni, note e ordinamenti proponili solo se la lettera li cambia davvero.
+4. **Non scrivere il valore vecchio**: lo leggo io dal gestionale. Metti solo \`a\`, il valore nuovo, in cifre con il punto decimale (42.5). L'unità va nel suo campo.
+5. **\`perche\`: dieci parole al massimo.** Non ripetere il contenuto di \`dati\`.
+6. **Un campo per modifica.** Se di una riga cambiano due campi, scrivi due \`mod\`.
+7. **Gli id esistono solo se li vedi qui sopra.** Non inventarli.
+8. **Non inventare numeri.** Se la lettera è ambigua, o non parla di questa divisione, non proporre nulla e scrivilo in \`avvisi\` (al massimo 5 avvisi, una riga ciascuno). Un numero inventato qui diventa lo stipendio sbagliato di una persona vera.
 
 Rispondi solo con il JSON.`;
 }
@@ -147,7 +201,7 @@ Rispondi solo con il JSON.`;
    «Non hai i permessi per le gare» perfino all'amministratore (04/09). */
 async function nomeDi(id: string): Promise<string | null> {
     const { data } = await supabase.from("app_users").select("full_name").eq("id", id).maybeSingle();
-    return data?.full_name || null;
+    return (data as { full_name?: string } | null)?.full_name || null;
 }
 
 export async function GET(request: Request) {
@@ -173,7 +227,7 @@ export async function POST(request: Request) {
 
     // ───────────────────────────────────────────── proponi
     if (azione === "proponi") {
-        if (!hasKey()) return NextResponse.json({ error: "DEEPSEEK_API_KEY non configurata sul server" }, { status: 400 });
+        if (!hasKey(MODELLO)) return NextResponse.json({ error: `Manca la chiave del modello ${MODELLO} sul server` }, { status: 400 });
         const testo = String(body.testo || "").trim();
         if (testo.length < 200) return NextResponse.json({ error: "Il testo della lettera è troppo corto: il file non è stato letto." }, { status: 400 });
 
@@ -194,14 +248,23 @@ export async function POST(request: Request) {
                     : `Non c'è nessun mese impostato per questo operatore: la lettera si può leggere solo per correggere un mese già esistente.`,
             }, { status: 400 });
         }
-        // la lettera può riguardare una sola divisione: se il chiamante la indica
-        // si fa un giro solo, altrimenti un giro per divisione
-        const dovute = body.divisione ? [String(body.divisione)] : tutte;
+        /* la lettera riguarda quasi sempre UNA divisione: se il chiamante la
+           indica si fa un giro solo — è il taglio di rumore più grosso che c'è
+           (04/09: 109 proposte su piste che la lettera non nominava).
+           ⚠️ una divisione che non esiste è un ERRORE, non un «allora leggile
+           tutte»: ripiegare in silenzio riporterebbe esattamente il rumore che
+           si voleva togliere, e senza dirlo a nessuno. */
+        const chiesta = String(body.divisione || "").trim();
+        if (chiesta && !tutte.includes(chiesta)) {
+            return NextResponse.json({ error: `La divisione «${chiesta}» non esiste in ${meseLungo(month)} (ci sono: ${tutte.join(", ")}).` }, { status: 400 });
+        }
+        const dovute = chiesta ? [chiesta] : tutte;
 
         const t0 = Date.now();
-        const parsed: any = { riassunto: [], avvisi: [], modifiche: [] };
-        const foto: Record<string, any[]> = { piste: [], soglie: [], voci: [], regole: [] };
-        let usoIn = 0, usoOut = 0, usoCache = 0;
+        const avvisi: string[] = [];
+        const grezze: Grezza[] = [];
+        const foto: Foto = { piste: [], soglie: [], voci: [], regole: [] };
+        let usoIn = 0, usoOut = 0, usoCache = 0, chiamate = 0;
         const lettera = testo.slice(0, 60000);
 
         /* UN PEZZO ALLA VOLTA, E SE SFORA SI DIMEZZA DA SÉ.
@@ -213,25 +276,25 @@ export async function POST(request: Request) {
            Adesso si chiede una TABELLA alla volta, e se quel pezzo sfora lo si
            spacca in due e si richiede: il giro finisce sempre, e il costo lo
            paghiamo solo sui pezzi che servivano davvero. */
-        const chiediPezzo = async (div: string, tab: NomeTab, righe: any[], piste: any[]): Promise<void> => {
+        const chiediPezzo = async (div: string, tab: NomeTab, righe: Riga[], piste: Riga[]): Promise<void> => {
             if (!righe.length) return;
-            const pezzo: Record<string, any[]> = { piste: tab === "piste" ? righe : piste };
-            if (tab !== "piste") pezzo[tab] = righe;
             let res;
+            chiamate++;
             try {
                 res = await chat({
-                    messages: [{ role: "user", content: prompt(brand, month, base, pezzo, lettera, div) }],
-                    model: MODEL_FAST, responseFormat: "json_object",
+                    messages: [{ role: "user", content: prompt(brand, meseLungo(month), tab, righe, piste, lettera, div) }],
+                    model: MODELLO, responseFormat: "json_object",
                     maxTokens: 16000, temperature: 0, timeoutMs: 280_000, senzaRagionamento: true,
                 });
-            } catch (e: any) {
-                parsed.avvisi.push(`${div} · ${tab}: il modello non ha risposto (${e?.message || e})`);
+            } catch (e) {
+                avvisi.push(`!${div} · ${tab}: il modello non ha risposto (${(e as Error)?.message || e})`);
                 return;
             }
             usoIn += res.usage?.prompt_tokens || 0;
             usoOut += res.usage?.completion_tokens || 0;
             usoCache += res.usage?.prompt_cache_hit_tokens || 0;
 
+            const contenuto = res.message.content || "";
             if (res.finish_reason === "length") {
                 if (righe.length > 8) {                       // si spacca e si riprova
                     const m = Math.ceil(righe.length / 2);
@@ -239,65 +302,67 @@ export async function POST(request: Request) {
                     await chiediPezzo(div, tab, righe.slice(m), piste);
                     return;
                 }
-                parsed.avvisi.push(`${div} · ${tab}: risposta troncata anche su ${righe.length} righe — questo pezzo va rivisto a mano`);
+                const salvate = recuperaTroncato(contenuto);
+                salvate.forEach((m) => grezze.push({ tab, div, m }));
+                avvisi.push(salvate.length
+                    ? `!${div} · ${tab}: la risposta si è interrotta a metà — recuperate le prime ${salvate.length} modifiche, il resto di questa tabella va riletto a mano`
+                    : `!${div} · ${tab}: risposta troncata anche su ${righe.length} righe — questo pezzo va rivisto a mano`);
                 return;
             }
-            let d: any = null;
-            try { d = JSON.parse(res.message.content || "{}"); }
-            catch { parsed.avvisi.push(`${div} · ${tab}: risposta non in JSON valido`); return; }
-            if (d.riassunto && tab === "soglie") parsed.riassunto.push(`${div}: ${d.riassunto}`);
-            if (Array.isArray(d.avvisi)) parsed.avvisi.push(...d.avvisi.map((a: string) => `${div} · ${tab}: ${a}`));
-            if (Array.isArray(d.modifiche)) parsed.modifiche.push(...d.modifiche);
+            let d: Record<string, unknown>;
+            try { d = JSON.parse(contenuto || "{}"); }
+            catch { avvisi.push(`!${div} · ${tab}: risposta non in JSON valido`); return; }
+            if (Array.isArray(d.avvisi)) avvisi.push(...(d.avvisi as unknown[]).slice(0, 5).map((a) => `${div} · ${tab}: ${String(a)}`));
+            if (Array.isArray(d.modifiche)) (d.modifiche as Riga[]).forEach((m) => grezze.push({ tab, div, m }));
         };
 
+        const gaDi: Record<string, string> = {};     // codice pista -> divisione
+        const nomePista: Record<string, string> = {};
         for (const div of dovute) {
             const f = await fotografia(brand, base, div);
-            if (!Object.values(f).reduce((a, r) => a + r.length, 0)) continue;
-            Object.keys(foto).forEach((k) => foto[k].push(...(f[k] || [])));
-            for (const tab of ["piste", "soglie", "voci", "regole"] as NomeTab[]) {
-                await chiediPezzo(div, tab, f[tab] || [], f.piste || []);
-            }
-        }
-        parsed.riassunto = parsed.riassunto.join("\n");
-
-        // ⚠️ si tiene solo ciò che è verificabile: gli id devono esistere davvero
-        // nella fotografia del mese base, altrimenti "aggiorna" scriverebbe nel vuoto.
-        const idsBase = new Set<string>();
-        Object.values(foto).forEach((righe) => righe.forEach((r: any) => idsBase.add(r.id)));
-        const buone: any[] = []; const scartate: string[] = [];
-        for (const m of (Array.isArray(parsed.modifiche) ? parsed.modifiche : [])) {
-            const t = String(m.tabella || "");
-            if (!(t in TAB)) { scartate.push(`tabella sconosciuta: ${t}`); continue; }
-            const op = String(m.operazione || "");
-            if (op === "aggiungi") {
-                if (!m.dati || typeof m.dati !== "object") { scartate.push("aggiunta senza dati"); continue; }
-            } else if (op === "aggiorna" || op === "rimuovi") {
-                if (!m.id || !idsBase.has(String(m.id))) { scartate.push(`${op} con id inesistente nel mese base`); continue; }
-                if (op === "aggiorna" && !m.campo) { scartate.push("aggiornamento senza campo"); continue; }
-                if (op === "aggiorna" && !CAMPI[t as NomeTab].includes(String(m.campo))) { scartate.push(`campo non modificabile: ${m.campo}`); continue; }
-            } else { scartate.push(`operazione sconosciuta: ${op}`); continue; }
-            buone.push(m);
+            if (!TABELLE.reduce((a, k) => a + (f[k] || []).length, 0)) continue;
+            TABELLE.forEach((k) => foto[k].push(...(f[k] || [])));
+            (f.piste || []).forEach((p) => { gaDi[String(p.codice)] = div; nomePista[String(p.codice)] = String(p.nome || p.codice); });
+            for (const tab of TABELLE) await chiediPezzo(div, tab, f[tab] || [], f.piste || []);
         }
 
-        const avvisi = [...(Array.isArray(parsed.avvisi) ? parsed.avvisi : []), ...scartate.map((s) => "scartata dal controllo: " + s)];
+        // il setaccio e il riassunto stanno in `@/lib/gareLettera`
+        const { buone, scarti } = setaccia(grezze, foto, nomePista, gaDi);
+        const riassunto = riassuntoDa(buone, foto, nomePista, dovute.length === 1
+            ? `Divisione letta: ${dovute[0]} · confronto con ${meseLungo(base)}`
+            : `Divisioni lette: ${dovute.join(", ")} · confronto con ${meseLungo(base)}`);
+
+        const scartateTot = Object.values(scarti).reduce((a, b) => a + b, 0);
+        /* ⚠️ IL TETTO VALE SOLO SULLA CHIACCHIERA DEL MODELLO. Gli avvisi di
+           sistema — «la risposta si è interrotta a metà», «non ha risposto»,
+           «non in JSON valido» — sono gli unici che dicono che la lettura è
+           INCOMPLETA: se il taglio li mangia insieme ai «si assume che non ci
+           siano variazioni», la lettura sembra finita e non lo è. */
+        const dsistema = [...new Set(avvisi.filter((a) => a.startsWith("!")))].map((a) => a.slice(1));
+        const dmodello = [...new Set(avvisi.filter((a) => !a.startsWith("!")))];
+        const avvisiFinali = [
+            ...dsistema,
+            ...dmodello.slice(0, 12),
+            ...Object.entries(scarti).map(([k, v]) => `scartate dal controllo — ${k}: ${v}`),
+        ];
         const { data: salvata, error } = await supabase.from("gare_ai_proposte").insert({
             brand, month, lato: "azienda", stato: "bozza",
             lettera_id: body.lettera_id || null, lettera_nome: body.lettera_nome || null,
-            mese_base: base, modello: MODEL_FAST,
-            diff: buone, riassunto: String(parsed.riassunto || ""), avvisi,
+            mese_base: base, modello: MODELLO,
+            diff: buone, riassunto, avvisi: avvisiFinali,
             creata_da: autore,
         }).select("*").single();
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
         await registraConsumo({
             sezione: "gare_lettera", funzione: "leggi_lettera", automatica: false,
-            modello: MODEL_FAST,
-            chiamate: dovute.length,
+            modello: MODELLO,
+            chiamate,
             tokenIn: usoIn, tokenOut: usoOut, tokenInCache: usoCache, tokenRagionamento: 0,
             userId: sess.id, durataMs: Date.now() - t0, esito: "ok",
         }).catch(() => {});
 
-        return NextResponse.json({ proposta: salvata, scartate: scartate.length });
+        return NextResponse.json({ proposta: salvata, scartate: scartateTot });
     }
 
     // ───────────────────────────────────────────── applica / scarta
@@ -322,14 +387,52 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true });
         }
 
-        // si applicano SOLO le modifiche che la persona ha spuntato
-        const scelte: string[] = Array.isArray(body.scelte) ? body.scelte.map(String) : [];
-        const diff: any[] = Array.isArray(p.diff) ? p.diff : [];
-        const daFare = scelte.length ? diff.filter((_, i) => scelte.includes(String(i))) : diff;
+        /* SI APPLICA SOLO QUELLO CHE È SPUNTATO.
+           ⚠️ `scelte` vuoto NON vuol dire «tutte»: la card adesso spunta di
+           default solo le modifiche sui numeri, e chi le toglie tutte sta
+           dicendo «nessuna». Prima un array vuoto faceva scattare il ramo
+           «tutte» — con 334 righe in elenco era un piede sul grilletto. */
+        const diff: Riga[] = Array.isArray(p.diff) ? p.diff : [];
+        /* ⚠️ SI PUÒ APPLICARE IN PIÙ VOLTE, e una riga non si applica DUE volte.
+           Da quando le modifiche stanno in due gruppi — i numeri spuntati, le
+           accessorie no — il giro naturale è: applico i numeri, poi rileggo le
+           altre con calma. Se la proposta si chiudesse al primo Applica, il
+           secondo gruppo non si potrebbe più usare. Quindi: si tiene il conto
+           degli indici già applicati dentro `applicato` (nessuna colonna nuova),
+           si rifiutano quelli già fatti, e la proposta diventa «applicata» solo
+           quando non resta più niente. Riapplicare un "aggiungi" due volte
+           avrebbe creato una riga doppia che paga due volte. */
+        const gia = new Set(((p.applicato?.indici as unknown[]) || []).map(String));
+        /* ⚠️ LA SCELTA È OBBLIGATORIA. Prima, un corpo SENZA `scelte` valeva
+           «tutte»: bastava una chiamata da fuori, un bundle vecchio rimasto in
+           cache o un replay per riaprire esattamente il grilletto che si era
+           appena chiuso — trecento righe applicate insieme, accessorie
+           comprese. Adesso chi applica dice quali, sempre.
+           Gli indici arrivano dal browser: si tengono solo quelli INTERI e
+           dentro l'elenco, e una sola volta ciascuno — mandato due volte, un
+           "aggiungi" avrebbe inserito la riga due volte. */
+        if (!Array.isArray(body.scelte)) {
+            return NextResponse.json({ error: "Vanno indicate le modifiche da applicare." }, { status: 400 });
+        }
+        const scelte = [...new Set((body.scelte as unknown[]).map(String))];
+        const indiciDaFare = scelte.filter((i) => !gia.has(i) && /^\d+$/.test(i) && Number(i) < diff.length);
+        const daFare = indiciDaFare.map((i) => ({ i, m: diff[Number(i)] }));
+        if (!daFare.length) {
+            return NextResponse.json({
+                error: scelte.length ? "Le modifiche che hai spuntato sono già state applicate." : "Non hai spuntato nessuna modifica.",
+            }, { status: 400 });
+        }
 
-        const fatto: any[] = []; const errori: string[] = [];
-        for (const m of daFare) {
+        const fatto: Riga[] = []; const errori: string[] = []; const finite: string[] = [];
+        // indice -> com'è finita: la card deve poter dire «applicata» solo a
+        // quelle che LO SONO, e non spegnere in silenzio quelle che non lo sono
+        const esiti: Record<string, string> = {};
+        const segna = (i: string, esito: string) => { finite.push(i); esiti[i] = esito; };
+        for (const { i, m } of daFare) {
             const tabella = TAB[m.tabella as NomeTab];
+            // rifiuti definitivi: si segnano come chiusi, se no la proposta
+            // non arriverebbe mai a «applicata» e resterebbe lì in eterno
+            if (!tabella) { errori.push(`tabella sconosciuta: ${m.tabella}`); segna(i, "rifiutata"); continue; }
             try {
                 if (m.operazione === "aggiorna") {
                     /* brand e mese anche qui: nessuna proposta può toccare un altro mese.
@@ -339,34 +442,62 @@ export async function POST(request: Request) {
                        state rigenerate dopo la lettura, gli id della proposta sono
                        vecchi. Su tabelle che pagano le persone il registro deve dire il
                        vero, se no il conto non si ricostruisce più. */
-                    const { data: tocc, error } = await supabase.from(tabella).update({ [m.campo]: m.a })
-                        .eq("id", m.id).eq("brand", brand).eq("month", month).select("id");
+                    if (!CAMPI[m.tabella as NomeTab].includes(String(m.campo))) { errori.push(`campo non modificabile: ${m.campo}`); segna(i, "rifiutata"); continue; }
+                    /* ⚠️ SI SCRIVE SOLO SE IL VALORE È ANCORA QUELLO CHE HAI
+                       LETTO. Fra la lettura della lettera e l'Applica passano
+                       ore, e nel frattempo quelle stesse righe si correggono a
+                       mano nella schermata Gare qui accanto: senza questo
+                       vincolo la proposta sovrascriveva la correzione umana in
+                       silenzio, e il registro diceva «aggiornata» da un valore
+                       che non c'era più. Se non combacia non si scrive e lo si
+                       dice: la riga va riletta. */
+                    const q = supabase.from(tabella).update({ [String(m.campo)]: m.a })
+                        .eq("id", m.id).eq("brand", brand).eq("month", month);
+                    const { data: tocc, error } = await (m.da === null || m.da === undefined
+                        ? q.is(String(m.campo), null) : q.eq(String(m.campo), m.da as never)).select("id");
                     if (error) throw error;
-                    fatto.push({ ...m, esito: (tocc || []).length ? "aggiornata" : "riga non trovata" });
+                    const esito = (tocc || []).length ? "aggiornata" : "non scritta: la riga è cambiata dopo la lettura";
+                    fatto.push({ ...m, esito }); segna(i, esito);
                 } else if (m.operazione === "rimuovi") {
                     const { data: tocc, error } = await supabase.from(tabella).delete()
                         .eq("id", m.id).eq("brand", brand).eq("month", month).select("id");
                     if (error) throw error;
-                    fatto.push({ ...m, esito: (tocc || []).length ? "rimossa" : "riga non trovata" });
+                    const esito = (tocc || []).length ? "rimossa" : "non trovata: era già sparita";
+                    fatto.push({ ...m, esito }); segna(i, esito);
                 } else if (m.operazione === "aggiungi") {
-                    const pulito: Record<string, any> = { brand, month };
-                    CAMPI[m.tabella as NomeTab].forEach((c) => { if (m.dati[c] !== undefined) pulito[c] = m.dati[c]; });
+                    const pulito: Riga = { brand, month };
+                    const dati = (m.dati || {}) as Riga;
+                    CAMPI[m.tabella as NomeTab].forEach((c) => { if (dati[c] !== undefined) pulito[c] = dati[c]; });
                     const { error } = await supabase.from(tabella).insert(pulito);
                     if (error) throw error;
-                    fatto.push({ ...m, esito: "aggiunta" });
-                }
-            } catch (e: any) { errori.push(`${m.tabella}/${m.operazione}: ${e?.message || e}`); }
+                    fatto.push({ ...m, esito: "aggiunta" }); segna(i, "aggiunta");
+                } else { errori.push(`operazione sconosciuta: ${m.operazione}`); segna(i, "rifiutata"); }
+            } catch (e) { errori.push(`${m.tabella}/${m.operazione}: ${(e as Error)?.message || e}`); }
         }
 
+        /* il registro si SOMMA a quello di prima: chi ricostruisce il conto
+           deve vedere tutti i passaggi, non solo l'ultimo. Gli errori veri
+           (eccezioni) non entrano fra gli indici finiti: quelli si riprovano. */
+        const indici = [...gia, ...finite];
+        const prima = (p.applicato || {}) as { fatto?: Riga[]; errori?: string[]; esiti?: Record<string, string> };
+        const tuttiEsiti = { ...(prima.esiti || {}), ...esiti };
+        const tutteFatte = indici.length >= diff.length;
         await supabase.from("gare_ai_proposte").update({
-            stato: "applicata", decisa_da: autore, decisa_il: new Date().toISOString(),
-            applicato: { fatto, errori },
+            stato: tutteFatte ? "applicata" : "bozza",
+            decisa_da: autore, decisa_il: new Date().toISOString(),
+            applicato: {
+                fatto: [...(prima.fatto || []), ...fatto],
+                errori: [...(prima.errori || []), ...errori],
+                indici, esiti: tuttiEsiti,
+            },
         }).eq("id", id);
-        const vere = fatto.filter((x) => x.esito !== "riga non trovata");
+        const scritte = ["aggiornata", "rimossa", "aggiunta"];
+        const vere = fatto.filter((x) => scritte.includes(String(x.esito)));
         const mancate = fatto.length - vere.length;
+        const restano = diff.length - indici.length;
         return NextResponse.json({
-            ok: true, applicate: vere.length, errori,
-            ...(mancate ? { avviso: `${mancate} ${mancate === 1 ? "riga non è stata trovata" : "righe non sono state trovate"}: erano già cambiate dopo la lettura.` } : {}),
+            ok: true, applicate: vere.length, errori, restano,
+            ...(mancate ? { avviso: `${mancate} ${mancate === 1 ? "riga NON è stata scritta" : "righe NON sono state scritte"}: erano già cambiate dopo la lettura. Rileggile a mano.` } : {}),
         });
     }
 
