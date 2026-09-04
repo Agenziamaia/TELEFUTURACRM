@@ -185,7 +185,18 @@ async function posizionaCampi(k: string, tpl: Record<string, unknown>, DOCUSEAL:
                non trova la sua posizione è una firma raccolta e mai stampata. */
             if (/^Firma del /i.test(nome)) return { ...c, areas: area(trovati.FIRMA1, 0.34, 0.043, "sotto") };
             if (/^Seconda/i.test(nome)) return { ...c, areas: area(trovati.FIRMA2, 0.34, 0.043, "sotto") };
-            if (/^Data/i.test(nome) && trovati.DATA) return { ...c, areas: area(trovati.DATA, 0.16, 0.022, "sopra") };
+            /* ⚠️ LA DATA IN ITALIANO (Luca 04/09). DocuSeal scrive le date nel
+               formato del suo account, che di suo è MM/DD/YYYY: sul contratto
+               del 4 settembre usciva «09/04/2026», che un lettore italiano
+               legge 9 aprile. Su un contratto firmato la data non è un
+               dettaglio grafico — decide i sette giorni della verifica
+               tecnica e i ventiquattro mesi del blocco di rete. Il formato si
+               impone sul CAMPO, non si spera nelle impostazioni dell'account. */
+            if (/^Data/i.test(nome) && trovati.DATA) return {
+                ...c,
+                preferences: { ...(c.preferences as Record<string, unknown> || {}), format: "DD/MM/YYYY" },
+                areas: area(trovati.DATA, 0.16, 0.022, "sopra"),
+            };
             return c;
         });
 

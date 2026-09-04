@@ -717,7 +717,21 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
             <div className="rvBoxT" style={{color:"var(--tf-6f42c1)",marginBottom:6}}>Dispositivi usati ({usatoUnits.length}) — magazzino di {negozio||"—"}</div>
             {magUsati.length===0&&<div style={{fontSize:11,color:"var(--tf-fd7e14)",fontWeight:600,marginBottom:8}}>⚠ Nessun telefono In Vendita nel magazzino di {negozio||"questo negozio"}: per venderlo, l'usato deve prima essere In Vendita su Gestione Usati.</div>}
             {usatoUnits.map((u,i)=>{
-              const _di=String(u.imei||"").replace(/\D/g,"");const done=_di.length===15;
+              /* ⚠️ NON TUTTO L'USATO È UN TELEFONO (Luca 04/09: «se non sono
+                 telefoni lascia il campo libero»). Un orologio e un iPad WiFi
+                 un IMEI non ce l'hanno: hanno un seriale con le lettere, e
+                 pretendere quindici cifre li renderebbe invendibili.
+                 Si segnala SOLO l'identificativo che sembra un IMEI andato
+                 storto: tutto cifre ma non quindici, oppure quindici cifre con
+                 attaccato dell'altro — che è il guasto vero del 04/09, il
+                 modello incollato in coda al numero. */
+              const _id=String(u.imei||"").trim();
+              const _di=_id.replace(/\D/g,"");
+              /* vuoto: non è né un IMEI né un seriale, e su uno scontrino
+                 fiscale un usato senza identificativo non ci va */
+              const _vuoto=_id==="";
+              const _pareImei=/^[0-9]+$/.test(_id)||/^[0-9]{15}./.test(_id);
+              const done=!_vuoto&&(!_pareImei||_di.length===15);
               const dup=done&&usatoUnits.some((x,j)=>j!==i&&String(x.imei||"").replace(/\D/g,"")===_di);
               const q=String(u.cerca||"").trim().toLowerCase();
               const qd=q.replace(/\D/g,"");
@@ -740,8 +754,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline,filtro
                             sbagliata. Adesso c'è scritto cosa fare e a chi dirlo. */}
                         {!done?(
                           <div style={{fontSize:10,color:"var(--tf-fd7e14)",fontWeight:700,marginTop:2}}>
-                            ⚠ L&apos;IMEI di questa scheda non è di 15 cifre ({_di.length}): il telefono non si può vendere finché
-                            l&apos;amministrazione non lo corregge in Gestione Usati.
+                            {_vuoto
+                              ? "⚠ Questa scheda non ha nessun IMEI né seriale: falla completare all'amministrazione in Gestione Usati prima di venderla."
+                              : `⚠ L'IMEI di questa scheda non torna (${_di.length} cifre invece di 15): falla correggere all'amministrazione in Gestione Usati, se no lo scontrino esce con un IMEI sbagliato.`}
                           </div>
                         ):(
                           <div style={{fontSize:10,color:"var(--tf-28a745)",fontWeight:700,marginTop:2}}>Dal magazzino usati — verrà scaricato alla registrazione</div>
