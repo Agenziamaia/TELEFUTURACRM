@@ -1679,21 +1679,21 @@ function CredenzialiPayStore() {
     type Saldo = { negozio: string; azienda: string; identificativo: string | null; saldo: number | null; errore: string | null };
     const [saldi, setSaldi] = useState<{ saldi: Saldo[]; totale: number; muti: number } | null>(null);
     const [chiedoSaldi, setChiedoSaldi] = useState(false);
-    type Ric = { inSospeso: number; operazioniTrovate: number; daFareDavvero: number; problemi: string[]; giaFatte: { id: string; negozio: string|null; numero: string; importo: number; operationId: number }[]; segnate?: number };
-    const [ricEsito, setRicEsito] = useState<Ric | null>(null);
-    const [ric, setRic] = useState(false);
-    const riconcilia = async (applica: boolean) => {
-        setRic(true); setKo("");
-        try {
-            const r = await fetch("/api/paystore/riconcilia", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ applica }),
-            }).then((x) => x.json());
-            if (!r?.ok) throw new Error(r?.error || "non riuscita");
-            setRicEsito(r);
-        } catch (e) { setKo((e as Error).message); }
-        finally { setRic(false); }
-    };
+    /* ⚠️ «QUALI HA GIÀ FATTO PAYSTORE» NON C'È PIÙ, ed è giusto così.
+       Serviva a rispondere alla domanda che il registro da solo non sa —
+       «questa ricarica il negozio l'ha già caricata a mano dal portale?» —
+       e a PayStore quella domanda NON SI PUÒ FARE: misurato il 04/09 contro
+       l'API di produzione, `GET /operations` risponde 404 con qualunque
+       parametro, e così ogni altra forma di elenco. L'unica lettura che esiste
+       è la singola operazione, e serve un identificativo che per una ricarica
+       mai partita non abbiamo.
+       Luca: «se sei sicuro che non espone il dato, eliminala direttamente,
+       altrimenti rischia solo di creare confusione e false aspettative».
+       Un pulsante che promette una verifica e restituisce sempre «zero
+       trovate» è peggio dell'assenza del pulsante: la risposta sbagliata è
+       proprio quella che porta a erogare due volte.
+       Il confronto col portale si fa con gli occhi, e la difesa automatica
+       contro il doppio credito resta la chiave di idempotenza. */
     const guardaSaldi = async () => {
         setChiedoSaldi(true); setKo("");
         try {
@@ -1762,13 +1762,6 @@ function CredenzialiPayStore() {
                     className="rvPill rvPill-tinta rvT-verde">
                     {chiedoSaldi ? "leggo…" : "💰 Quanto credito c'è"}
                 </button>
-                {/* ⚠️ LA DOMANDA CHE IL REGISTRO DA SOLO NON SA RISPONDERE:
-                    «questa ricarica il negozio l'ha già caricata a mano?».
-                    Una riga in sospeso dice che NOI non l'abbiamo fatta. */}
-                <button onClick={() => void riconcilia(false)} disabled={ric}
-                    className="rvPill rvPill-tinta rvT-indaco">
-                    {ric ? "chiedo…" : "🔎 Quali ha già fatto PayStore"}
-                </button>
                 <label className="rvPill rvPill-tinta rvT-indaco" style={{ cursor: "pointer" }}>
                     👁 Guarda cosa farebbe
                     <input type="file" accept=".xlsx,.xls" hidden disabled={busy}
@@ -1782,48 +1775,6 @@ function CredenzialiPayStore() {
             </div>
             {ko && <div className="rvNota rvNota-ko"><div className="rvNota-s">{ko}</div></div>}
 
-            {ricEsito && (
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
-                    <div className="rvLab">Cosa risulta a PayStore</div>
-                    {ricEsito.segnate != null ? (
-                        <div className="rvNota rvNota-info"><div className="rvNota-t">✓ {ricEsito.segnate} segnate come già fatte</div>
-                            <div className="rvNota-s">Restano {ricEsito.daFareDavvero} davvero da fare.</div></div>
-                    ) : (
-                        <div className={cn("rvNota", ricEsito.giaFatte.length ? "rvNota-att" : "rvNota-info")}>
-                            <div className="rvNota-t">
-                                {ricEsito.giaFatte.length
-                                    ? `⚠️ ${ricEsito.giaFatte.length} di queste PayStore le ha GIÀ fatte`
-                                    : "✓ Nessuna di queste risulta già fatta da PayStore"}
-                            </div>
-                            <div className="rvNota-s">
-                                Su {ricEsito.inSospeso} in sospeso, PayStore riporta {ricEsito.operazioniTrovate} operazioni
-                                riuscite nel periodo. {ricEsito.daFareDavvero} risultano davvero da fare.
-                                {!!ricEsito.giaFatte.length && <> Premendo «rifai» su quelle già fatte si erogherebbe il credito <b>una seconda volta</b>: qui si marcano invece come fatte.</>}
-                            </div>
-                        </div>
-                    )}
-                    {!!ricEsito.problemi?.length && (
-                        <div className="rvNota rvNota-ko"><div className="rvNota-t">Non ho potuto chiedere a tutti</div>
-                            <div className="rvNota-s">{ricEsito.problemi.join(" · ")}</div></div>
-                    )}
-                    {!!ricEsito.giaFatte?.length && ricEsito.segnate == null && (
-                        <>
-                            <table className="psTab text-[12px]"><tbody>
-                                {ricEsito.giaFatte.slice(0, 20).map((g) => (
-                                    <tr key={g.id}>
-                                        <td className="text-white font-semibold">{g.negozio}</td>
-                                        <td className="font-mono text-slate-400">{g.numero}</td>
-                                        <td className="text-right text-emerald-300">{eurC(g.importo)}</td>
-                                        <td className="text-[11px] text-slate-500">operazione {g.operationId}</td>
-                                    </tr>
-                                ))}
-                            </tbody></table>
-                            <button onClick={() => void riconcilia(true)} disabled={ric}
-                                className="rvPill rvPill-on rvT-verde">✓ Segnale come già fatte</button>
-                        </>
-                    )}
-                </div>
-            )}
 
             {saldi && (
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">

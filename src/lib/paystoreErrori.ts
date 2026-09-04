@@ -22,27 +22,28 @@ export function erroreLeggibile(errore: string | null | undefined, numero?: stri
     const n = String(numero || "").replace(/\D/g, "");
 
     /* ═══ «UTENZA NON CORRETTA» E «NUMERO NON VALIDO» SONO LA STESSA COSA ═══
-       Luca 04/09: «non riesco a capire perché alcuni esiti sono utenza non
-       corretta e altri hanno anche una scritta prima, recharge_rejected…
-       unifica il perché con cellulare non valido». Sono le due frasi con cui
-       PayStore dice la stessa cosa, più un prefisso tecnico che compare o no a
-       seconda di quale pezzo del nostro codice ha scritto la riga: a schermo
-       diventavano tre errori diversi per un problema solo.
+       Luca 04/09: «unifica il perché con cellulare non valido». Sono le due
+       frasi con cui PayStore dice lo stesso rifiuto, più un prefisso tecnico
+       che compariva o no a seconda di quale pezzo del nostro codice aveva
+       scritto la riga: tre errori diversi a schermo per un problema solo.
 
-       ⚠️ MA PRIMA SI VERIFICA, non si ripete. Misurato sulle cinque righe che
-       ce l'hanno: tre hanno NOVE cifre — lì il numero è sbagliato e basta
-       dirlo. Due ne hanno dieci, cioè la forma è giusta: quelle non sono state
-       scritte male, è il gestore che rifiuta quella linea. Dire «numero
-       sbagliato» a chi ha scritto il numero giusto lo manda a ricontrollare una
-       cosa che è a posto. */
+       ⚠️ E QUI C'ERA UN CONTROLLO SBAGLIATO, tolto il 04/09 la sera. Diceva
+       «ha 9 cifre invece di 10, il numero è scritto male». È falso: i numeri
+       storici italiani — le serie 33x e 36x — hanno NOVE cifre e sono
+       validissimi. Misurato sul nostro archivio: di sei numeri a nove cifre,
+       TRE sono stati ricaricati senza problemi (336744872 operazione 946506,
+       360962988 fatta dal motore, 336765099 a mano) e tre rifiutati. La
+       lunghezza non decide niente, e un messaggio che manda a «correggere» un
+       numero giusto fa perdere tempo due volte — che è esattamente il difetto
+       che questa traduzione doveva togliere.
+
+       Quindi non si indovina il motivo: si dice cosa è successo e le due cose
+       da guardare, il numero e il gestore scelto. Che sono le uniche due su cui
+       si può intervenire. */
     if (/utenza non corretta|numero non valido|invalid.*(msisdn|phone)/i.test(t)) {
-        if (n && n.length !== 10) {
-            return `Cellulare non valido: ha ${n.length} cifre invece di 10. È il numero a essere stato scritto male — non il contratto del cliente. Correggilo e rimandala.`;
-        }
-        if (n && !n.startsWith("3")) {
-            return "Cellulare non valido: un numero di cellulare italiano comincia per 3. Correggilo e rimandala.";
-        }
-        return "Cellulare non valido secondo l'operatore. Il numero ha la forma giusta (10 cifre), quindi non è un errore di battitura: o la linea è passata a un altro gestore, o non è più attiva. Controlla il gestore scelto prima di rimandarla.";
+        return "Cellulare non valido per l'operatore: il gestore non riconosce questo numero. "
+            + "Controlla le cifre e soprattutto il GESTORE scelto — se la linea è passata a un altro operatore, "
+            + "la ricarica va fatta su quello. Poi rimandala.";
     }
     if (/non autorizzata dall'azienda|posizione cliente/i.test(t)) {
         return "Il gestore rifiuta la ricarica su questa linea (posizione del cliente): la linea può essere sospesa, bloccata o non più attiva. Non dipende da noi — il cliente deve sentire il suo operatore.";
