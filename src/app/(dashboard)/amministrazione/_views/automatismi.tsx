@@ -608,7 +608,16 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
     };
 
     /* l'ultima corsa, in due parole: è il dato per cui si apre la pagina */
-    const ultimo = a.lavori.map((l) => perNome.get(l.nome)).find(Boolean);
+    /* ⚠️ IL PEGGIORE DEI DUE, non il primo (revisore 04/09). `salute()` guarda
+       TUTTI i lavori; questa riga ne guardava uno solo. Su
+       «assenze-report-mensile», che ha la corsa e il ritento, il semaforo
+       diventava rosso per il ritento fallito mentre accanto si leggeva
+       «ultima: verde» — la riga chiusa contraddiceva il suo stesso semaforo,
+       proprio nel caso per cui esiste. */
+    const stati = a.lavori.map((l) => perNome.get(l.nome)).filter(Boolean) as StatoCron[];
+    const ultimo = stati.find((j) => j.ultima_esito && j.ultima_esito !== "ok" && j.ultima_esito !== "in corso")
+        || stati.find((j) => Number(j.ko_7g || 0) > 0) || stati[0];
+    const koTot = stati.reduce((n, j) => n + Number(j.ko_7g || 0), 0);
 
     return (
         <div className="glass-card p-5 space-y-3">
@@ -623,7 +632,7 @@ function SchedaAutomatismo({ a, perNome, conf, salute, colore, parola, chiSono, 
                 <span className="text-[11px] text-slate-500 truncate min-w-0">{salute.perche}</span>
                 <span className="ml-auto flex items-center gap-3 shrink-0 text-[10px] text-slate-500">
                     {ultimo && <span>ultima: <b className={ultimo.ultima_esito === "ok" ? "text-emerald-300" : ultimo.ultima_esito && ultimo.ultima_esito !== "in corso" ? "text-rose-300" : "text-slate-400"}>{quando(ultimo.ultima_il ?? null)}</b></span>}
-                    {Number(ultimo?.ko_7g || 0) > 0 && <span className="text-rose-300">{Number(ultimo?.ko_7g)} non arrivate</span>}
+                    {koTot > 0 && <span className="text-rose-300">{koTot} non arrivate</span>}
                     {!aperto && <span className="text-slate-600 group-hover:text-slate-400">apri</span>}
                 </span>
             </button>

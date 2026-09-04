@@ -21,7 +21,7 @@ const GIORNI_GRAZIA = 3;
 
 async function autorizzato(req: Request): Promise<boolean> {
     if (await eUnLavoroAutomatico(req)) return true;
-    const g = await accesso(req, "amministrazione");
+    const g = await accesso(req, "email/pulizia-allegati");
     return g.ok;
 }
 
@@ -70,9 +70,29 @@ export async function POST(req: Request) {
            può morire a metà, e a metà non si sa più cosa è stato tolto */
         for (let i = 0; i < o.length; i += 100) {
             const lotto = o.slice(i, i + 100).map((x) => x.nome);
-            const { error } = await supabaseAdmin.storage.from("email-attachments").remove(lotto);
-            if (error) return NextResponse.json({ error: `dopo ${tolti} file: ${error.message}` }, { status: 500 });
-            tolti += lotto.length;
+            const { data, error } = await supabaseAdmin.storage.from("email-attachments").remove(lotto);
+            if (error) {
+                /* ⚠️ ANCHE QUANDO CADE, RESTA SCRITTO. Prima il diario si
+                   scriveva solo in fondo: una corsa che ne toglieva trecento e
+                   poi cadeva non lasciava traccia di niente — e un automatismo
+                   senza traccia è un automatismo di cui nessuno sa se
+                   funziona. I file già tolti restano tolti, la corsa dopo
+                   ricalcola: non si corrompe nulla, si perdeva solo la
+                   memoria. */
+                try {
+                    await supabaseAdmin.from("automatismi_eventi").insert({
+                        azione: "pulizia-allegati", bersaglio: "email-attachments",
+                        dettaglio: `caduta dopo ${tolti} file: ${error.message}`,
+                    });
+                } catch { }
+                return NextResponse.json({ error: `dopo ${tolti} file: ${error.message}` }, { status: 500 });
+            }
+            /* ⚠️ SI CONTA QUELLO CHE IL DEPOSITO DICE DI AVER TOLTO, non quello
+               che gli ho chiesto di togliere. `remove` risponde 200 anche
+               quando ne cancella quaranta su cento: dichiarare cento sarebbe
+               scrivere nel diario un numero che nessuno ha verificato — ed è
+               esattamente il modo in cui una pulizia sembra fatta e non lo è. */
+            tolti += Array.isArray(data) ? data.length : lotto.length;
         }
         const mb = Math.round(o.reduce((n, x) => n + x.peso, 0) / 1048576);
         try {

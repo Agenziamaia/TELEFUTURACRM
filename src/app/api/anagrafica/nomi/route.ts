@@ -21,7 +21,7 @@ import { accesso } from "@/lib/permessiServer";
    cinquemila clienti, non è una lettura. */
 async function autorizzato(req: Request): Promise<boolean> {
     if (await eUnLavoroAutomatico(req)) return true;
-    const g = await accesso(req, "amministrazione");
+    const g = await accesso(req, "anagrafica/nomi");
     return g.ok;
 }
 

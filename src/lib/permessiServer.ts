@@ -77,6 +77,15 @@ export const SEZIONE_DI: Record<string, string> = {
     // la stessa rotta firma anche i contratti dell'usato: chi sta in Usati
     // deve poter firmare senza avere anche Ordini Clienti
     "usati/firma": "/usati",
+    /* ⚠️ CHIAVI VERE, NON UNA PAROLA A CASO. Le due rotte nuove chiedevano
+       `accesso(req, "amministrazione")`, ma «amministrazione» non è una
+       chiave di questa mappa: `sezioneDellaRoute` non la trova, torna null, e
+       `accesso` si accontenta della sessione — cioè le apriva a TUTTI i 48
+       utenti. Una riscrive l'anagrafica di cinquemila clienti, l'altra
+       cancella seicento file. E il nome va scritto per intero: «email/…» da
+       solo erediterebbe il prefisso `email` → `/chat`, che vede mezzo CRM. */
+    "anagrafica/nomi": "/amministrazione",
+    "email/pulizia-allegati": "/amministrazione",
     // la cancellazione di una pratica: la rotta controlla anche il RUOLO
     "pratiche/cancella": "/ordini-clienti",
     /* togliere un documento dal fascicolo di un cliente: la scheda cliente la
