@@ -158,7 +158,7 @@ export async function POST(req: Request) {
       // «non configurata» compresa: da quando i fornitori sono due, si può
       // avere assegnato un modello Claude senza che la chiave sia sul server —
       // e il ripiego serve proprio a non lasciare muta quella persona.
-      const colpaDelModello = /400|model|not found|unsupported|deprecat|non configurata/i.test(msg);
+      const colpaDelModello = /400|401|403|authentication|model|not found|unsupported|deprecat|non configurata/i.test(msg);
       if (!colpaDelModello || MODELLO === MODELLO_DI_SISTEMA) throw e;
       ripiegato = true;
       MODELLO = MODELLO_DI_SISTEMA;

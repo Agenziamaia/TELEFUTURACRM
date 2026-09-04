@@ -66,6 +66,11 @@ const NUMERICI: Record<NomeTab, string[]> = {
     regole: ["valore"],
 };
 const INTERI = new Set(["tier", "sort_order"]);
+/* ⚠️ ANCHE I CHECK NUMERICI SONO REGOLE, non dettagli. `gare_azienda_soglie`
+   pretende `tier >= 1`: uno zero passava tutti i controlli, entrava nel
+   riassunto, nasceva spuntato e moriva solo alla scrittura — cioè nel momento
+   peggiore, a metà di un'applicazione già cominciata. Si ferma prima. */
+const MINIMI: Record<string, number> = { tier: 1, sort_order: 0 };
 const OBBLIGATORI: Record<NomeTab, string[]> = {
     piste: ["codice", "nome"],
     soglie: ["pista", "tier", "soglia_valore"],
@@ -158,6 +163,7 @@ export function valoreNumerico(campo: string, v: unknown): number | null | undef
     const n = numero(v);
     if (n === null) return undefined;
     if (INTERI.has(campo) && !Number.isInteger(n)) return undefined;
+    if (campo in MINIMI && n < MINIMI[campo]) return undefined;
     return n;
 }
 
@@ -447,11 +453,23 @@ export function riassuntoDa(buone: Riga[], foto: Foto, nomePista: Record<string,
     });
     const out: string[] = [intestazione, ""];
     const ordine = (foto.piste || []).map((p) => String(p.codice));
+    /* ⚠️ QUANDO SI LEGGONO TUTTE LE DIVISIONI i nomi delle piste si ripetono —
+       «Fisso» esiste nel franchising e nel multibrand — e il riassunto usciva
+       con due FISSO e tre LUCE & GAS, senza modo di capire quale fosse quale.
+       La divisione entra nel titolo solo quando ce n'è più di una: se stai
+       leggendo una lettera sola sarebbe rumore. */
+    const gaDiPista: Record<string, string> = {};
+    (foto.piste || []).forEach((p) => { gaDiPista[String(p.codice)] = String(p.gara || ""); });
+    const piuDivisioni = new Set(Object.values(gaDiPista).filter(Boolean)).size > 1;
+    const titolo = (cod: string) => {
+        const base = (nomePista[cod] || cod).toUpperCase();
+        return piuDivisioni && gaDiPista[cod] ? `${base}  ·  ${gaDiPista[cod]}` : base;
+    };
     const senza: string[] = [];
     for (const cod of ordine) {
         const mm = perPista.get(cod) || [];
-        if (!mm.length) { senza.push(nomePista[cod] || cod); continue; }
-        out.push((nomePista[cod] || cod).toUpperCase());
+        if (!mm.length) { senza.push(titolo(cod)); continue; }
+        out.push(titolo(cod));
         const chiave = mm.filter((m) => m.chiave);
         const resto = mm.filter((m) => !m.chiave);
         /* la pista che sparisce si dice in UNA riga, non in sei: «non c'è più

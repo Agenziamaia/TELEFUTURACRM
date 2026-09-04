@@ -415,12 +415,37 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Vanno indicate le modifiche da applicare." }, { status: 400 });
         }
         const scelte = [...new Set((body.scelte as unknown[]).map(String))];
-        const indiciDaFare = scelte.filter((i) => !gia.has(i) && /^\d+$/.test(i) && Number(i) < diff.length);
+        /* ⚠️ L'ORDINE NON PUÒ VENIRE DAL BROWSER. Gli indici arrivano da un Set
+           costruito spuntando e togliendo caselle: chi toglie e rimette la
+           spunta a una pista nuova la manda per ULTIMA, e il server inserirebbe
+           le sue soglie prima della pista — chiave esterna violata, metà
+           applicazione andata a vuoto. Si riordina come sta nella proposta,
+           dove la pista viene prima delle sue righe. */
+        const indiciDaFare = scelte.filter((i) => !gia.has(i) && /^\d+$/.test(i) && Number(i) < diff.length)
+            .sort((a, b) => Number(a) - Number(b));
         const daFare = indiciDaFare.map((i) => ({ i, m: diff[Number(i)] }));
         if (!daFare.length) {
             return NextResponse.json({
                 error: scelte.length ? "Le modifiche che hai spuntato sono già state applicate." : "Non hai spuntato nessuna modifica.",
             }, { status: 400 });
+        }
+
+        /* ⚠️ UN APPLICA ALLA VOLTA. Il registro `applicato` si legge qui e si
+           riscrive in fondo: fra le due cose ci sono decine di scritture, e due
+           richieste sovrapposte — due schede aperte, un ricarico impaziente, un
+           tentativo ripetuto dopo i 300 secondi — leggerebbero lo stesso
+           registro e inserirebbero la stessa voce DUE VOLTE. Su `voci` e
+           `regole` non c'è nessun vincolo unico che le fermi: «Netflix senza
+           ADV 10 €» battuto due volte diventa 20 € a pezzo.
+           Qui la proposta si PRENDE prima di toccarla, con uno scambio
+           condizionato sul timbro che avevamo letto: se qualcun altro l'ha già
+           presa, la condizione non combacia e questa richiesta si ferma. */
+        const timbro = new Date().toISOString();
+        const presa = supabase.from("gare_ai_proposte").update({ decisa_da: autore, decisa_il: timbro })
+            .eq("id", id).eq("stato", "bozza");
+        const { data: mia } = await (p.decisa_il ? presa.eq("decisa_il", p.decisa_il) : presa.is("decisa_il", null)).select("id");
+        if (!(mia || []).length) {
+            return NextResponse.json({ error: "Qualcun altro sta applicando questa proposta in questo momento. Ricarica la pagina e guarda com'è finita prima di riprovare." }, { status: 409 });
         }
 
         const fatto: Riga[] = []; const errori: string[] = []; const finite: string[] = [];
@@ -481,7 +506,12 @@ export async function POST(request: Request) {
         const indici = [...gia, ...finite];
         const prima = (p.applicato || {}) as { fatto?: Riga[]; errori?: string[]; esiti?: Record<string, string> };
         const tuttiEsiti = { ...(prima.esiti || {}), ...esiti };
-        const tutteFatte = indici.length >= diff.length;
+        /* «applicata» vuol dire che è tutto a posto. Una riga che NON si è
+           scritta — perché il valore era cambiato sotto le mani — non è a
+           posto: la proposta resta bozza, con l'esito ambra bene in vista,
+           finché una persona non la guarda. */
+        const nonScritte = Object.values(tuttiEsiti).filter((e) => String(e).startsWith("non scritta")).length;
+        const tutteFatte = indici.length >= diff.length && !nonScritte;
         await supabase.from("gare_ai_proposte").update({
             stato: tutteFatte ? "applicata" : "bozza",
             decisa_da: autore, decisa_il: new Date().toISOString(),
