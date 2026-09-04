@@ -239,7 +239,7 @@ function GareInner() {
 
                     {/* ARCHIVIO LETTERE (Luca 19/08): l'unico posto delle lettere
                         mensili del brand — lato azienda */}
-                    {lato === "azienda" && <LettereGara brand={brand.id} month={month} colore={brand.color} />}
+                    {lato === "azienda" && <LettereGara key={`lettere|${brand.id}|${month}|${rev}`} brand={brand.id} month={month} colore={brand.color} />}
 
                     {/* DA DOVE PARTE IL MESE (Luca 04/09): due pulsanti soli —
                         copiare le regole del mese prima, o dare la lettera all'AI.

@@ -120,8 +120,14 @@ export function LettereGara({ brand, month, colore = "var(--tf-f59e0b)" }) {
                         )}
                         {delMese.size > 0 && (
                             <button onClick={() => setStorico((v) => !v)}
-                                className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors pt-1">
-                                {storico ? "▾ Nascondi i mesi precedenti" : `▸ Mesi precedenti (${[...delMese.values()].reduce((n, r) => n + r.length, 0)} lettere)`}
+                                className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-300 transition-colors pt-1">
+                                {storico ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                {/* «Altri», non «precedenti»: quando imposti il mese nuovo stando
+                                    sul mese in corso, qui dentro finiscono anche i mesi futuri. */}
+                                {storico ? "Nascondi gli altri mesi" : (() => {
+                                    const n = [...delMese.values()].reduce((t, r) => t + r.length, 0);
+                                    return `Altri mesi (${n} letter${n === 1 ? "a" : "e"})`;
+                                })()}
                             </button>
                         )}
                         {storico && [...delMese.entries()].map(([ym, righe]) => (

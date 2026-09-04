@@ -277,6 +277,14 @@ export async function POST(request: Request) {
         const id = String(body.id || "");
         const { data: p } = await supabase.from("gare_ai_proposte").select("*").eq("id", id).maybeSingle();
         if (!p) return NextResponse.json({ error: "Proposta non trovata" }, { status: 404 });
+        /* la proposta si carica per id, ma poi si scrive con brand/month del
+           BODY: se non combaciano, una proposta di un altro mese scriverebbe
+           qui. Dall'interfaccia non capita — il GET filtra per mese — ma è
+           l'unico punto in cui una scrittura può cambiare mese, e chiuderlo
+           costa una riga. */
+        if (p.brand !== brand || String(p.month).slice(0, 7) !== String(month).slice(0, 7)) {
+            return NextResponse.json({ error: "Questa proposta appartiene a un altro mese o operatore." }, { status: 400 });
+        }
         if (p.stato !== "bozza") return NextResponse.json({ error: `Questa proposta è già ${p.stato}.` }, { status: 400 });
 
         if (azione === "scarta") {
@@ -296,16 +304,22 @@ export async function POST(request: Request) {
             const tabella = TAB[m.tabella as NomeTab];
             try {
                 if (m.operazione === "aggiorna") {
-                    // brand e mese anche qui: nessuna proposta può toccare un altro mese
-                    const { error } = await supabase.from(tabella).update({ [m.campo]: m.a })
-                        .eq("id", m.id).eq("brand", brand).eq("month", month);
+                    /* brand e mese anche qui: nessuna proposta può toccare un altro mese.
+                       ⚠️ `.select()` NON è cosmetico: senza, un update che non trova la
+                       riga torna 204 con error null e qui si scriveva «aggiornata» su
+                       una riga mai toccata. Capita davvero — se le righe del mese sono
+                       state rigenerate dopo la lettura, gli id della proposta sono
+                       vecchi. Su tabelle che pagano le persone il registro deve dire il
+                       vero, se no il conto non si ricostruisce più. */
+                    const { data: tocc, error } = await supabase.from(tabella).update({ [m.campo]: m.a })
+                        .eq("id", m.id).eq("brand", brand).eq("month", month).select("id");
                     if (error) throw error;
-                    fatto.push({ ...m, esito: "aggiornata" });
+                    fatto.push({ ...m, esito: (tocc || []).length ? "aggiornata" : "riga non trovata" });
                 } else if (m.operazione === "rimuovi") {
-                    const { error } = await supabase.from(tabella).delete()
-                        .eq("id", m.id).eq("brand", brand).eq("month", month);
+                    const { data: tocc, error } = await supabase.from(tabella).delete()
+                        .eq("id", m.id).eq("brand", brand).eq("month", month).select("id");
                     if (error) throw error;
-                    fatto.push({ ...m, esito: "rimossa" });
+                    fatto.push({ ...m, esito: (tocc || []).length ? "rimossa" : "riga non trovata" });
                 } else if (m.operazione === "aggiungi") {
                     const pulito: Record<string, any> = { brand, month };
                     CAMPI[m.tabella as NomeTab].forEach((c) => { if (m.dati[c] !== undefined) pulito[c] = m.dati[c]; });
@@ -320,7 +334,12 @@ export async function POST(request: Request) {
             stato: "applicata", decisa_da: autore, decisa_il: new Date().toISOString(),
             applicato: { fatto, errori },
         }).eq("id", id);
-        return NextResponse.json({ ok: true, applicate: fatto.length, errori });
+        const vere = fatto.filter((x) => x.esito !== "riga non trovata");
+        const mancate = fatto.length - vere.length;
+        return NextResponse.json({
+            ok: true, applicate: vere.length, errori,
+            ...(mancate ? { avviso: `${mancate} ${mancate === 1 ? "riga non è stata trovata" : "righe non sono state trovate"}: erano già cambiate dopo la lettura.` } : {}),
+        });
     }
 
     return NextResponse.json({ error: "Azione non riconosciuta" }, { status: 400 });

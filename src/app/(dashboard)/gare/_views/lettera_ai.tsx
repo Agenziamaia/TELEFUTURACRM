@@ -87,11 +87,28 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto =
     /* la lettera si legge QUI nel browser: al server va solo il testo, non il file */
     const leggiEProponi = async (file) => {
         if (!file) return;
-        setErrore(""); setLavoro("Leggo la lettera…");
+        setErrore("");
         try {
+            /* ⚠️ SU UN MESE VUOTO LA BASE SE LA PREPARA LUI. La lettera si legge
+               CONTRO qualcosa: il server rifiuta un mese senza righe, e ha
+               ragione — le proposte devono puntare a righe nate in QUESTO mese,
+               non a quelle del mese già pagato. Ma per Luca i due pulsanti sono
+               alternative («o copio le regole del mese prima o leggo la lettera
+               con l'AI»): se sceglie l'AI, la copia la faccio io qui, in
+               silenzio, e poi correggo. Senza questo il pulsante era offerto
+               esattamente nello stato in cui il server lo rifiuta, e te ne
+               accorgevi dopo un minuto di lettura del PDF. */
+            if (statoMese?.vuoto) {
+                setLavoro(`Preparo la base con ${meseIt(prevMonth)}…`);
+                const { error } = await supabase.rpc("gare_copy_month", { p_brand: brand, p_from: prevMonth, p_to: month, p_livello: "azienda" });
+                if (error) throw new Error(`non sono riuscito a copiare ${meseIt(prevMonth)} come base: ${error.message}`);
+                setStatoMese((v) => ({ ...v, vuoto: false }));
+                if (onFatto) onFatto();
+            }
+            setLavoro("Leggo la lettera…");
             const a = await leggiAllegato(file, 60000);
             if (!a.testo) throw new Error(a.problema || "non sono riuscito a leggerla");
-            setLavoro(`Confronto ${Math.round(a.testo.length / 1000)}k caratteri con ${meseIt(month)} precedente…`);
+            setLavoro(`Confronto ${Math.round(a.testo.length / 1000)}k caratteri con le regole di ${meseIt(prevMonth)}…`);
             const r = await fetch("/api/ai/gare-lettera", {
                 method: "POST", credentials: "include",
                 headers: { "Content-Type": "application/json" },
@@ -108,6 +125,10 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto =
                 if (!error) {
                     await supabase.from("gare_lettere").insert({ brand, month, filename: file.name, path, created_by: user?.name || null });
                     setInArchivio(file.name);
+                    /* la card «Lettere di gara» sta SOPRA questa: senza questo
+                       avviso continuava a dire «nessuna per Settembre» mentre
+                       qui sotto c'era scritto che era stata archiviata. */
+                    if (onFatto) onFatto();
                 }
             } catch { /* la proposta c'è comunque: l'archivio non deve bloccare il lavoro */ }
             await carica();
