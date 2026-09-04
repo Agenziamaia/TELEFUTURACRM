@@ -35,6 +35,9 @@ type Riga = {
     controllo: { da: string; a: string; saldoPrima: number; saldoDopo: number; goduto: number; maturato: number } | null;
     puntoFermo: { mese: string; giorni: number; fonte: string } | null;
     presiDopo: number;
+    /** di quelli, quanti sono già stati FATTI e quanti solo PRENOTATI */
+    fatti: number;
+    prenotati: number;
     residuo: number | null;
 };
 
@@ -92,6 +95,18 @@ export function DisponibilitaFerie() {
         const perNome = new Map(utenti.map((u) => [String(u.full_name || "").trim().toLowerCase(), u.id]));
         const oggi = new Date();
         const fineOggi = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
+        /* ⚠️ IL RESIDUO ARRIVA A FINE ANNO, NON A OGGI (Luca 04/09): «se ho un
+           dipendente che sulla busta paga di agosto ha nove giorni ma gliene
+           ho già approvati cinque a dicembre, tu devi dirmi che ne ha solo
+           quattro».
+           Prima si contavano solo le ferie GIÀ FATTE: chi aveva giorni
+           prenotati in avanti risultava con più residuo di quello vero, e su
+           quel numero si concedevano altri giorni che non aveva. Un residuo
+           serve a decidere se puoi dire di sì a una richiesta: per quello le
+           ferie già approvate contano esattamente come quelle fatte.
+           Ci si ferma al 31 dicembre perché quello che si prenota a gennaio
+           esce dal monte dell'anno prossimo. */
+        const fineAnno = `${oggi.getFullYear()}-12-31`;
 
         /* ═══ CHI NON STA IN QUESTA LISTA (Luca 01/09) ═══
            Le ferie non le maturano tutti, e chi non le matura non deve
@@ -127,7 +142,7 @@ export function DisponibilitaFerie() {
             /* LE FERIE PRESE DOPO IL PUNTO FERMO. Il cedolino di luglio conta
                fino al 31 luglio, quindi si parte dal primo agosto: i giorni di
                luglio sono già dentro il suo numero. */
-            let presi = 0;
+            let presi = 0, fatti = 0, prenotati = 0;
             if (pf) {
                 /* DA QUANDO SI CONTA. Un cedolino di luglio conta fino al 31
                    luglio: si parte dal primo agosto. L'accordo dei partita IVA
@@ -141,8 +156,11 @@ export function DisponibilitaFerie() {
                     if (r.tipo === "corso") continue;   // un corso non è ferie
                     const uid = r.user_id || perNome.get(String(r.employee_name || "").trim().toLowerCase());
                     if (uid !== u.id) continue;
-                    presi += giornateAssenza(String(r.date_from).slice(0, 10), String(r.date_to).slice(0, 10), da, fineOggi, festivi, !!r.half_day)
-                        .reduce((t, g) => t + g.quota, 0);
+                    const gg2 = giornateAssenza(String(r.date_from).slice(0, 10), String(r.date_to).slice(0, 10), da, fineAnno, festivi, !!r.half_day);
+                    presi += gg2.reduce((t, g) => t + g.quota, 0);
+                    // le due metà servono a schermo: «fatte» e «già prenotate»
+                    fatti += gg2.filter((g) => g.giorno <= fineOggi).reduce((t, g) => t + g.quota, 0);
+                    prenotati += gg2.filter((g) => g.giorno > fineOggi).reduce((t, g) => t + g.quota, 0);
                 }
             }
             /* ═══ IL CONTROLLO SUL CONSULENTE (Luca 01/09) ═══
@@ -183,6 +201,7 @@ export function DisponibilitaFerie() {
             return {
                 userId: u.id, nome: u.full_name, negozio: u.primary_store || "", contratto: u.contract_type || "", controllo,
                 puntoFermo: pf, presiDopo: arrotondaGiorni(presi),
+                fatti: arrotondaGiorni(fatti), prenotati: arrotondaGiorni(prenotati),
                 // il residuo NON si arrotonda per eccesso: si mostra a un decimale
                 residuo: pf ? Math.round((pf.giorni - presi) * 10) / 10 : null,
             };
@@ -431,8 +450,8 @@ export function DisponibilitaFerie() {
                                 <th className="py-2.5 px-3">Collaboratore</th>
                                 <th className="py-2.5 px-2">Negozio</th>
                                 <th className="py-2.5 px-2 text-right">Da busta paga</th>
-                                <th className="py-2.5 px-2 text-right">Prese dopo</th>
-                                <th className="py-2.5 px-2 text-right">Residuo oggi</th>
+                                <th className="py-2.5 px-2 text-right" title="Ferie approvate dopo il punto di partenza: quelle già fatte più quelle già approvate per i mesi che verranno">Scalate</th>
+                                <th className="py-2.5 px-2 text-right" title="Quanti giorni può ancora chiedere da qui a fine anno: dal punto di partenza tolte le ferie fatte E quelle già approvate">Ancora disponibili</th>
                                 <th className="py-2.5 px-2 w-[190px]">Aggiorna da cedolino</th>
                             </tr>
                         </thead>
@@ -453,7 +472,18 @@ export function DisponibilitaFerie() {
                                             </span>
                                         ) : <span className="text-amber-300/80 text-xs">manca</span>}
                                     </td>
-                                    <td className="py-2 px-2 text-right text-slate-400 tabular-nums">{r.puntoFermo ? (r.presiDopo ? gg(r.presiDopo) : "—") : "—"}</td>
+                                    <td className="py-2 px-2 text-right text-slate-400 tabular-nums">
+                                        {r.puntoFermo ? (r.presiDopo ? (
+                                            <span title={r.prenotati
+                                                ? `${gg(r.fatti)} già fatte · ${gg(r.prenotati)} approvate ma ancora da fare`
+                                                : "tutte già fatte"}>
+                                                {gg(r.presiDopo)}
+                                                {/* i giorni già APPROVATI ma non ancora fatti si vedono a parte:
+                                                    sono scalati dal residuo, e chi guarda deve sapere perché */}
+                                                {!!r.prenotati && <span className="text-[10px] text-amber-300/80 ml-1">di cui {gg(r.prenotati)} da fare</span>}
+                                            </span>
+                                        ) : "—") : "—"}
+                                    </td>
                                     <td className={cn("py-2 px-2 text-right font-black tabular-nums",
                                         r.residuo == null ? "text-slate-600" : r.residuo <= 0 ? "text-rose-300" : r.residuo <= 5 ? "text-amber-300" : "text-emerald-300")}>
                                         {r.residuo == null ? "—" : gg(r.residuo)}
