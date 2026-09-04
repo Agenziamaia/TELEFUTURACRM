@@ -96,17 +96,20 @@ Quattro tabelle, tutte per brand e per mese:
 - **voci**: quanto vale ogni cosa dentro una pista. Campi: pista, nome, tipo (punti | gettone | euro | moltiplicatore), valore, um, condizione (quando si applica), scope, tier, note.
 - **regole**: i vincoli (gate, malus, cap, esclusioni). Campi: pista, tipo, condizione, effetto, valore, um, bersaglio, scope, note.
 
-## Il mese base già impostato (${base})
-
-\`\`\`json
-${JSON.stringify(foto, null, 0)}
-\`\`\`
-
 ## La lettera nuova (${mese})
 
 """
 ${lettera}
 """
+
+## Il mese base già impostato (${base})
+
+⚠️ Qui sotto c'è SOLO la tabella su cui devi lavorare adesso. Non proporre
+modifiche a righe che non vedi: di quelle si occupa un altro giro.
+
+\`\`\`json
+${JSON.stringify(foto, null, 0)}
+\`\`\`
 
 ## Cosa devi restituire
 
@@ -199,36 +202,61 @@ export async function POST(request: Request) {
         const parsed: any = { riassunto: [], avvisi: [], modifiche: [] };
         const foto: Record<string, any[]> = { piste: [], soglie: [], voci: [], regole: [] };
         let usoIn = 0, usoOut = 0, usoCache = 0;
-        for (const div of dovute) {
-            const f = await fotografia(brand, base, div);
-            if (!Object.values(f).reduce((a, r) => a + r.length, 0)) continue;
-            Object.keys(foto).forEach((k) => foto[k].push(...(f[k] || [])));
+        const lettera = testo.slice(0, 60000);
+
+        /* UN PEZZO ALLA VOLTA, E SE SFORA SI DIMEZZA DA SÉ.
+           Il 04/09 la prima lettura vera è tornata con «0 modifiche proposte» su
+           tutte e tre le divisioni: la risposta sbatteva contro il tetto dei
+           token e il JSON arrivava monco. Una divisione del franchising sono
+           centotrenta righe fra soglie e voci — chiedere il confronto di tutte
+           in un colpo solo è una scommessa, non un metodo.
+           Adesso si chiede una TABELLA alla volta, e se quel pezzo sfora lo si
+           spacca in due e si richiede: il giro finisce sempre, e il costo lo
+           paghiamo solo sui pezzi che servivano davvero. */
+        const chiediPezzo = async (div: string, tab: NomeTab, righe: any[], piste: any[]): Promise<void> => {
+            if (!righe.length) return;
+            const pezzo: Record<string, any[]> = { piste: tab === "piste" ? righe : piste };
+            if (tab !== "piste") pezzo[tab] = righe;
             let res;
             try {
                 res = await chat({
-                    messages: [{ role: "user", content: prompt(brand, month, base, f, testo.slice(0, 60000), div) }],
+                    messages: [{ role: "user", content: prompt(brand, month, base, pezzo, lettera, div) }],
                     model: MODEL_FAST, responseFormat: "json_object",
-                    maxTokens: 8000, temperature: 0, timeoutMs: 280_000, senzaRagionamento: true,
+                    maxTokens: 16000, temperature: 0, timeoutMs: 280_000, senzaRagionamento: true,
                 });
             } catch (e: any) {
-                parsed.avvisi.push(`divisione ${div}: il modello non ha risposto (${e?.message || e})`);
-                continue;
+                parsed.avvisi.push(`${div} · ${tab}: il modello non ha risposto (${e?.message || e})`);
+                return;
             }
             usoIn += res.usage?.prompt_tokens || 0;
             usoOut += res.usage?.completion_tokens || 0;
             usoCache += res.usage?.prompt_cache_hit_tokens || 0;
-            /* ⚠️ se la risposta è stata tagliata dal tetto, il JSON è monco:
-               si dice e si va avanti, invece di far fallire tutto il giro. */
+
             if (res.finish_reason === "length") {
-                parsed.avvisi.push(`divisione ${div}: la risposta era troppo lunga ed è stata troncata — questa divisione va rivista a mano`);
-                continue;
+                if (righe.length > 8) {                       // si spacca e si riprova
+                    const m = Math.ceil(righe.length / 2);
+                    await chiediPezzo(div, tab, righe.slice(0, m), piste);
+                    await chiediPezzo(div, tab, righe.slice(m), piste);
+                    return;
+                }
+                parsed.avvisi.push(`${div} · ${tab}: risposta troncata anche su ${righe.length} righe — questo pezzo va rivisto a mano`);
+                return;
             }
             let d: any = null;
             try { d = JSON.parse(res.message.content || "{}"); }
-            catch { parsed.avvisi.push(`divisione ${div}: risposta non in JSON valido`); continue; }
-            if (d.riassunto) parsed.riassunto.push(`${div}: ${d.riassunto}`);
-            if (Array.isArray(d.avvisi)) parsed.avvisi.push(...d.avvisi.map((a: string) => `${div}: ${a}`));
+            catch { parsed.avvisi.push(`${div} · ${tab}: risposta non in JSON valido`); return; }
+            if (d.riassunto && tab === "soglie") parsed.riassunto.push(`${div}: ${d.riassunto}`);
+            if (Array.isArray(d.avvisi)) parsed.avvisi.push(...d.avvisi.map((a: string) => `${div} · ${tab}: ${a}`));
             if (Array.isArray(d.modifiche)) parsed.modifiche.push(...d.modifiche);
+        };
+
+        for (const div of dovute) {
+            const f = await fotografia(brand, base, div);
+            if (!Object.values(f).reduce((a, r) => a + r.length, 0)) continue;
+            Object.keys(foto).forEach((k) => foto[k].push(...(f[k] || [])));
+            for (const tab of ["piste", "soglie", "voci", "regole"] as NomeTab[]) {
+                await chiediPezzo(div, tab, f[tab] || [], f.piste || []);
+            }
         }
         parsed.riassunto = parsed.riassunto.join("\n");
 
