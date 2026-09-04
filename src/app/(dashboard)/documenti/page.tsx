@@ -828,11 +828,24 @@ function Documenti() {
        Si aspetta che le righe siano disegnate: `aperto` si imposta prima che i
        documenti arrivino, e cercare l'elemento subito non troverebbe niente. */
     const giaPortato = useRef<string | null>(null);
+    const [docNonTrovato, setDocNonTrovato] = useState(false);
     useEffect(() => {
         if (!aperto || giaPortato.current === aperto) return;
-        const el = document.getElementById(`doc-${aperto}`);
-        if (!el) return;                       // non ancora disegnata: si riprova al prossimo giro
+        /* prima per id della riga, poi per catena: l'id del collegamento può
+           essere un tentativo interno, non la testa */
+        const el = document.getElementById(`doc-${aperto}`)
+            || document.querySelector<HTMLElement>(`[data-ids~="${CSS.escape(aperto)}"]`);
+        if (!el) {
+            /* ⚠️ E SE NON C'È DAVVERO, LO SI DICE. Restare in silenzio dentro
+               l'elenco di tutti i documenti è indistinguibile da «il
+               collegamento non funziona»: chi arriva qui aveva in mano UN
+               documento e deve sapere se non è in questa giornata, se è fuori
+               dal suo perimetro o se l'elenco si è fermato al tetto. */
+            if (righe.length) setDocNonTrovato(true);
+            return;
+        }
         giaPortato.current = aperto;
+        setDocNonTrovato(false);
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         /* un lampo, perché fra venti righe uguali quella giusta si deve vedere */
         el.classList.add("rvTab-punta");
@@ -1244,6 +1257,16 @@ function Documenti() {
                 </div>
                 <div className="rvHint">L&apos;IMEI puoi spararlo col lettore dentro «Cerca»: lo trova dentro le voci dello scontrino.</div>
 
+                {docNonTrovato && (
+                    <div className="rvNota rvNota-att mt-3">
+                        <div className="rvNota-t">Il documento che cercavi non è in questo elenco</div>
+                        <div className="rvNota-s">
+                            Sei arrivato qui da un collegamento a un documento preciso, ma fra quelli caricati non c&apos;è.
+                            Di solito è la data: prova ad allargare «Dal / Al» di un giorno. Può anche essere di un punto
+                            vendita che non è fra i tuoi, o l&apos;elenco si è fermato al tetto delle righe.
+                        </div>
+                    </div>
+                )}
                 {errore && <div className="rvNota rvNota-ko mt-3"><div className="rvNota-t">Non sono riuscito a leggere i documenti</div><div className="rvNota-s">{errore}</div></div>}
 
                 {/* ═══ LE FATTURE ═══ la spiegazione sta PRIMA della tabella: chi
@@ -1312,7 +1335,15 @@ function Documenti() {
                                     const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori, d.graveAperto, d.fiscale, d.storno);
                                     return (
                                         <Fragment key={d.id}>
-                                            <tr id={`doc-${d.id}`} onClick={() => setAperto(apertaQui ? null : d.id)}
+                                            {/* ⚠️ LA RIGA PORTA TUTTI GLI ID DELLA SUA CATENA. I tentativi
+                                                di stampa vengono uniti in una riga sola, e la riga prende
+                                                l'id del PRIMO: un collegamento che punta a un altro anello
+                                                — la ristampa, il secondo tentativo — non trovava nessun
+                                                elemento, quindi la pagina non ci andava sopra. La riga si
+                                                apriva lo stesso, duecento righe più giù, e chi arrivava dal
+                                                collegamento vedeva solo l'elenco. */}
+                                            <tr id={`doc-${d.id}`} data-ids={[d.id, ...d.storia.map(t => t.id)].join(" ")}
+                                                onClick={() => setAperto(apertaQui ? null : d.id)}
                                                 /* ⚠️ LA RIGA, NON IL BADGE. «DOPPIO» in una cella
                                                     da 253 px pesa quanto «annullo»: sull'unico stato
                                                     che dice «la giornata non quadra» si accende la
