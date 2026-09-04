@@ -3005,8 +3005,15 @@ html.light .psDato span:last-child{color:#0f172a}
 /* ⚠️ IL PERCHÉ STA SOTTO LO STATO, e deve stare in due righe senza allargare la
    colonna: se cresce in larghezza sposta tutta la tabella. Piccolo, spento,
    leggibile — chi scorre lo salta, chi cerca il motivo lo trova. */
-.psPerche{margin-top:4px;max-width:280px;font-size:11px;line-height:1.35;color:#94a3b8;
+/* ⚠️ SPOSTATO IN UNA COLONNA SUA (Luca 04/09): stava sotto la pastiglia dello
+   stato e la sporcava — due righe di testo sotto una pastiglia non sono più una
+   pastiglia. Adesso è una cella accanto, larga quanto basta e alta due righe:
+   il testo intero resta nel suggerimento. */
+.psPerche{max-width:300px;min-width:180px;font-size:11px;line-height:1.35;color:#94a3b8;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+/* l'errore vero di PayStore si distingue dal «perché non parte»: il primo è una
+   cosa andata storta, il secondo una regola che ha funzionato */
+.psPerche-ko{color:#fda4af}
 
 /* ⚠️ LA RIGA A CUI SI È ARRIVATI DA UN COLLEGAMENTO. Serve per due secondi e
    mezzo: fra venti righe che si somigliano, senza un lampo non si distingue

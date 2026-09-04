@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { richiedeSessione, rispostaSessioneNonValida } from "@/lib/sessioneServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { agentAuthorized } from "@/lib/printAuth";
+import { ricaricheDelloScontrino } from "@/lib/paystoreSubito";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,5 +33,14 @@ export async function POST(req: Request) {
     updated_at: new Date().toISOString(),
   }).eq("id", b.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  /* ⚠️ IL CREDITO PARTE ADESSO, non fra cinque minuti (Luca 04/09: «aspettiamo
+     veramente troppo tempo»). Questo è il momento in cui sappiamo che il
+     cliente ha pagato: il registratore ha appena detto di aver stampato.
+     Si lancia SENZA aspettarlo — la cassa non deve restare ferma perché
+     PayStore è lento — e se qualcosa va storto la ricarica torna al motore,
+     che continua a passare ogni cinque minuti. */
+  if (b.ok) void ricaricheDelloScontrino(String(b.id));
+
   return NextResponse.json({ ok: true });
 }

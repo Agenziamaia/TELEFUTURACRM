@@ -1040,6 +1040,15 @@ export function PayStoreAdminView() {
                                                 esiste la regola delle due società di Donna */}
                                             <th className="text-left font-bold">Società</th>
                                             <th className="text-left font-bold">Stato</th>
+                                            {/* ⚠️ IL PERCHÉ HA UNA COLONNA SUA. Luca 04/09: «mi stai
+                                                sporcando lo stato mettendo la descrizione sotto,
+                                                invece mettimi l'errore e il motivo alla destra
+                                                creando una colonna in più». Aveva ragione: una
+                                                pastiglia di stato con due righe di testo sotto non
+                                                è più una pastiglia, e la colonna perdeva la sua
+                                                forma. Qui il motivo sta accanto, e occupa lo spazio
+                                                che era già stato lasciato libero. */}
+                                            <th className="text-left font-bold">Perché</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1100,18 +1109,22 @@ export function PayStoreAdminView() {
                                                         <StatoRicarica r={r} onCambiato={() => { setToccate((t) => new Set(t).add(r.id)); void carica(); }} />
                                                         <RifaiRicarica r={r} onFatto={() => void carica()} />
                                                     </div>
-                                                    {/* ⚠️ E SOTTO, PERCHÉ È FERMA. Luca 03/09: «sembrano a
-                                                        tutto ok, non capisco il motivo per il quale non sono
-                                                        state fatte in automatico». Tredici righe sospese,
-                                                        quattro motivi diversi, tutte con la stessa faccia:
-                                                        una che il motore non farà MAI da sola e una che
-                                                        parte fra tre minuti erano indistinguibili. Il
-                                                        motivo lo calcola il server con le stesse regole del
-                                                        motore, così la schermata non racconta una versione
-                                                        diversa da quello che succede davvero. */}
-                                                    {r.stato === "sospeso" && r.perche && (
+                                                </td>
+                                                {/* ⚠️ PERCHÉ NON È PARTITA, IN CHIARO. Vale per due casi
+                                                    diversi e vanno distinti a colpo d'occhio:
+                                                    · in SOSPESO → il motivo per cui il motore non la fa da
+                                                      solo, calcolato con le sue stesse regole (se no la
+                                                      schermata racconterebbe una versione diversa dai fatti);
+                                                    · NON PARTITA → l'errore vero che ha risposto PayStore,
+                                                      che è l'unica cosa che dice se si può rifare o no.
+                                                    Sulle ricariche riuscite la cella resta vuota: una colonna
+                                                    piena di trattini è rumore. */}
+                                                <td className="align-top" onClick={(e) => e.stopPropagation()}>
+                                                    {(r.stato === "fallita" && r.errore) ? (
+                                                        <div className="psPerche psPerche-ko" title={r.errore}>{r.errore}</div>
+                                                    ) : (r.stato === "sospeso" && r.perche) ? (
                                                         <div className="psPerche" title={r.perche}>{r.perche}</div>
-                                                    )}
+                                                    ) : null}
                                                 </td>
                                             </tr>
                                         ))}
