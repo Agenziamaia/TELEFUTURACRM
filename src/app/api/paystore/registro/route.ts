@@ -234,6 +234,14 @@ async function completaDalloScontrino(da: string, a: string) {
         const fatturePerNegozio: Record<string, { t: number }[]> = {};
         for (const x of fatt || []) (fatturePerNegozio[String(x.negozio || "")] ||= []).push({ t: new Date(x.created_at).getTime() });
 
+        /* quali società battono in ogni posto: serve per i negozi con una sola
+           cassa, dove la società non è mai in dubbio */
+        const { data: rt } = await supabase.from("pos_rt").select("negozio, azienda");
+        const societaPerNegozio: Record<string, string[]> = {};
+        for (const x of (rt || []) as { negozio: string; azienda: string }[]) {
+            (societaPerNegozio[x.negozio] ||= []).push(x.azienda);
+        }
+
         type RigaStampata = { negozio: string; t: number; importo: number; numero: string; reparto: number; emesso: boolean; azienda: string | null; errore: string | null };
         const stampate: RigaStampata[] = [];
         const scontriniPerNegozio: Record<string, { t: number; emesso: boolean; azienda: string | null }[]> = {};
@@ -315,10 +323,44 @@ async function completaDalloScontrino(da: string, a: string) {
                 }
                 const soc = [...new Set(sc.map((x) => x.azienda).filter(Boolean))];
                 if (!r.azienda && soc.length === 1) patch.azienda = soc[0];
-            } else if (!r.scontrino_stato && fatturePerNegozio[String(r.negozio || "")]?.some(vicino)) {
+            }
+
+            /* ═══ 3. LA SOCIETÀ, QUANDO LA FINESTRA NE CONTIENE DUE ═════════
+               ⚠️ LA SOCIETÀ SI SCRIVE SOLO SE IL CARRELLO ERA DI SOLE RICARICHE:
+               con un carrello misto la decide la merce, e al momento della
+               vendita non si sa ancora. Il ripiego qui sopra si arrende appena
+               nella finestra compaiono due società — e nei quattro banconi
+               doppi (Magliana, Collatina, Donna, Acilia) succede quasi sempre.
+               Risultato visto da Luca il 04/09: otto ricariche «scoperte», con
+               scritto «non so quale plafond usare».
+
+               Ma la risposta c'è, e non è un'ipotesi: lo scontrino porta
+               stampato IL NUMERO ricaricato. Fra i due documenti dello stesso
+               minuto, quello che contiene questo numero è il suo — e la sua
+               società è quella giusta. Misurato: risolve 7 righe su 8.
+
+               ⚠️ E QUANDO IL NEGOZIO HA UNA SOCIETÀ SOLA non c'è proprio niente
+               da indovinare: Baleniere e Castani battono su Telefutura e basta.
+               È l'ottava riga, quella senza scontrino perché il registratore
+               aveva fallito. */
+            if (!r.azienda && !patch.azienda && r.numero) {
+                const suoi = stampate.filter((x) => stessoPosto(x.negozio) && vicino(x) && x.numero === String(r.numero));
+                const soc = [...new Set(suoi.map((x) => x.azienda).filter(Boolean))];
+                if (soc.length === 1) patch.azienda = soc[0];
+            }
+            if (!r.azienda && !patch.azienda) {
+                const proprie = [...new Set(Object.entries(societaPerNegozio)
+                    .filter(([nome]) => stessoPosto(nome)).flatMap(([, v]) => v))];
+                if (proprie.length === 1) patch.azienda = proprie[0];
+            }
+
+            /* ⚠️ QUANDO IL CLIENTE CHIEDE FATTURA non esce nessuno scontrino: il
+               documento c'è, ed è quello giusto. Va prima del conto in sospeso,
+               che è un'altra cosa. */
+            if (!sc.length && !r.scontrino_stato && fatturePerNegozio[String(r.negozio || "")]?.some(vicino)) {
                 patch.scontrino_stato = "fatturata";
                 patch.scontrino_emesso = true;   // il documento c'è, è una fattura
-            } else if (!r.scontrino_stato && sospesiPerNegozio[String(r.negozio || "")]?.some(vicino)) {
+            } else if (!sc.length && !r.scontrino_stato && sospesiPerNegozio[String(r.negozio || "")]?.some(vicino)) {
                 /* ⚠️ NESSUNO SCONTRINO, MA UN CONTO MESSO DA PARTE. «Tieni in
                    sospeso» scrive la vendita e rimanda l'incasso: la ricarica
                    c'è, lo scontrino no, e non è un guasto — è una vendita che
