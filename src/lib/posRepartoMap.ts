@@ -62,12 +62,17 @@ const REPARTO_MAP: Record<string, Record<number, number>> = {
         5 → 5% ⚠️   6 → 22% ⚠️  7 → 22%   8 → 22%   9 → 22%
        10 → EE ⚠️  11 → NS ⚠️  12 → NI (non imponibile)
 
-     ⛔ DA TOGLIERE quando il tecnico riprogramma il misuratore (la verifica
-     periodica è in scadenza: avviso stampato la sera del 03/09, documento
-     0876-0002). Il giorno in cui quella cassa torna in riga con le altre,
-     QUESTA VOCE VA CANCELLATA lo stesso giorno: lasciata accesa ribalta gli
-     scontrini al contrario. È la lezione dei malus Sky — una regola accesa e
-     dimenticata fa danni uguali e opposti a quelli che ha riparato. */
+     ⛔ NON TOGLIERE QUESTA VOCE PER FARE PULIZIA. Non è provvisoria: Luca ha
+     deciso il 04/09/2026 di NON far riprogrammare il misuratore e di lasciare
+     i parametri come stanno, quindi finché quella macchina resta in servizio
+     questa traduzione è l'unica cosa che tiene diritta l'IVA di quel negozio.
+     Toglierla rimette le ricariche al 22% e gli usati fuori dal regime del
+     margine, cioè rifà esattamente il danno che ha riparato.
+     Va tolta SOLO se un giorno quella cassa viene riprogrammata o sostituita —
+     e quel giorno va tolta lo STESSO GIORNO, se no ribalta gli scontrini al
+     contrario: è la lezione dei malus Sky, una regola accesa e dimenticata fa
+     danni uguali e opposti. Prima di toccarla: uno scontrino di prova per
+     reparto su 99IEB077017 e si guarda la lettera IVA stampata. */
   "http://192.168.1.106": {
     1: 4,    // Non soggetta, art. 74 (ricariche, SIM)     → NS
     2: 1,    // IVA 22% (accessori, assistenza, telefoni)  → 22%
