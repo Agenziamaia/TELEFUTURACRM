@@ -470,9 +470,27 @@ function Documenti() {
     useEffect(() => {
         const d = parametri.get("doc"), g = parametri.get("giorno"), f = parametri.get("fattura");
         if (g && /^\d{4}-\d{2}-\d{2}$/.test(g)) { setDal(g); setAl(g); }
-        if (d) setAperto(d);
+        if (d) {
+            setAperto(d);
+            /* ⚠️ ARRIVARE SU UN DOCUMENTO E NON VEDERLO È COME NON ARRIVARCI.
+               Luca 04/09: «clicco sul dettaglio, mi riporta sulla sezione dei
+               documenti in generale ma non mi apre lo scontrino di
+               riferimento… mi fa perdere un sacco di tempo».
+               La riga si apriva davvero — ma restava dov'era, magari
+               duecento righe più giù, dietro i filtri della schermata: il
+               negozio preselezionato, un operatore, una società. Chi arriva
+               con un documento in mano vede l'elenco di sempre e crede che il
+               collegamento non funzioni.
+               Chi punta a UN documento non vuole i filtri di prima: si tolgono
+               tutti (le date le decide `giorno`), e più sotto la pagina scorre
+               fino alla riga e la accende. */
+            setScelti([]); setUtenti([]); setSocieta([]); setCerca(""); setTipo("");
+            primaVolta.current = false;   // e il negozio non si ripreseleziona da solo
+        }
         if (f) { setFatturaApri(f); setVistaFatture(true); }
     }, [parametri]);
+
+
     useEffect(() => {
         let vivo = true;
         (async () => {
@@ -805,6 +823,21 @@ function Documenti() {
             return sort.desc ? -c : c;
         });
     }, [base, tipo, sort, nomeSoc]);
+
+    /* ═══ E POI CI SI VA SOPRA ══════════════════════════════════════════════
+       Si aspetta che le righe siano disegnate: `aperto` si imposta prima che i
+       documenti arrivino, e cercare l'elemento subito non troverebbe niente. */
+    const giaPortato = useRef<string | null>(null);
+    useEffect(() => {
+        if (!aperto || giaPortato.current === aperto) return;
+        const el = document.getElementById(`doc-${aperto}`);
+        if (!el) return;                       // non ancora disegnata: si riprova al prossimo giro
+        giaPortato.current = aperto;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        /* un lampo, perché fra venti righe uguali quella giusta si deve vedere */
+        el.classList.add("rvTab-punta");
+        setTimeout(() => el.classList.remove("rvTab-punta"), 2600);
+    }, [aperto, righe]);
 
     const esporta = () => {
         const righeCsv = [
@@ -1279,7 +1312,7 @@ function Documenti() {
                                     const es = esitoDi(d.stato, d.result, d.tentativi, d.emessi, d.inCoda, d.radiceFuori, d.graveAperto, d.fiscale, d.storno);
                                     return (
                                         <Fragment key={d.id}>
-                                            <tr onClick={() => setAperto(apertaQui ? null : d.id)}
+                                            <tr id={`doc-${d.id}`} onClick={() => setAperto(apertaQui ? null : d.id)}
                                                 /* ⚠️ LA RIGA, NON IL BADGE. «DOPPIO» in una cella
                                                     da 253 px pesa quanto «annullo»: sull'unico stato
                                                     che dice «la giornata non quadra» si accende la
