@@ -15,6 +15,7 @@ import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import { TabellareEditor } from "./_views/tabellare";
 import { W3PdvPanel } from "./_views/w3_pdv";
+import { W3TargetMese } from "./_views/w3_target_mese";
 import { W3CommissioningPanel, W3PercRagazzi, W3RagazziSoglie } from "./_views/w3_commissioning";
 import { W3PartnershipPanel } from "./_views/w3_partnership";
 import { LettereGara } from "./_views/lettere";
@@ -262,6 +263,11 @@ function GareInner() {
                         </>
                     ) : PAY_CTX[brand.id] === "windtre" && lato === "azienda" ? (
                         <>
+                            {/* PRIMA il mese si prepara (porta avanti i PDV, target dalla
+                                lettera, file dell'operatore), POI si correggono a mano nel
+                                pannello qui sotto: è l'ordine in cui succede davvero. */}
+                            <W3TargetMese key={`w3tm|${month}|${rev}`} mese={month.slice(0, 7)} colore={brand.color}
+                                onFatto={() => setRev((r) => r + 1)} />
                             <W3PdvPanel key={`w3pdv|${month}|${rev}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
                             {segW3 === "franchising" && (
                                 <>

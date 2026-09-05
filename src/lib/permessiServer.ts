@@ -37,6 +37,8 @@ export const SEZIONE_DI: Record<string, string> = {
        riscrivere all'AI le soglie che decidono i compensi. La sezione «/gare»
        nel menù è admin+dev e il pannello la governa: è quello il lucchetto. */
     "ai/gare-lettera": "/gare",
+    /* i target per punto vendita di WindTre: stessa stanza della lettera. */
+    "gare/w3-target": "/gare",
     "vendita": "/registra-vendita",
     /* ⚠️ PIÙ PRECISA di «vendita»: il registro delle ricariche non è la
        vendita. Chi sta in negozio deve poterne fare una (rotta
