@@ -101,7 +101,6 @@ type Dati = {
     da: string; a: string;
     totale: { quante: number; euro: number; euroPrima: number };
     daGuardare: number;
-    senzaScontrino: number;
     rimasteIndietro: number;
     troncato: boolean;
     perStato: { stato: string; quante: number }[];
@@ -389,7 +388,6 @@ export function PayStoreAdminView() {
         societa: (r: Riga) => !!cercaN || !societa || String(r.azienda || "—") === societa,
         origine: (r: Riga) => !!cercaN || !origine || String(r.con_attivazione === true) === origine,
         allarme: (r: Riga) => !!cercaN || !allarme
-            || (allarme === "scontrino" && r.scontrino_stato === "errore")
             || (allarme === "indietro" && rimastaIndietro(r)),
     };
     const tutte = d.ultime;
@@ -402,7 +400,6 @@ export function PayStoreAdminView() {
     /* ⚠️ I DUE ALLARMI CONTANO QUELLO CHE SI VEDRÀ, SEMPRE. Prima, a filtri
        spenti, usavano i numeri del server — che non sanno dei filtri: il
        quadrato prometteva 9 righe senza scontrino e la lista ne mostrava 7. */
-    const senzaScontrino = quanteCon(["allarme", "stato"], (r) => r.scontrino_stato === "errore");
     const daGuardareDavvero = quanteCon(["allarme", "stato"], rimastaIndietro);
     /* ⚠️ IL GRAFICO PARLA DI GIORNI, e le ore le mostra solo se gliele chiedi
        (Luca 02/09): «questo grafico deve darmi l'andamento giorno per giorno,
@@ -930,9 +927,16 @@ export function PayStoreAdminView() {
                         <div className="rvCampo">
                             <span className="rvLab psLab-ko">Da sistemare</span>
                             <div className="rvRapidoG rvRapidoG-kpi psQuadri">
+                                {/* ⚠️ «SENZA SCONTRINO» È STATO TOLTO (Luca 05/09): «quelle
+                                    ricariche in realtà lo scontrino ce l'hanno, è un riquadro
+                                    che non serve». Contava le righe con
+                                    `scontrino_stato = 'errore'`, ma quello stato lo scrive
+                                    l'aggancio automatico — che sbaglia: su diciotto righe,
+                                    diciassette avevano il documento e risultavano senza.
+                                    Un numero che dice una cosa falsa, in un riquadro
+                                    d'allarme, è peggio del riquadro che manca: manda a
+                                    cercare un problema che non c'è. */}
                                 {[
-                                    { id: "scontrino", n: senzaScontrino, et: "🧾 Senza scontrino", sub: "senza documento",
-                                        tip: "il registratore non ha stampato: il cliente ha pagato e non ha il documento fiscale" },
                                     { id: "indietro", n: daGuardareDavvero, et: "⏳ Rimaste indietro", sub: "credito non partito",
                                         tip: "incassate in un giorno già chiuso, o non partite: il credito non risulta caricato" },
                                 ].map((q) => {
@@ -992,7 +996,7 @@ export function PayStoreAdminView() {
                                 {!cercaN && <span className="text-[11px] font-semibold text-amber-300/90">
                                     {" · "}{[
                                         [...ORDINE_STATI].filter((x) => stati.has(x)).map((x) => STATI[x].testo).join(", "),
-                                        allarme === "scontrino" ? "senza scontrino" : allarme === "indietro" ? "rimaste indietro" : null,
+                                        allarme === "indietro" ? "rimaste indietro" : null,
                                         origine ? (origine === "true" ? "con attivazione" : "sciolte") : null,
                                         negoziSel ? (negoziSel.length === 1 ? negoziSel[0] : `${negoziSel.length} negozi`) : null,
                                         societa ? (SOCIETA[societa] || "senza società") : null,

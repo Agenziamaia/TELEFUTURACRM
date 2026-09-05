@@ -569,7 +569,6 @@ export async function GET(request: Request) {
            un allarme che si RIMPICCIOLISCE quando il problema cresce: «4 senza
            scontrino» dove in archivio erano 60, cioè 56 clienti che hanno
            pagato e non hanno il documento. */
-        senzaScontrino: R.filter((r) => r.scontrino_stato === "errore").length,
         tagli: tagli || [],
     });
 }
