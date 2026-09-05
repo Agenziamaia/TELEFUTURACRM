@@ -56,14 +56,25 @@ const BRAND_DB = { vs: "vodafone", w3: "windtre" };
 const dovePiste = (brand) => MODELLO_DI(brand) === "gare"
     ? { tabella: "gare_azienda_piste", brand, lato: null, divisioni: true }
     : { tabella: "pay_piste", brand: BRAND_DB[brand] || brand, lato: "azienda", divisioni: false };
-const copiaMese = (brand, da, a) => {
+/* ⚠️ IL MESE NUOVO SI PORTA DIETRO LE PERCENTUALI (Luca 04/09): «lato ragazzi,
+   quando vai a creare il nuovo mese, lascia le percentuali di riferimento del
+   mese precedente — quelle di proporzione rispetto all'azienda». Vivono in due
+   posti: `pay_piste.perc_ragazzi` e `pay_mappa_soglie`, la corrispondenza fra
+   le nostre soglie e quelle dell'operatore. Per questo si copia «tutto» e non
+   solo l'azienda: la mappa è il ponte fra i due lati e sta col mese, non con
+   un lato.
+   ⚠️ E WINDTRE VIVE IN DUE STRUTTURE INSIEME: il motore delle gare
+   (`gare_azienda_*`) e il tabellare (`pay_*`). Copiarne una sola lasciava
+   settembre a metà — infatti oggi `pay_piste` di windtre e le 12 righe della
+   mappa esistono solo su agosto. Si copiano tutte e due. */
+const copiaMese = async (brand, da, a) => {
     const D = dovePiste(brand);
-    return D.divisioni
-        ? supabase.rpc("gare_copy_month", { p_brand: D.brand, p_from: da, p_to: a, p_livello: "azienda" })
-        /* su pay_* si copia SOLO il lato azienda: questa card è la sua, e il
-           lato ragazzi si prepara dalla sua scheda — con le percentuali di
-           proporzione che la funzione adesso si porta dietro (Luca 04/09). */
-        : supabase.rpc("pay_copy_month", { p_brand: D.brand, p_from: da, p_to: a, p_lato: "azienda" });
+    if (!D.divisioni) return supabase.rpc("pay_copy_month", { p_brand: D.brand, p_from: da, p_to: a, p_lato: "tutto" });
+    const g = await supabase.rpc("gare_copy_month", { p_brand: D.brand, p_from: da, p_to: a, p_livello: "azienda" });
+    if (g.error) return g;
+    // il tabellare di WindTre sta su pay_* col nome per esteso
+    const t = await supabase.rpc("pay_copy_month", { p_brand: "windtre", p_from: da, p_to: a, p_lato: "tutto" });
+    return t.error ? t : g;
 };
 const COLORE = { aggiorna: "text-amber-300", aggiungi: "text-emerald-300", rimuovi: "text-rose-300" };
 
