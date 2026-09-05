@@ -6817,7 +6817,21 @@ function CRM() {
         body: JSON.stringify({ action: "valida", code }) });
       const j = await res.json().catch(() => ({}));
       if (!j.valido) { setCouponCartMsg("Coupon non valido: " + (j.motivo || "sconosciuto")); return; }
-      const valore = Number(j.valore) || 0;
+      /* ⚠️ IL CAMPO SI CHIAMA `valore_residuo`, e questa riga leggeva `valore`.
+         Il server risponde con quello che RESTA sul coupon — un coupon usato a
+         metà vale il residuo, non il valore di emissione — e qui arrivava
+         `undefined`, quindi zero, quindi `Math.min(0, totale)` = ZERO SCONTO.
+         Sempre, su ogni coupon, da quando lo sconto è stato spostato sul
+         carrello (01/09). Il negozio digitava il codice, il CRM rispondeva
+         «valido» e scontava nulla: il difetto peggiore, perché non sembra un
+         guasto — sembra che il coupon non valga niente.
+         La finestra del pagamento leggeva il campo giusto, ed è per questo che
+         lì funzionava: due punti che chiedono la stessa cosa allo stesso server
+         e ne leggono due nomi diversi.
+         Si accettano tutti e due i nomi, così un domani il server può cambiare
+         idea senza rompere di nuovo il carrello in silenzio. */
+      const valore = Number(j.valore_residuo ?? j.valore) || 0;
+      if (!(valore > 0)) { setCouponCartMsg("Il coupon non ha valore residuo."); return; }
       // lo sconto non supera mai quello che c'è da incassare: il resto
       // rigenera un coupon nuovo, e quello lo fa il server allo scontrino
       const sconto = Math.min(valore, Math.max(0, totaleDaIncassare));
