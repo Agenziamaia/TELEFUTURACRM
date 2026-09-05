@@ -373,7 +373,18 @@ export function PayStoreAdminView() {
            perché un cliente ha chiamato: se lo stato o il negozio lo tenessero
            fuori, la risposta sarebbe «non risulta» su una ricarica che c'è. */
         cerca: (r: Riga) => !cercaN || soloCifre(r.numero).includes(cercaN),
-        stato: (r: Riga) => !!cercaN || toccate.has(r.id) || stati.has(r.stato),
+        /* ⚠️ E ANCHE UN ALLARME SOSPENDE GLI STATI. Luca 05/09: «il pulsante mi
+           dà 18 ricariche, premendolo me ne dà una sola». Aveva ragione ed era
+           una bugia della schermata: il quadrato conta su TUTTI gli stati —
+           delle 18 senza scontrino, 17 sono già fatte a mano e una sola è in
+           sospeso — mentre l'elenco restava filtrato sui tre stati «da
+           sistemare». Il numero prometteva diciotto e la lista ne dava una,
+           proprio sotto la scritta «il numero dice quante righe vedrai».
+           Un allarme è una domanda che non riguarda lo stato: «quali non hanno
+           il documento» vale anche, anzi soprattutto, su una già erogata — lì
+           il credito è uscito e la prova dell'incasso manca. Quindi premendolo
+           gli stati si sospendono, esattamente come fa la ricerca per numero. */
+        stato: (r: Riga) => !!cercaN || !!allarme || toccate.has(r.id) || stati.has(r.stato),
         negozio: (r: Riga) => !!cercaN || !negoziSel || negoziSel.includes(String(r.negozio || "")),
         societa: (r: Riga) => !!cercaN || !societa || String(r.azienda || "—") === societa,
         origine: (r: Riga) => !!cercaN || !origine || String(r.con_attivazione === true) === origine,
