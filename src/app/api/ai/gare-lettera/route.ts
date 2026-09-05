@@ -64,11 +64,19 @@ async function fotografia(brand: string, month: string, divisione: string | unde
        ritroverebbe davanti le righe dei ragazzi — che sono una percentuale di
        quelle dell'azienda — e proporrebbe di correggere le derivate invece
        delle sorgenti. */
-    const leggi = (nome: string) => {
+    const leggi = async (nome: string) => {
         let q = supabase.from(S.tab[nome]).select(["id", ...S.campi[nome]].join(","))
             .eq("brand", bdb).eq("month", month);
         if (S.colonnaLato) q = q.eq(S.colonnaLato, "azienda");
-        return q.order(S.ordinaPer, { ascending: true });
+        const { data, error } = await q.order(S.ordinaPer[nome] || "id", { ascending: true });
+        /* ⚠️ UNA LETTURA CHE FALLISCE NON PUÒ SEMBRARE UN MESE SENZA CAMBI.
+           Con l'errore buttato via, `data` tornava null, la tabella restava
+           vuota e il modello non la vedeva nemmeno: nel riassunto usciva
+           «nessun numero cambia», indistinguibile dal successo. È successo
+           con `order=ordine` su pay_soglie, che quella colonna non ce l'ha:
+           48 soglie di Vodafone sparite in silenzio. */
+        if (error) throw new Error(`non riesco a leggere ${S.tab[nome]}: ${error.message}`);
+        return { data };
     };
 
     const { data: piste } = await leggi("piste");
@@ -368,7 +376,12 @@ export async function POST(request: Request) {
         const gaDi: Record<string, string> = {};     // codice pista -> divisione
         const nomePista: Record<string, string> = {};
         for (const div of dovute) {
-            const f = await fotografia(brand, base, S.conDivisioni ? div : undefined, mod);
+            /* la fotografia adesso PARLA quando non riesce a leggere: senza
+               questo, l'errore uscirebbe come un 500 tecnico invece che come
+               una frase che dice quale tabella non si è potuta leggere. */
+            let f: Foto;
+            try { f = await fotografia(brand, base, S.conDivisioni ? div : undefined, mod); }
+            catch (e) { return NextResponse.json({ error: `Non riesco a leggere il mese base: ${(e as Error)?.message || e}` }, { status: 500 }); }
             if (!S.tabelle.reduce((a: number, k: string) => a + (f[k] || []).length, 0)) continue;
             S.tabelle.forEach((k: string) => { if (!foto[k]) foto[k] = []; foto[k].push(...(f[k] || [])); });
             (f.piste || []).forEach((p) => {
@@ -532,8 +545,18 @@ export async function POST(request: Request) {
                        dice: la riga va riletta. */
                     const q = supabase.from(tabella).update({ [String(m.campo)]: m.a })
                         .eq("id", m.id).eq("brand", bdb).eq("month", month);
-                    const { data: tocc, error } = await (m.da === null || m.da === undefined
-                        ? q.is(String(m.campo), null) : q.eq(String(m.campo), m.da as never)).select("id");
+                    /* ⚠️ UN ARRAY NON SI CONFRONTA COME UN NUMERO. PostgREST
+                       vuole la forma `{65,75,90}`: passandogli l'array così
+                       com'è diventa «eq.65,75,90» e il database risponde
+                       «malformed array literal» — cioè OGNI modifica al
+                       commissioning di Vodafone, Fastweb, Sky e S4 falliva
+                       all'Applica, proprio la riga che nasce spuntata. */
+                    const cond = m.da === null || m.da === undefined
+                        ? q.is(String(m.campo), null)
+                        : Array.isArray(m.da)
+                            ? q.eq(String(m.campo), `{${(m.da as unknown[]).join(",")}}` as never)
+                            : q.eq(String(m.campo), m.da as never);
+                    const { data: tocc, error } = await cond.select("id");
                     if (error) throw error;
                     const esito = (tocc || []).length ? "aggiornata" : "non scritta: la riga è cambiata dopo la lettura";
                     fatto.push({ ...m, esito }); segna(i, esito);

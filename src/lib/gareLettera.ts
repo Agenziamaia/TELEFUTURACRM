@@ -36,8 +36,16 @@ type Schema = {
     tabelle: string[];
     /** il campo con cui una pista si chiama: `codice` su W3, `chiave` su pay */
     rifPista: string;
-    /** la colonna con cui si ordina: `sort_order` su W3, `ordine` su pay */
-    ordinaPer: string;
+    /** ⚠️ LA COLONNA CON CUI SI ORDINA, TABELLA PER TABELLA. Era una sola per
+     *  tutto il modello, e su `pay_soglie` — che la colonna `ordine` non ce
+     *  l'ha — PostgREST rispondeva 400 e la fotografia tornava VUOTA: le 48
+     *  soglie di Vodafone non arrivavano mai al modello, e nel riassunto si
+     *  leggeva come «la lettera non cambia le soglie». Un fallimento
+     *  indistinguibile dal successo, sugli scalini che decidono le fasce. */
+    ordinaPer: Record<string, string>;
+    /** togliere una pista porta via anche le sue righe? (chiavi esterne ON
+     *  DELETE CASCADE su W3; su pay_* non c'è nessuna FK e restano orfane) */
+    cascata: boolean;
     /** il brand con cui le righe stanno scritte a database, dato quello della
      *  pagina: W3 si chiama «w3» di là e di qua, gli altri no (vs → vodafone) */
     brandDb: (brandPagina: string) => string;
@@ -76,7 +84,8 @@ const GARE: Schema = {
     },
     tabelle: ["piste", "soglie", "voci", "regole"],
     rifPista: "codice",
-    ordinaPer: "sort_order",
+    ordinaPer: { piste: "sort_order", soglie: "sort_order", voci: "sort_order", regole: "sort_order" },
+    cascata: true,
     brandDb: (b) => b,
     conDivisioni: true,
     campi: {
@@ -163,7 +172,8 @@ const PAY: Schema = {
     tab: { piste: "pay_piste", soglie: "pay_soglie", righe: "pay_righe" },
     tabelle: ["piste", "soglie", "righe"],
     rifPista: "chiave",
-    ordinaPer: "ordine",
+    ordinaPer: { piste: "ordine", soglie: "tier", righe: "ordine" },
+    cascata: false,
     /* ⚠️ IL BRAND CAMBIA NOME FRA LA PAGINA E IL DATABASE. La pagina Gare usa
        codici corti (vs, sky, s4) ma su pay_* le righe stanno scritte per
        esteso (vodafone, sky, s4). Cercare «vs» in pay_piste non dà errore: dà
@@ -333,6 +343,12 @@ export function listaNumerica(v: unknown): number[] | null | undefined {
     if (!Array.isArray(v)) return undefined;
     const out: number[] = [];
     for (const x of v) {
+        /* ⚠️ LO STESSO GUARDRAIL DEI CAMPI SINGOLI, se no l'elenco è la porta
+           di servizio: `pay_base` con «1.000» veniva scartato, ma «1.000»
+           dentro pay_tiers passava e diventava UNO. È la colonna che *è* il
+           commissioning: mille euro che diventano uno non li vede nessuno
+           fino al cedolino. */
+        if (typeof x === "string" && /^[+-]?\d+[.,]\d{3,}$/.test(x.trim())) return undefined;
         const n = numero(x);
         if (n === null) return undefined;
         out.push(n);
@@ -356,7 +372,16 @@ export function booleano(v: unknown): boolean | null | undefined {
     return undefined;
 }
 
-export const mostra = (v: unknown, um?: unknown) => {
+export const mostra = (v: unknown, um?: unknown): string => {
+    /* ⚠️ UN ELENCO DI IMPORTI NON È UN NUMERO. `String([1000,1200])` dà
+       «1000,1200», che riletto come numero italiano diventa «1000,12»: il
+       riassunto mostrava una cifra che non esiste. E l'elenco VUOTO — cioè
+       «tutte le soglie pagano zero», la modifica più distruttiva possibile —
+       usciva come una casella bianca dopo la freccia, spuntata di default. */
+    if (Array.isArray(v)) {
+        if (!v.length) return "NESSUN IMPORTO (tutte le soglie a zero)";
+        return v.map((x) => mostra(x)).join(" · ") + (um ? ` ${um}` : "");
+    }
     if (v === null || v === undefined || v === "") return "—";
     const n = numero(v);
     const testo = n !== null ? String(Number(n.toFixed(4))).replace(".", ",") : String(v);
@@ -507,12 +532,19 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
                `applicato` ne segna UNA: da lì non si torna indietro. Quindi la
                riga resta nel gruppo dei numeri — è la modifica più grossa che
                esista — ma NON nasce spuntata: la accende una persona. */
+            /* ⚠️ su W3 le chiavi esterne sono ON DELETE CASCADE e una casella
+               sola cancella decine di righe; su pay_* non c'è nessuna FK e le
+               righe restano ORFANE. Sono due danni diversi e vanno detti per
+               quello che sono: il testo di prima nominava pure «voci e
+               regole», tabelle che nel modello pay non esistono. */
             const pericolosa = tab === "piste";
             buone.push({
                 tabella: tab, operazione: "rimuovi", id: String(m.id), motivo: perche,
                 pista, gara: gaDi[pista] || div, gruppo: nomePista[pista] || pista,
                 dove: etichetta(tab, rif.r, mod), chiave: true, pericolosa,
-                riga: `${etichetta(tab, rif.r, mod)}: da RIMUOVERE${pericolosa ? " — l'INTERA pista, con tutte le sue soglie, voci e regole" : ""}`,
+                riga: `${etichetta(tab, rif.r, mod)}: da RIMUOVERE${!pericolosa ? "" : S.cascata
+                    ? ` — l'INTERA pista, con tutte le sue ${S.tabelle.filter((t) => t !== "piste").join(", ")}`
+                    : ` — attenzione: le sue ${S.tabelle.filter((t) => t !== "piste").join(" e ")} NON vengono cancellate e restano orfane`}`,
             });
         } else if (op === "new" || op === "aggiungi") {
             const arrivati = (m.dati || {}) as Riga;
