@@ -56,6 +56,12 @@ async function leggiTarget(file) {
     if (iH < 0) throw new Error("non trovo la colonna COD_GARA: è il file dei target giusto?");
     const head = (griglia[iH] || []).map(norm);
     const dove = (nomi) => { for (const n of nomi) { const i = head.indexOf(norm(n)); if (i >= 0) return i; } return -1; };
+    /* ⚠️ ALCUNE INTESTAZIONI SONO FRASI INTERE e cambiano in coda: «TARGET
+       Assicurazioni per RS Extra Premio di 500€ per PDV MAGGIORE o UGUALE».
+       Cercarle per uguaglianza le manca tutte e le voci restano vuote senza
+       che nessuno se ne accorga (misurato: `ass_rs` tornava tutto null).
+       Si cerca l'inizio, che è la parte che dice cosa sono. */
+    const dovePref = (inizio) => head.findIndex((h) => h.startsWith(norm(inizio)));
     const idx = Object.fromEntries(Object.entries(COLONNE).map(([k, v]) => [k, dove(v)]));
     if (idx.cod_gara < 0) throw new Error("manca la colonna COD_GARA");
     /* le soglie sono i numeri SUBITO DOPO la colonna del cluster: nel file di
@@ -108,6 +114,29 @@ async function leggiTarget(file) {
             soglie_mobile: prendi(cols.mobile),
             soglie_piva: prendi(cols.piva),
             soglie_fisso: prendi(cols.fisso),
+            /* ⚠️ IL FILE PORTA ANCHE I SOLDI. Partnership Reward (target in
+               punti e premio in euro), soglie assicurazioni per ragione
+               sociale, decurtazioni e premi W3 Protetti: sono le voci da cui
+               `extra` era stato costruito a mano ad agosto, e senza leggerle
+               qui non le aggiornerebbe più nessuno. Le colonne si prendono
+               per nome; se un mese cambiano intestazione, la voce resta fuori
+               invece di scrivere un numero a caso. */
+            extra: (() => {
+                const q = (inizio) => { const i = dovePref(inizio); return i >= 0 ? num(row[i]) : null; };
+                const qn = (inizio) => { const i = dovePref(inizio); if (i < 0) return null; const m = String(row[i] ?? "").match(/-?\d+(?:[.,]\d+)?/); return m ? Number(m[0].replace(",", ".")) : null; };
+                const out = {};
+                const prTarget = q("TARGET PARTNERSHIP REWARD"), prP80 = q("80% PREMIO PARTNERSHIP REWARD"), prP = q("PREMIO PARTNERSHIP REWARD");
+                if (prTarget !== null && prP !== null) out.pr = { target: prTarget, premio80: prP80, premio: prP };
+                const a50 = q("TARGET ASSICURAZIONI PER RS EXTRA PREMIO DI 500");
+                const a75 = q("TARGET ASSICURAZIONI PER RS EXTRA PREMIO DI 750");
+                const aDec = q("TARGET ASSICURAZIONI PER RS DECURTAZIONE PREMIO");
+                if (a50 !== null || a75 !== null || aDec !== null) out.ass_rs = { premio500_da: a50, premio750_da: a75, decurt_sotto: aDec };
+                const pSotto = qn("TARGET W3 PROTETTI DECURTAZIONE PREMIO"), pDec = q("IMPORTO DECURTAZIONE W3 PROTETTI");
+                const pDa = qn("TARGET W3 PROTETTI PREMIO"), pPre = q("IMPORTO PREMIO W3 PROTETTI");
+                if (pSotto !== null || pDa !== null) out.protetti = { rs_decurt_sotto: pSotto, rs_decurt_eur: pDec, rs_premio_da: pDa, rs_premio_eur: pPre };
+                out.raw = row;
+                return Object.keys(out).length > 1 ? out : null;
+            })(),
         });
     }
     if (!righe.length) throw new Error("nessuna riga con un COD_GARA sotto le intestazioni");
@@ -174,7 +203,15 @@ export function W3TargetMese({ mese, colore = "var(--tf-f59e0b)", onFatto }) {
                 titolo: `${d.quanti} punti vendita cambierebbero target`,
                 nota: `Target di cluster letti dalla lettera × il peso di ogni negozio. ${[...(c.avvisi || []), ...(d.senza || [])].join(" · ")}`,
                 azione: { azione: "da-lettera", cluster: c.cluster },
-                piste: true,
+                /* ⚠️ SE MANCA UN CLUSTER NON SI APPLICA. Il modello ne salta
+                   qualcuno, e lo fa in silenzio: sei letture identiche della
+                   stessa lettera, tre complete e tre con un cluster in meno e
+                   un avviso che diceva il falso. Applicando quella, un negozio
+                   resta senza target — e la riga grigia in fondo non la legge
+                   nessuno. Quindi il pulsante si spegne e si dice perché. */
+                blocco: (c.mancanti || []).length
+                    ? `Nella lettera non ho trovato ${c.mancanti.length === 1 ? "un cluster" : `${c.mancanti.length} cluster`}: ${c.mancanti.join(" · ")}. Applicando adesso quei negozi resterebbero senza target: riprova la lettura, o mettili a mano.`
+                    : "",
                 righe: d.anteprima,
             });
         } catch (e) { setErrore(String(e?.message || e)); }
@@ -205,13 +242,17 @@ export function W3TargetMese({ mese, colore = "var(--tf-f59e0b)", onFatto }) {
        sconto — e nell'unico caso in cui differiscono (Collatina, business a 1
        mentre mobile e fisso stanno a 0,5) la differenza la porta il file. Qui
        si tocca quello del mobile e del fisso, che sono le due gare per PDV. */
-    const salvaPeso = async (r, valore) => {
-        const v = valore === "" ? null : Number(String(valore).replace(",", "."));
-        if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1)) { setErrore("Il peso è una frazione fra 0 e 1 (0,7 = sconto del 30%)."); return; }
-        if (v === (r.peso_mobile === null ? null : Number(r.peso_mobile))) return;
+    const salvaPeso = async (r, quale, valore) => {
+        const attuale = quale === "mobile" ? r.peso_mobile : r.peso_fix;
+        const v = String(valore).trim() === "" ? null : Number(String(valore).replace(",", "."));
+        if (v !== null && (!Number.isFinite(v) || !(v > 0) || v > 1)) {
+            setErrore("Il peso è una frazione maggiore di zero e fino a 1 (0,7 = sconto del 30%). Per togliere il negozio dalla gara si svuota la casella.");
+            return;
+        }
+        if (v === (attuale === null || attuale === undefined ? null : Number(attuale))) return;
         setErrore("");
         try {
-            await chiedi({ azione: "peso", id: r.id, peso: v, applica: true });
+            await chiedi({ azione: "peso", id: r.id, quale, peso: v, applica: true });
             await carica();
             if (onFatto) onFatto();
         } catch (e) { setErrore(String(e?.message || e)); }
@@ -303,7 +344,8 @@ export function W3TargetMese({ mese, colore = "var(--tf-f59e0b)", onFatto }) {
                                         <tr className="text-[10px] uppercase tracking-wider text-slate-500">
                                             <th className="text-left font-bold py-1.5 pr-3">Negozio</th>
                                             <th className="text-left font-bold py-1.5 pr-3">Cluster</th>
-                                            <th className="text-right font-bold py-1.5 pr-3">Peso</th>
+                                            <th className="text-right font-bold py-1.5 pr-3">Peso mob.</th>
+                                            <th className="text-right font-bold py-1.5 pr-3">Peso fisso</th>
                                             <th className="text-left font-bold py-1.5 pr-3">Mobile</th>
                                             <th className="text-left font-bold py-1.5">Fisso</th>
                                         </tr>
@@ -313,16 +355,20 @@ export function W3TargetMese({ mese, colore = "var(--tf-f59e0b)", onFatto }) {
                                             <tr key={r.id} className="border-t border-white/5">
                                                 <td className="py-1.5 pr-3 font-bold text-slate-100">{r.negozio}</td>
                                                 <td className="py-1.5 pr-3 text-slate-400">{r.cluster_mobile || "—"}</td>
-                                                <td className="py-1.5 pr-3 text-right">
-                                                    {/* IL PESO È LO SCONTO. Si corregge qui perché cambia di
-                                                        rado ma cambia (Collatina dal 50 al 70% da settembre),
-                                                        e da qui si propaga sui target al primo ricalcolo. */}
-                                                    <input type="number" min="0" max="1" step="0.05"
-                                                        defaultValue={r.peso_mobile ?? ""}
-                                                        onBlur={(e) => salvaPeso(r, e.target.value)}
-                                                        className="w-16 bg-transparent border border-white/10 rounded px-1.5 py-0.5 text-right text-slate-200
-                                                                   focus:border-amber-400/50 focus:outline-none" />
-                                                </td>
+                                                {/* IL PESO È LO SCONTO, e mobile e fisso ne hanno uno
+                                                    ciascuno: nel file dell'operatore sono due colonne
+                                                    distinte. Si correggono qui perché cambiano di rado ma
+                                                    cambiano (Collatina dal 50 al 70% da settembre), e da qui
+                                                    si propagano sui target al primo ricalcolo. */}
+                                                {["mobile", "fisso"].map((q) => (
+                                                    <td key={q} className="py-1.5 pr-3 text-right">
+                                                        <input type="number" min="0.05" max="1" step="0.05"
+                                                            defaultValue={(q === "mobile" ? r.peso_mobile : r.peso_fix) ?? ""}
+                                                            onBlur={(e) => salvaPeso(r, q, e.target.value)}
+                                                            className="w-16 bg-transparent border border-white/10 rounded px-1.5 py-0.5 text-right text-slate-200
+                                                                       focus:border-amber-400/50 focus:outline-none" />
+                                                    </td>
+                                                ))}
                                                 <td className="py-1.5 pr-3 text-indigo-200">{nf(r.soglie_mobile)}</td>
                                                 <td className="py-1.5 text-cyan-200">{nf(r.soglie_fisso)}</td>
                                             </tr>
@@ -339,7 +385,7 @@ export function W3TargetMese({ mese, colore = "var(--tf-f59e0b)", onFatto }) {
                                 <span className="text-[11px] font-bold text-amber-200 uppercase tracking-wider">Anteprima · niente è ancora scritto</span>
                                 <span className="text-xs text-slate-300">{anteprima.titolo}</span>
                                 <div className="ml-auto flex items-center gap-1.5">
-                                    <button onClick={applica} disabled={!!lavoro || !anteprima.righe?.length}
+                                    <button onClick={applica} disabled={!!lavoro || !anteprima.righe?.length || !!anteprima.blocco}
                                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40">
                                         <Check className="w-3.5 h-3.5" /> Applica
                                     </button>
@@ -349,6 +395,11 @@ export function W3TargetMese({ mese, colore = "var(--tf-f59e0b)", onFatto }) {
                                     </button>
                                 </div>
                             </div>
+                            {anteprima.blocco && (
+                                <p className="rounded-lg bg-rose-500/10 border border-rose-500/25 px-2.5 py-1.5 text-[11px] font-bold text-rose-200">
+                                    {anteprima.blocco}
+                                </p>
+                            )}
                             {anteprima.nota && <p className="text-[11px] text-slate-400">{anteprima.nota}</p>}
                             {!anteprima.righe?.length ? (
                                 <p className="text-xs text-slate-400">Non cambia niente: quello che c'è già combacia.</p>

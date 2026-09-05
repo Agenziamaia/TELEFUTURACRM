@@ -54,11 +54,17 @@ const meseLungo = (m: string) => {
 };
 
 /* ⚠️ MEZZO PUNTO SI ARROTONDA IN SU, come fa l'operatore: 115 × 0,5 = 57,5 e
-   nel loro file c'è scritto 58. Con `Math.round` di JavaScript ci si arriva,
-   ma solo per i positivi — e questi lo sono sempre: un target non è mai
-   negativo. Lo si scrive lo stesso, perché la prossima persona che legge non
-   deve chiederselo. */
-const arrotonda = (n: number) => Math.round(Math.abs(n)) * Math.sign(n || 1);
+   nel loro file c'è scritto 58.
+   E NON SI FA IN VIRGOLA MOBILE. `85 * 0.7` in JavaScript vale
+   59,499999999999993: `Math.round` scrive 59, l'operatore scrive 60 — una
+   soglia più bassa del vero, a favore del negozio, che nessuno vede finché
+   non arriva il file. Il peso ha due decimali (`numeric(5,2)`), quindi si
+   moltiplica per cento e si lavora sugli interi, dove mezzo è mezzo. */
+const arrotonda = (valore: number, peso: number) => {
+    const p = Math.round(peso * 100);                 // 0,7 → 70, esatto
+    const v = Math.round(valore * 100);               // le soglie sono numeric(12,2)
+    return Math.floor((v * p + 5000) / 10000);
+};
 
 type Riga = {
     id: string; cod_gara: string | null; negozio: string | null; ragione_sociale: string | null;
@@ -110,7 +116,7 @@ export async function POST(request: Request) {
     const azione = String(body.azione || "");
     const month = meseIso(String(body.month || ""));
     const applica = body.applica === true;
-    if (!month) return NextResponse.json({ error: "Serve il mese" }, { status: 400 });
+    if (!/^\d{4}-\d{2}-01$/.test(month)) return NextResponse.json({ error: "Il mese non è scritto bene." }, { status: 400 });
 
     /* ── 1. PORTA AVANTI I NEGOZI ─────────────────────────────────────────
        Le anagrafiche (chi è in gara, con che codice, in che cluster, con che
@@ -132,7 +138,17 @@ export async function POST(request: Request) {
             cod_gara: r.cod_gara, negozio: r.negozio, ragione_sociale: r.ragione_sociale,
             peso_mobile: r.peso_mobile, peso_biz: r.peso_biz, peso_fix: r.peso_fix,
             cluster_mobile: r.cluster_mobile, cluster_piva: r.cluster_piva, cluster_fisso: r.cluster_fisso,
-            extra: r.extra,
+            /* ⚠️ `extra` NON SI EREDITA INTERO: dentro ci sono i SOLDI del mese
+               scorso — il target e il premio della Partnership Reward (Libia
+               300 punti → 1.400 €), le soglie assicurazioni, le decurtazioni
+               W3 Protetti, la riga grezza del file e le rettifiche manuali in
+               euro. Portarli avanti farebbe sembrare attuali dei numeri
+               vecchi: è esattamente quello che questa funzione evita per le
+               soglie, e sarebbe assurdo farlo sull'altra metà dei numeri.
+               Si tiene solo `premi`, la scala dei premi dei multibrand, che
+               non è un dato del mese e nel file dell'operatore non c'è. */
+            extra: r.extra && (r.extra as Record<string, unknown>).premi
+                ? { premi: (r.extra as Record<string, unknown>).premi } : null,
         }));
         if (!applica) return NextResponse.json({ anteprima: nuove.map((n) => ({ negozio: n.negozio, cod_gara: n.cod_gara, cluster_mobile: n.cluster_mobile, peso_mobile: n.peso_mobile, peso_fix: n.peso_fix })) });
         const { error } = await supabase.from(TAB).insert(nuove);
@@ -163,13 +179,26 @@ export async function POST(request: Request) {
                 const chiave = Object.keys(tabella).find((k) => normCluster(k) === normCluster(cluster));
                 if (!cluster) continue;                       // niente cluster: non è una gara per PDV
                 if (!chiave) { senza.push(`${r.negozio}: cluster ${pista} «${cluster}» non è nella lettera`); continue; }
-                const p = Number(peso ?? 1);
-                const nuove = tabella[chiave].map((v) => arrotonda(Number(v) * p));
-                riga[pista] = { cluster, peso: p, da: (r as unknown as Record<string, number[]>)[campo] || null, a: nuove };
-                if (!listaUguale((r as unknown as Record<string, unknown>)[campo], nuove)) {
-                    patch[campo] = nuove;
-                    patch[`${campo}_lettera`] = nuove;
-                }
+                /* ⚠️ SENZA PESO NON SI CALCOLA. Prima un peso vuoto valeva UNO
+                   — cioè target pieno — e una casella lasciata in bianco e una
+                   scritta «1» si comportavano uguale pur volendo dire cose
+                   opposte. E lo zero darebbe [0,0,0,0]: un negozio che ha
+                   superato tutte le soglie il primo del mese. */
+                const p = peso === null || peso === undefined ? null : Number(peso);
+                if (p === null) { senza.push(`${r.negozio}: manca il peso ${pista}, non calcolo niente`); continue; }
+                if (!(p > 0)) { senza.push(`${r.negozio}: peso ${pista} a zero, non calcolo niente`); continue; }
+                const nuove = tabella[chiave].map((v) => arrotonda(Number(v), p));
+                const ora = (r as unknown as Record<string, unknown>)[campo];
+                const uguali = listaUguale(ora, nuove);
+                /* ⚠️ LA TRACCIA DELLA LETTERA SI SCRIVE ANCHE SE I NUMERI
+                   COINCIDONO. Se qualcuno ha già battuto a mano le soglie
+                   giuste nel pannello qui sotto, `_lettera` resterebbe vuota —
+                   e il pulsante ↺ di quel pannello, che riporta «all'originale
+                   della lettera», AZZEREREBBE le soglie. */
+                if (!uguali) patch[campo] = nuove;
+                if (!listaUguale((r as unknown as Record<string, unknown>)[`${campo}_lettera`], nuove)) patch[`${campo}_lettera`] = nuove;
+                // in anteprima ci va solo quello che cambia davvero
+                if (!uguali) riga[pista] = { cluster, peso: p, da: ora || null, a: nuove };
             }
             if (Object.keys(patch).length) cambi.push({ id: r.id, patch, riga });
         }
@@ -230,6 +259,28 @@ export async function POST(request: Request) {
                 if (campo !== "soglie_piva") patch[`${campo}_lettera`] = nums;
                 diff[campo] = { da: (r as unknown as Record<string, unknown>)[campo], a: nums };
             }
+            /* ⚠️ IL FILE PORTA ANCHE I SOLDI, non solo le soglie: il target e
+               il premio della Partnership Reward, le soglie assicurazioni per
+               ragione sociale, le decurtazioni e i premi W3 Protetti. Sono le
+               stesse voci da cui `extra` era stato costruito a mano ad agosto,
+               e senza questo pezzo non le aggiornerebbe mai nessuno — mentre
+               `porta-avanti` ha smesso di ereditarle apposta. Le chiavi
+               scritte da una persona (`premi`, `correzioni`) restano dove
+               sono: qui si tocca solo quello che viene dal file. */
+            const ex = (a.extra || null) as Record<string, unknown> | null;
+            if (ex && Object.keys(ex).length) {
+                const prima = (r.extra || {}) as Record<string, unknown>;
+                const dopo = { ...prima, ...ex };
+                if (JSON.stringify(dopo) !== JSON.stringify(prima)) {
+                    patch.extra = dopo;
+                    const soldi = ex.pr as { target?: number; premio?: number } | undefined;
+                    if (soldi) diff["partnership reward"] = {
+                        da: (prima.pr as { target?: number; premio?: number } | undefined)
+                            ? `${(prima.pr as { target?: number }).target} punti → ${(prima.pr as { premio?: number }).premio} €` : null,
+                        a: `${soldi.target} punti → ${soldi.premio} €`,
+                    };
+                }
+            }
             if (Object.keys(patch).length) cambi.push({ id: r.id, patch, diff });
         }
         if (!applica) return NextResponse.json({ anteprima: cambi.map((c) => c.diff), ignorate, quanti: cambi.length });
@@ -269,15 +320,16 @@ ${testo.slice(0, 60000)}
 
 Un solo oggetto JSON, senza testo attorno:
 
-{"mobile":{"STRADA 1":[60,90,115,140],"STRADA 2":[60,95,135,170]},"fisso":{"STRADA 1":[25,40,50,60,70]},"avvisi":["…"]}
+{"mobile":{"<NOME CLUSTER>":[<soglia1>,<soglia2>,…]},"fisso":{"<NOME CLUSTER>":[<soglia1>,…]},"avvisi":["…"]}
 
 ## Regole
 
-1. **Solo i target di cluster**, mobile e fisso. Niente commissioning, niente premi, niente target di singoli negozi.
-2. **I numeri in ordine di soglia**, dalla 1ª in poi, in cifre.
-3. **Il nome del cluster esattamente come sta nella lettera**, in maiuscolo.
-4. **Se una pista non c'è nella lettera**, lasciala fuori e scrivilo in "avvisi".
-5. **Non inventare.** Se un numero non si legge con certezza, non metterlo e dillo in "avvisi". Un numero inventato qui diventa la soglia sbagliata di un negozio vero.
+1. **DEVI dare una risposta per OGNI cluster di questo elenco**, sia su mobile sia su fisso: ${clusterNoti.join(", ") || "(nessuno)"}. Se uno di questi non lo trovi nella lettera, scrivilo in "avvisi" dicendo quale — non saltarlo in silenzio.
+2. **I nomi dei cluster sono QUELLI DELL'ELENCO SOPRA**, non quelli scritti nella lettera. Nella lettera lo stesso cluster può chiamarsi in un altro modo (per esempio una riga «STRADA» con accanto «Cluster 2» corrisponde a «STRADA 2»): sei tu che devi fare la corrispondenza, e se non sei sicuro non indovinare — dillo in "avvisi".
+3. **Attenzione ai gruppi paralleli.** La stessa lettera può avere più famiglie di cluster (per esempio STRADA e CENTRO COMMERCIALE) con numeri diversi: prendi solo quelli che corrispondono all'elenco.
+4. **Solo i target di cluster**, mobile e fisso. Niente commissioning, niente premi, niente target di singoli negozi.
+5. **I numeri in ordine di soglia**, dalla 1ª in poi, in cifre.
+6. **Non inventare.** Se un numero non si legge con certezza, non metterlo e dillo in "avvisi". Un numero inventato qui diventa la soglia sbagliata di un negozio vero.
 
 Rispondi solo con il JSON.`;
 
@@ -296,7 +348,22 @@ Rispondi solo con il JSON.`;
             tokenInCache: res.usage?.prompt_cache_hit_tokens || 0, esito: "ok",
             userId: g.sess.id, chiamate: 1,
         }).catch(() => {});
-        return NextResponse.json({ cluster: { mobile: d.mobile || {}, fisso: d.fisso || {} }, avvisi: d.avvisi || [] });
+        /* ⚠️ IL MODELLO SALTA DEI CLUSTER, E LO FA IN SILENZIO. Sei letture
+           identiche della stessa lettera: tre complete, tre con solo due
+           cluster su tre e un avviso che dichiarava il falso («la lettera non
+           riporta STRADA 3», mentre c'era). Applicando quella, Magliana
+           restava senza target. Quindi non ci si fida della sua parola: si
+           contano i cluster che servono, e se ne manca uno lo si dice come
+           mancanza VERA, non come nota a piè di pagina. */
+        const trovati = (p: string) => new Set(Object.keys((d as Record<string, Record<string, unknown>>)[p] || {}).map(normCluster));
+        const mancanti: string[] = [];
+        for (const [pista, chiavi] of [["mobile", trovati("mobile")], ["fisso", trovati("fisso")]] as const) {
+            for (const c of clusterNoti) if (!chiavi.has(normCluster(c))) mancanti.push(`${pista}: ${c}`);
+        }
+        return NextResponse.json({
+            cluster: { mobile: d.mobile || {}, fisso: d.fisso || {} },
+            avvisi: d.avvisi || [], mancanti,
+        });
     }
 
     /* ── 5. IL PESO DI UN NEGOZIO ─────────────────────────────────────────
@@ -308,13 +375,21 @@ Rispondi solo con il JSON.`;
        vive per conto suo (Collatina: business a 1 mentre mobile e fisso a 0,5). */
     if (azione === "peso") {
         const id = String(body.id || "");
-        const peso = body.peso === null || body.peso === undefined ? null : Number(body.peso);
+        /* ⚠️ MOBILE E FISSO HANNO IL LORO PESO, e nel file dell'operatore sono
+           due colonne diverse (più una terza per il business, che qui non si
+           tocca: su Collatina vale 1 mentre le altre due stanno a 0,5).
+           Scriverne uno solo per tutti e due ne perdeva uno in silenzio il
+           giorno in cui divergono. */
+        const quale = String(body.quale || "");
+        if (!["mobile", "fisso"].includes(quale)) return NextResponse.json({ error: "Serve sapere quale peso." }, { status: 400 });
+        const colonna = quale === "mobile" ? "peso_mobile" : "peso_fix";
+        const peso = body.peso === null || body.peso === undefined || body.peso === "" ? null : Number(body.peso);
         if (!id) return NextResponse.json({ error: "Serve la riga" }, { status: 400 });
-        if (peso !== null && (!Number.isFinite(peso) || peso < 0 || peso > 1)) {
-            return NextResponse.json({ error: "Il peso è una frazione fra 0 e 1." }, { status: 400 });
+        if (peso !== null && (!Number.isFinite(peso) || !(peso > 0) || peso > 1)) {
+            return NextResponse.json({ error: "Il peso è una frazione MAGGIORE DI ZERO e fino a 1 (0,7 = sconto del 30%). Per togliere un negozio dalla gara si svuota la casella." }, { status: 400 });
         }
         const { data, error } = await supabase.from(TAB)
-            .update({ peso_mobile: peso, peso_fix: peso })
+            .update({ [colonna]: peso })
             .eq("id", id).eq("brand", BRAND).eq("month", month).select("negozio");
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         if (!(data || []).length) return NextResponse.json({ error: "Riga non trovata in questo mese." }, { status: 404 });
