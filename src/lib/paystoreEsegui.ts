@@ -3,6 +3,7 @@ import { ricaricaTelefonica, operazione, listini, prodotti, nuovaChiaveIdempoten
 import type { Credenziale } from "@/lib/paystore";
 import { credenzialeDi } from "@/lib/paystoreCredenziali";
 import { annota } from "@/lib/paystoreEventi";
+import { incassatoPerNumero } from "@/lib/paystoreScontrino";
 
 /* ═══ ESEGUIRE UNA RICARICA ════════════════════════════════════════════════
    Il gesto che eroga il credito, in un posto solo. Lo usano il pulsante
@@ -56,7 +57,7 @@ export type RigaRicarica = {
    funzione SQL restituisce la riga INTERA; le due strade istantanee, che
    selezionano questa lista, ci sono cascate dentro il primo giorno. */
 export const COLONNE_ESEGUI =
-    "id, operatore, numero, importo, stato, idempotency_key, tentativi, rif_fornitore, negozio, azienda, scontrino_stato, nota, ambiente, contract_id";
+    "id, operatore, numero, importo, stato, idempotency_key, tentativi, rif_fornitore, negozio, azienda, scontrino_stato, nota, ambiente, contract_id, creata_il";
 
 export type EsitoEsecuzione =
     | { ok: true; gia?: true; collaudo: boolean; replay: boolean; operationId?: number; receiptId?: string | null; saldo?: number }
@@ -199,36 +200,54 @@ export async function eseguiRicarica(riga: RigaRicarica, opz?: { tetto?: number;
         return { ok: false, errore: "nel frattempo risulta già fatta: non la rifaccio", definitivo: true, stato: 409 };
     }
 
-    /* ⚠️ E UNA RIGA CON UNA GEMELLA NON SI ESEGUE DA SOLA. Misurato il 03/09:
-       in archivio ci sono righe IDENTICHE — stesso contratto, stesso numero,
-       stesso importo, stesso millisecondo — nate dalla vendita normale. Sono
-       due `id`, quindi due chiavi di idempotenza, quindi per PayStore due
-       ricariche diverse: le paga entrambe. Una di quelle coppie è già stata
-       erogata due volte oggi, a sei secondi di distanza.
-       Il motore si ferma; una persona può ancora forzarla dal pannello, ma
-       guardandola. */
-    if (!opz?.daPersona) {
-        /* ⚠️ E SE IL CONTRATTO NON C'È, NON SI TIRA DRITTO. Prima si metteva
-           «__nessuno__» e la ricerca tornava vuota: una protezione che, quando
-           il dato manca, dice «via libera» non è una protezione. Senza
-           contratto non si può escludere una gemella, quindi non si esegue da
-           soli — la fa una persona, guardandola. */
-        const contratto = (riga as { contract_id?: string }).contract_id;
-        if (!contratto) {
-            return {
-                ok: false, definitivo: true, stato: 409,
-                errore: "questa riga non è agganciata a nessuna vendita: non posso escludere che ce ne sia un'altra identica, quindi non la eseguo da solo. Guardala e falla partire a mano.",
-            };
-        }
-        const { count } = await supabase.from("paystore_ricariche")
-            .select("id", { count: "exact", head: true })
-            .eq("contract_id", contratto)
-            .eq("numero", numero).eq("importo", riga.importo).neq("id", riga.id);
-        if ((count || 0) > 0) {
-            await supabase.from("paystore_ricariche").update({
-                errore: "c'è un'altra riga identica su questo scontrino (stesso numero e stesso importo): il motore non la esegue da solo, perché sarebbero due crediti. Guardala e falla partire a mano se è giusta.",
-            }).eq("id", riga.id);
-            return { ok: false, errore: "riga doppia: la eseguo solo a mano", definitivo: true, stato: 409 };
+    /* ═══ NON SI EROGA PIÙ DI QUANTO IL CLIENTE HA PAGATO ══════════════════
+       ⚠️ QUESTA REGOLA HA SOSTITUITO QUELLA DELLE «RIGHE GEMELLE», che
+       sbagliava. Prima: due righe identiche sulla stessa vendita facevano
+       fermare il motore, perché «stesso numero e stesso importo, sarà un doppio
+       clic». Ma comporre un importo con due tagli uguali è il modo NORMALE di
+       vendere quando il taglio esatto non esiste — misurato il 05/09: WindTre
+       non ha il taglio da 12, quindi una ricarica da 12 € si vende come 6+6.
+       Lo scontrino diceva «RICARICA WINDTRE 12», il cliente aveva pagato 12, e
+       il CRM si fermava chiedendo a una persona di guardare. Ogni volta, su
+       ogni composizione: 6+6, 10+10, 11+11.
+
+       La domanda giusta non è «ci sono due righe uguali» ma «sto per erogare
+       più di quanto è stato incassato». La risposta ce l'ha lo scontrino, che
+       porta stampato importo e numero: si somma quello che risulta pagato su
+       quel numero e non lo si supera mai.
+
+       ⚠️ E SE IL DOCUMENTO NON SI TROVA, il motore non tira a indovinare: si
+       ferma e lo passa a una persona. «Non lo so» non autorizza a erogare. */
+    if (!opz?.daPersona && !opz?.forza) {
+        const pagato = await incassatoPerNumero(riga.negozio, numero, (riga as { creata_il?: string }).creata_il || new Date().toISOString(), riga.azienda);
+        if (pagato == null) {
+            const { count } = await supabase.from("paystore_ricariche")
+                .select("id", { count: "exact", head: true })
+                .eq("contract_id", (riga as { contract_id?: string }).contract_id || "__nessuno__")
+                .eq("numero", numero).neq("id", riga.id);
+            /* nessun documento: si passa a mano SOLO se c'è davvero un rischio
+               di doppio, cioè se sullo stesso scontrino c'è un'altra riga per lo
+               stesso numero. Da sola, senza gemelle, la ricarica può partire —
+               era già così prima. */
+            if ((count || 0) > 0) {
+                await supabase.from("paystore_ricariche").update({
+                    errore: "ci sono più ricariche per questo numero sulla stessa vendita e non trovo lo scontrino: non so quanto è stato incassato, quindi non erogo da solo. Guardala e falla partire a mano.",
+                }).eq("id", riga.id);
+                return { ok: false, errore: "non trovo lo scontrino e ci sono più righe sullo stesso numero: la eseguo solo a mano", definitivo: true, stato: 409 };
+            }
+        } else {
+            /* quanto è GIÀ uscito su quel numero, per questa vendita */
+            const { data: gia } = await supabase.from("paystore_ricariche")
+                .select("importo").eq("numero", numero)
+                .eq("contract_id", (riga as { contract_id?: string }).contract_id || "__nessuno__")
+                .not("rif_fornitore", "is", null).neq("id", riga.id);
+            const erogato = ((gia || []) as { importo: number }[]).reduce((t, x) => t + Number(x.importo || 0), 0);
+            if (erogato + Number(riga.importo) > pagato + 0.005) {
+                await supabase.from("paystore_ricariche").update({
+                    errore: `sullo scontrino risultano ${pagato.toFixed(2)} € di ricarica su questo numero e ne sono già usciti ${erogato.toFixed(2)}: altri ${Number(riga.importo).toFixed(2)} € sarebbero più di quanto il cliente ha pagato. Non erogo.`,
+                }).eq("id", riga.id);
+                return { ok: false, errore: `supererebbe l'incassato: ${pagato.toFixed(2)} € sullo scontrino, ${erogato.toFixed(2)} € già erogati`, definitivo: true, stato: 409 };
+            }
         }
     }
 

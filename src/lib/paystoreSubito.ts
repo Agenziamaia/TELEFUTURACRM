@@ -71,7 +71,7 @@ export async function ricaricheAppenaScritte(ids: string[]): Promise<void> {
         const tettoCorsa = Number.isFinite(c) && c >= 10 && c <= 5000 ? Math.round(c) : 200;
 
         const { data: righe } = await supabase.from("paystore_ricariche")
-            .select(COLONNE_ESEGUI + ", creata_il").in("id", ids.slice(0, 20)).eq("stato", "sospeso").limit(20);
+            .select(COLONNE_ESEGUI).in("id", ids.slice(0, 20)).eq("stato", "sospeso").limit(20);
         let erogato = 0;
         for (const r of ((righe || []) as unknown as (RigaRicarica & { negozio: string | null; nota: string | null; creata_il: string })[])) {
             if (String(r.nota || "").toUpperCase().includes("SOSPESO")) continue;
@@ -150,7 +150,7 @@ export async function ricaricheDelloScontrino(jobId: string): Promise<void> {
 
         const t = new Date(job.created_at).getTime();
         const { data: righe } = await supabase.from("paystore_ricariche")
-            .select(COLONNE_ESEGUI + ", creata_il")
+            .select(COLONNE_ESEGUI)
             .eq("stato", "sospeso")
             .gte("creata_il", new Date(t - 15 * 60000).toISOString())
             .lte("creata_il", new Date(t + 5 * 60000).toISOString())
