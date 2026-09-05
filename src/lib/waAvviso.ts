@@ -10,6 +10,7 @@
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaTesto } from "@/lib/evolution";
 import { trovaOCreaConversazione } from "@/lib/waConversazioni";
+import { scegliMittente } from "@/lib/waMittente";
 
 export type EsitoAvviso = {
     ok: boolean;
@@ -29,7 +30,7 @@ const connessa = (i: { status?: string | null }) => String(i.status || "").toLow
  * @param numero destinatario, in qualunque formato (si tengono le sole cifre)
  * @param testo  il messaggio
  */
-export async function avvisaSuWhatsApp(numero: string, testo: string): Promise<EsitoAvviso> {
+export async function avvisaSuWhatsApp(numero: string, testo: string, negozio?: string | null): Promise<EsitoAvviso> {
     const dig = String(numero || "").replace(/\D/g, "");
     const msg = String(testo || "").trim();
     if (dig.length < 6 || !msg) return { ok: false, errore: "numero o testo mancanti" };
@@ -37,20 +38,17 @@ export async function avvisaSuWhatsApp(numero: string, testo: string): Promise<E
     /* DA QUALE NUMERO ESCE (Luca 27/08): c'è un MITTENTE DESIGNATO scelto dal
        pannello WhatsApp; la scelta a caso resta solo come rete di sicurezza, e
        viene detta a chi chiama. */
+    /* ⚠️ LA STESSA REGOLA DELLA ROTTA, e da un posto solo. Questa copia
+       serviva i lavori automatici (l'allarme delle casse) e aveva la sua
+       euristica di ripiego incollata: cambiando solo la rotta, il cron avrebbe
+       continuato a spedire da un numero a caso. Ora la scelta del mittente
+       vive in `lib/waMittente.ts` e la usano tutti e due. */
     const { data: insts } = await supabase.from("wa_instances")
-        .select("id, instance_name, status, mittente_notifiche, display_name")
+        .select("id, instance_name, status, mittente_notifiche, display_name, negozio, owner_user_id")
         .order("created_at", { ascending: false });
-    const designato = (insts ?? []).find((i) => i.mittente_notifiche);
-    const ripiego = (insts ?? []).find(connessa) || null;
-    const inst = designato && connessa(designato) ? designato : ripiego;
-    if (!inst) {
-        return {
-            ok: false,
-            errore: designato
-                ? `il numero designato per le notifiche («${designato.display_name || designato.instance_name}») non è collegato, e non c'è nessun altro numero connesso`
-                : "nessun numero WhatsApp collegato al CRM",
-        };
-    }
+    const scelta = scegliMittente((insts ?? []) as never[], negozio);
+    if ("errore" in scelta) return { ok: false, errore: scelta.errore };
+    const inst = scelta.inst;
 
     const { conv, error: convErr } = await trovaOCreaConversazione(inst.id, dig);
     if (convErr || !conv) return { ok: false, errore: "conversazione non creata: " + (convErr || "?") };
@@ -74,7 +72,8 @@ export async function avvisaSuWhatsApp(numero: string, testo: string): Promise<E
     if (stato === "failed") return { ok: false, errore: "invio non riuscito (istanza disconnessa?)" };
     return {
         ok: true, conversationId: conv.id,
-        ripiegato: !designato || !connessa(designato),
+        // niente più ripiego: o esce dal numero giusto, o non esce
+        ripiegato: false,
         mittente: inst.display_name || inst.instance_name,
     };
 }

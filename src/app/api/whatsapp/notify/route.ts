@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { accesso } from "@/lib/permessiServer";
 import { supabaseAdmin as supabase } from "@/lib/supabaseAdmin";
 import { inviaTesto } from "@/lib/evolution";
+import { scegliMittente } from "@/lib/waMittente";
 import { trovaOCreaConversazione } from "@/lib/waConversazioni";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const _s = _g.sess;
 
     try {
-        const { number, text } = await request.json();
+        const { number, text, negozio } = await request.json();
         const dig = String(number || "").replace(/\D/g, "");
         const testo = String(text || "").trim();
         if (dig.length < 6 || !testo) {
@@ -36,23 +37,20 @@ export async function POST(request: Request) {
         // MITTENTE DESIGNATO, scelto dal pannello WhatsApp; la scelta a caso
         // resta solo come rete di sicurezza, e viene detta nella risposta.
         const { data: insts } = await supabase.from("wa_instances")
-            .select("id, instance_name, status, mittente_notifiche, display_name")
+            .select("id, instance_name, status, mittente_notifiche, display_name, negozio, owner_user_id")
             .order("created_at", { ascending: false });
-        // ⚠️ NON `includes("conness")`: «disconnessa» lo contiene, quindi un
-        // numero caduto risultava collegato e il ripiego non scattava mai
-        // (rilievo del revisore, 27/08). Confronto esatto, come in send-template.
-        const connessa = (i: { status?: string | null }) => String(i.status || "").toLowerCase() === "connessa";
-        const designato = (insts ?? []).find((i) => i.mittente_notifiche);
-        const ripiego = (insts ?? []).find(connessa) || null;
-        const inst = designato && connessa(designato) ? designato : ripiego;
-        if (!inst) {
-            return NextResponse.json({
-                error: designato
-                    ? `il numero designato per le notifiche («${designato.display_name || designato.instance_name}») non è collegato, e non c'è nessun altro numero connesso`
-                    : "nessun numero WhatsApp collegato al CRM",
-            }, { status: 400 });
-        }
-        const ripiegato = !designato || !connessa(designato);
+        /* ⚠️ IL RIPIEGO NON C'È PIÙ, ed è il punto (Luca 05/09). Prima, se il
+           numero designato era caduto, si prendeva «una connessa qualsiasi, la
+           più recente» — che oggi sarebbe il cellulare personale di un
+           collega. Il cliente riceveva da un numero sconosciuto, rispondeva
+           là, e chi aveva fatto il lavoro non vedeva più niente.
+           Adesso: col negozio si esce dal numero DI QUEL NEGOZIO o non si esce
+           affatto. Senza negozio (avvisi interni, allarmi cassa) vale il
+           designato, e se è caduto si dice. */
+        const scelta = scegliMittente((insts ?? []) as never[], negozio);
+        if ("errore" in scelta) return NextResponse.json({ error: scelta.errore }, { status: 400 });
+        const inst = scelta.inst;
+        const ripiegato = false;
 
         // trova o crea la conversazione per il numero — helper CONDIVISO con
         // send-template: un'unica euristica coda-cifre, mai piu' copie divergenti

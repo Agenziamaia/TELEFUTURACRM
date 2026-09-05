@@ -1337,7 +1337,7 @@ function PassoFirma({ cliente, firma, onCambia, protocollo, modulo }: {
             if (j.whatsapp && j.whatsapp.numero) {
                 const w = await fetch("/api/whatsapp/notify", {
                     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ number: j.whatsapp.numero, text: j.whatsapp.testo }),
+                    body: JSON.stringify({ number: j.whatsapp.numero, text: j.whatsapp.testo, negozio: j.whatsapp.negozio }),
                 }).then((x) => x.json()).catch(() => ({ error: "rete" }));
                 if (w?.error) setErrFirma("La richiesta è pronta, ma il messaggio WhatsApp non è partito (" + w.error + "): usa il link qui sotto.");
             }

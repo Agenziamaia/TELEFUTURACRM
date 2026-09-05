@@ -544,6 +544,11 @@ export async function POST(req: Request) {
            finisce nello storico delle chat come ogni altro messaggio */
         whatsapp: canale === "whatsapp" ? {
             numero: cell,
+            /* ⚠️ IL NEGOZIO VIAGGIA COL MESSAGGIO. Il link di firma va a un
+               CLIENTE, e il cliente risponde al numero da cui l'ha ricevuto:
+               se parte da un altro negozio, la risposta la legge quello — e
+               chi ha fatto la pratica non la vede mai. */
+            negozio: d.negozio,
             testo: `Buongiorno, sono ${d.negozio} di Telefutura.\n\n${d.apertura.charAt(0).toUpperCase() + d.apertura.slice(1)}\n${link || ""}\n\nAprendo il link riceverà un codice di verifica sulla sua email (${email}): lo digiti e potrà leggere e firmare. Le firme sono DUE — la seconda riguarda le clausole della sezione 7.\n\nGrazie!`,
         } : null,
     });
