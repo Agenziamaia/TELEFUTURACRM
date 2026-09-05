@@ -260,8 +260,14 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const brand = url.searchParams.get("brand") || "";
     const month = meseIso(url.searchParams.get("month") || "");
+    /* ⚠️ UNA PROPOSTA SCARTATA NON SI RIVEDE (Luca 05/09: «quando ne scarto una
+       non devo più vederla»). Scartare è una decisione presa: se resta a
+       schermo, ogni volta che apri la pagina devi ricordarti perché l'avevi
+       buttata, e in mezzo a quelle vecchie non trovi più quella nuova. La riga
+       resta a database — serve a ricostruire cosa è stato deciso e quanto è
+       costato — ma qui non torna. */
     const { data } = await supabase.from("gare_ai_proposte")
-        .select("*").eq("brand", brand).eq("month", month)
+        .select("*").eq("brand", brand).eq("month", month).neq("stato", "scartata")
         .order("created_at", { ascending: false }).limit(20);
     return NextResponse.json({ proposte: data || [] });
 }
