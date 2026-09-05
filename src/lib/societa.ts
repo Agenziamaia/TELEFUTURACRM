@@ -12,7 +12,14 @@
 
 import { supabase } from "@/lib/supabaseClient";
 
-export type Societa = { nome: string; piva: string; sede: string };
+export type Societa = {
+    /* ⚠️ IL CODICE VIAGGIA CON IL NOME. Serve per scrivere `azienda_acquisto`
+       sull'usato: chi compra è già deciso quando si intesta la dichiarazione, e
+       fino al 05/09 quel dato veniva stampato sul documento firmato dal cliente
+       e poi buttato via. Tenerli separati vorrebbe dire dedurlo di nuovo. */
+    codice: string;
+    nome: string; piva: string; sede: string;
+};
 
 const cache = new Map<string, Societa | null>();
 
@@ -32,6 +39,7 @@ export async function societaDelNegozio(negozio: string): Promise<Societa | null
     if (!a || !a.ragione_sociale) return null;
 
     const s: Societa = {
+        codice,
         nome: a.ragione_sociale,
         piva: a.piva || "",
         sede: [a.sede, [a.cap, a.citta].filter(Boolean).join(" "), a.provincia ? `(${a.provincia})` : ""].filter(Boolean).join(", "),

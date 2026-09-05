@@ -2678,6 +2678,15 @@ function GestioneUsatiInner() {
       // MOD-34: fotografia IMMUTABILE del negozio che compra — store cambia
       // coi movimenti (invio/trasferimenti), questo no
       store_acquisto: data.negozio,
+      /* ⚠️ CHI COMPRA STA GIÀ SULLA DICHIARAZIONE CHE IL CLIENTE FIRMA, e fino
+         a oggi non lo scrivevamo da nessuna parte. Luca 05/09: «come fanno a
+         esserci usati comprati col CRM dove non sai la società? Abbiamo fatto
+         la dichiarazione di vendita dal CRM…». Appunto: `societaDelNegozio` la
+         decide per intestare il documento, il cliente lo firma, e poi il campo
+         restava vuoto — così dal 1° settembre NESSUN usato comprato aveva la
+         società, proprio nel primo mese che va al commercialista.
+         Non si deduce niente: si copia quello che c'è scritto sul documento. */
+      azienda_acquisto: (await societaDelNegozio(data.negozio))?.codice || null,
       target_store: null,
       purchase_date: now.toISOString(),
       listed_date: null,
