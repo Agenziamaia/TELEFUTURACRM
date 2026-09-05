@@ -96,6 +96,12 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     const [selAcc, setSelAcc] = useState<string | null>(null);
     const [convs, setConvs] = useState<Conv[]>([]);
     const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+    /* ⚠️ E QUALI HANNO RICEVUTO QUALCOSA. Serve per non far comparire in
+       «Posta in arrivo» un thread che abbiamo aperto NOI e a cui nessuno ha
+       ancora risposto: quello sta nelle Inviate, e basta. (Luca 05/09: «ho
+       mandato un'email a me stesso da Donna Olimpia e me la ritrovo anche
+       nella posta in arrivo di Donna Olimpia».) */
+    const [inIds, setInIds] = useState<Set<string>>(new Set());
     const [drafts, setDrafts] = useState<Draft[]>([]);
     const [folder, setFolder] = useState<FolderId>("inbox");
     const [selConv, setSelConv] = useState<Conv | null>(null);
@@ -340,6 +346,10 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
             supabase.from("email_messages").select("conversation_id").eq("account_id", selAcc).eq("direction", "out")
                 .order("id").range(from, to))
             .then(({ data }) => { if (alive) setSentIds(new Set(data.map(r => r.conversation_id))); });
+        caricaTutte<{ conversation_id: string }>((from, to) =>
+            supabase.from("email_messages").select("conversation_id").eq("account_id", selAcc).eq("direction", "in")
+                .order("id").range(from, to))
+            .then(({ data }) => { if (alive) setInIds(new Set(data.map(r => r.conversation_id))); });
         return () => { alive = false; };
     }, [selAcc, convs.length]);
 
@@ -619,7 +629,14 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
     const nomeConv = (c: Conv) => c.customer_name || c.customer_email;
     const inFolder = useMemo(() => {
         switch (folder) {
-            case "inbox": return convs.filter(c => !c.trashed && !c.spam && !c.archived);
+            /* ⚠️ IN ARRIVO VUOL DIRE ARRIVATO. Un thread aperto da noi e senza
+               risposte non è posta in arrivo: è una nostra mail, e sta nelle
+               Inviate. Appena il cliente risponde, la conversazione compare
+               qui — con la sua risposta dentro, che è quello che uno cerca.
+               Finché `inIds` non è arrivato non si filtra: nasconderebbe
+               tutto per un istante, e su una casella piena si vedrebbe. */
+            case "inbox": return convs.filter(c => !c.trashed && !c.spam && !c.archived
+                && (!inIds.size || inIds.has(c.id) || !sentIds.has(c.id)));
             case "starred": return convs.filter(c => c.starred && !c.trashed && !c.spam);
             case "sent": return convs.filter(c => sentIds.has(c.id) && !c.trashed && !c.spam);
             case "spam": return convs.filter(c => c.spam && !c.trashed);
@@ -627,11 +644,12 @@ export function EmailInbox({ embedded = false, componiA = null, apriConvId = nul
             case "nonutili": return [];   // vista dedicata: elenco regole, non conversazioni
             default: return convs;
         }
-    }, [convs, folder, sentIds]);
+    }, [convs, folder, sentIds, inIds]);
     const q = search.trim().toLowerCase();
     const shown = q ? inFolder.filter(c => `${nomeConv(c)} ${c.customer_email} ${c.subject || ""} ${c.last_preview || ""}`.toLowerCase().includes(q)) : inFolder;
     const draftsShown = q ? drafts.filter(d => `${d.to_addr || ""} ${d.subject || ""} ${d.body || ""}`.toLowerCase().includes(q)) : drafts;
-    const inboxUnread = convs.filter(c => !c.trashed && !c.spam && !c.archived).reduce((a, c) => a + (c.unread || 0), 0);
+    const inboxUnread = convs.filter(c => !c.trashed && !c.spam && !c.archived
+        && (!inIds.size || inIds.has(c.id) || !sentIds.has(c.id))).reduce((a, c) => a + (c.unread || 0), 0);
     const spamCount = convs.filter(c => c.spam && !c.trashed).length;
     // il Cestino mostra quante conversazioni contiene (EML-03: "non vedo le
     // mail nel cestino" — il numero sul rail rende subito visibile l'import)
