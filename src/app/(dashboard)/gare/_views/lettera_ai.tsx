@@ -42,6 +42,29 @@ const numIt = (v) => (v === null || v === undefined || v === "" ? "—" :
     typeof v === "number" ? String(v).replace(".", ",") : String(v));
 
 const ICONA = { aggiorna: PencilLine, aggiungi: Plus, rimuovi: Minus };
+
+/* ⚠️ DUE MODELLI DI DATI, NON UNO (Luca 05/09: «ma stai scherzando? Vodafone
+   lato azienda ha tutto anche su Agosto»). WindTre ha il suo motore dedicato,
+   `gare_azienda_piste`; tutti gli altri operatori vivono su `pay_piste` con la
+   colonna `lato`. E il brand cambia pure nome: la pagina dice «vs», il
+   database dice «vodafone». Cercando «vs» in `gare_azienda_piste` non arriva
+   un errore — arrivano ZERO righe, ed è così che questa card ha sostenuto per
+   un giorno che Vodafone non era mai stato impostato mentre aveva 8 piste su
+   agosto. Le divisioni di gara sono una cosa di WindTre soltanto. */
+const MODELLO_DI = (brand) => (String(brand) === "w3" ? "gare" : "pay");
+const BRAND_DB = { vs: "vodafone", w3: "windtre" };
+const dovePiste = (brand) => MODELLO_DI(brand) === "gare"
+    ? { tabella: "gare_azienda_piste", brand, lato: null, divisioni: true }
+    : { tabella: "pay_piste", brand: BRAND_DB[brand] || brand, lato: "azienda", divisioni: false };
+const copiaMese = (brand, da, a) => {
+    const D = dovePiste(brand);
+    return D.divisioni
+        ? supabase.rpc("gare_copy_month", { p_brand: D.brand, p_from: da, p_to: a, p_livello: "azienda" })
+        /* su pay_* si copia SOLO il lato azienda: questa card è la sua, e il
+           lato ragazzi si prepara dalla sua scheda — con le percentuali di
+           proporzione che la funzione adesso si porta dietro (Luca 04/09). */
+        : supabase.rpc("pay_copy_month", { p_brand: D.brand, p_from: da, p_to: a, p_lato: "azienda" });
+};
 const COLORE = { aggiorna: "text-amber-300", aggiungi: "text-emerald-300", rimuovi: "text-rose-300" };
 
 const NOME_DIV = { franchising: "Franchising", multibrand: "Multibrand", multibrand_t2: "Multibrand T2 / Dealer" };
@@ -116,12 +139,16 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto =
        card non compariva più — proprio il caso che non deve succedere. */
     const carica = async () => {
         try {
-            const [ora, prima] = await Promise.all([
-                supabase.from("gare_azienda_piste").select("id,gara").eq("brand", brand).eq("month", month),
-                supabase.from("gare_azienda_piste").select("id").eq("brand", brand).eq("month", prevMonth).limit(1),
-            ]);
+            const D = dovePiste(brand);
+            const chiedi = (m, limite) => {
+                let q = supabase.from(D.tabella).select(D.divisioni ? "id,gara" : "id")
+                    .eq("brand", D.brand).eq("month", m);
+                if (D.lato) q = q.eq("lato", D.lato);
+                return limite ? q.limit(1) : q;
+            };
+            const [ora, prima] = await Promise.all([chiedi(month, false), chiedi(prevMonth, true)]);
             setStatoMese({ vuoto: !(ora.data || []).length, prevHas: !!(prima.data || []).length });
-            setDivisioni([...new Set((ora.data || []).map((p) => p.gara).filter(Boolean))]);
+            setDivisioni(D.divisioni ? [...new Set((ora.data || []).map((p) => p.gara).filter(Boolean))] : []);
         } catch { setStatoMese({ vuoto: true, prevHas: false }); }
         try {
             const d = await fetch(`/api/ai/gare-lettera?brand=${brand}&month=${month}`, { credentials: "include", cache: "no-store" }).then((r) => r.json());
@@ -131,7 +158,7 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto =
 
     const copiaMesePrima = async () => {
         setCopiando(true); setErrore("");
-        const { error } = await supabase.rpc("gare_copy_month", { p_brand: brand, p_from: prevMonth, p_to: month, p_livello: "azienda" });
+        const { error } = await copiaMese(brand, prevMonth, month);
         if (error) setErrore("Copia non riuscita: " + error.message);
         await carica();
         setCopiando(false);
@@ -170,7 +197,7 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto =
                accorgevi dopo un minuto di lettura del PDF. */
             if (statoMese?.vuoto) {
                 setLavoro(`Preparo la base con ${meseIt(prevMonth)}…`);
-                const { error } = await supabase.rpc("gare_copy_month", { p_brand: brand, p_from: prevMonth, p_to: month, p_livello: "azienda" });
+                const { error } = await copiaMese(brand, prevMonth, month);
                 if (error) throw new Error(`non sono riuscito a copiare ${meseIt(prevMonth)} come base: ${error.message}`);
                 setStatoMese((v) => ({ ...v, vuoto: false }));
                 if (onFatto) onFatto();
@@ -180,7 +207,7 @@ export function LetteraAI({ brand, month, colore = "var(--tf-818cf8)", onFatto =
                rileggerlo, il riconoscimento dal nome del file non scatterebbe
                MAI sulla prima lettura di un mese nuovo — cioè proprio quella. */
             let elenco = divisioni;
-            if (!elenco.length) {
+            if (!elenco.length && dovePiste(brand).divisioni) {
                 const { data } = await supabase.from("gare_azienda_piste").select("gara").eq("brand", brand).eq("month", month);
                 elenco = [...new Set((data || []).map((x) => x.gara).filter(Boolean))];
                 setDivisioni(elenco);

@@ -15,99 +15,247 @@
    mi dice e non posso nemmeno andare avanti, altrimenti rischio di fare
    danni.» */
 
-export const TAB = {
-    piste: "gare_azienda_piste",
-    soglie: "gare_azienda_soglie",
-    voci: "gare_azienda_voci",
-    regole: "gare_azienda_regole",
-} as const;
-export type NomeTab = keyof typeof TAB;
-export const TABELLE: NomeTab[] = ["piste", "soglie", "voci", "regole"];
+/* ── DUE MODELLI, NON UNO (05/09/2026) ────────────────────────────────────
+   WindTre ha un motore suo — `gare_azienda_piste/soglie/voci/regole` — nato
+   per le sue divisioni (franchising, multibrand, multibrand_t2), i suoi
+   cluster e i suoi paletti. TUTTI GLI ALTRI operatori (Vodafone, Fastweb,
+   Sky, S4) vivono invece in `pay_piste / pay_soglie / pay_righe`, dove la
+   stessa tabella tiene sia il lato azienda sia quello dei ragazzi, distinti
+   dalla colonna `lato`, e dove il commissioning sta in un ARRAY di importi
+   per soglia (`pay_tiers`) invece che in una riga per soglia.
 
-export const CAMPI: Record<NomeTab, string[]> = {
-    piste: ["gara", "codice", "nome", "descrizione", "sort_order"],
-    soglie: ["pista", "scope", "cluster", "store_name", "tier", "soglia_valore", "soglia_um",
-             "reward_tipo", "reward_valore", "reward_um", "reward_descr", "note"],
-    voci: ["pista", "nome", "tipo", "valore", "um", "condizione", "scope", "tier", "note"],
-    regole: ["pista", "tipo", "condizione", "effetto", "valore", "um", "bersaglio", "scope", "note"],
+   Sono due schemi davvero diversi, non due nomi per la stessa cosa. Il
+   setaccio però deve restare UNO: le regole su cosa è verificabile, cosa è un
+   vero cambiamento e come si legge in italiano non possono esistere in due
+   copie che divergono. Quindi qui c'è la forma di ogni modello, e tutto il
+   resto del file la legge da questa mappa. */
+export type NomeModello = "gare" | "pay";
+
+type Schema = {
+    tab: Record<string, string>;
+    tabelle: string[];
+    /** il campo con cui una pista si chiama: `codice` su W3, `chiave` su pay */
+    rifPista: string;
+    /** la colonna con cui si ordina: `sort_order` su W3, `ordine` su pay */
+    ordinaPer: string;
+    /** il brand con cui le righe stanno scritte a database, dato quello della
+     *  pagina: W3 si chiama «w3» di là e di qua, gli altri no (vs → vodafone) */
+    brandDb: (brandPagina: string) => string;
+    /** ha le divisioni di gara (solo W3) */
+    conDivisioni: boolean;
+    /** la colonna che separa azienda e ragazzi, se esiste */
+    colonnaLato?: string;
+    campi: Record<string, string[]>;
+    chiave: Record<string, string[]>;
+    numerici: Record<string, string[]>;
+    /** colonne `numeric[]`: una fila di importi, uno per soglia */
+    liste: Record<string, string[]>;
+    booleani: Record<string, string[]>;
+    obbligatori: Record<string, string[]>;
+    conDefault: Record<string, string[]>;
+    ammessi: Record<string, Record<string, string[]>>;
+    senzaPista: string[];
+    principale: Record<string, { campo: string; um?: string; come?: string }[]>;
+    identita: (tab: string, r: Riga) => string;
+    etichetta: (tab: string, r: Riga) => string;
+    /** come si presenta al modello, in italiano */
+    descrizione: string;
 };
 
-/* I CAMPI CHE VALGONO SOLDI. Una descrizione riscritta meglio e un target che
-   passa da 39 a 42 punti non sono la stessa cosa: il primo è cosmesi, il
-   secondo è lo stipendio di chi lavora in quel negozio. Da qui la card spunta
-   di default solo il primo gruppo, e l'altro resta chiuso e spento. */
-export const CAMPI_CHIAVE: Record<NomeTab, string[]> = {
-    piste: [],                                   // una pista in sé non porta numeri
-    soglie: ["soglia_valore", "reward_valore", "soglia_um", "reward_um", "reward_tipo", "tier"],
-    voci: ["valore", "tipo", "um"],
-    regole: ["valore", "effetto", "um"],
-};
+const senzaAccentiPre = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const nrm = (v: unknown) => senzaAccentiPre(v).toLowerCase().replace(/\s+/g, " ").trim();
+const vuotoPre = (v: unknown) => v === null || v === undefined || v === "";
 
-/* ── COM'È FATTA DAVVERO LA TABELLA NEL DATABASE ──────────────────────────
-   Il modello scrive JSON: per lui «42», «42.0» e «quarantadue» si somigliano.
-   Il database no. Questi tre elenchi ricalcano lo schema vero (verificato su
-   information_schema il 04/09) e servono a NON far arrivare al `insert`/`update`
-   qualcosa che la colonna non accetta:
-
-   - NUMERICI: colonne `numeric`/`integer`. Un testo che non è un numero qui
-     dentro non si scrive: si scarta e lo si dice. E il valore buono ci arriva
-     GIÀ come numero, non come stringa — «1.000» scritto all'italiana verrebbe
-     letto da Postgres come UNO, non come mille.
-   - INTERI: dentro i numerici, quelli che non ammettono decimali (tier).
-   - OBBLIGATORI: le colonne NOT NULL SENZA valore di default. Un'aggiunta a cui
-     manca una di queste non si può scrivere: meglio un avviso adesso che un
-     errore rosso in fondo all'elenco.
-   Le NOT NULL che un default ce l'hanno (scope, soglia_um, gara) si lasciano
-   fuori: se il modello non le scrive, ci pensa il database. */
-const NUMERICI: Record<NomeTab, string[]> = {
-    piste: ["sort_order"],
-    soglie: ["tier", "soglia_valore", "reward_valore"],
-    voci: ["valore", "tier"],
-    regole: ["valore"],
-};
-const INTERI = new Set(["tier", "sort_order"]);
-/* ⚠️ ANCHE I CHECK NUMERICI SONO REGOLE, non dettagli. `gare_azienda_soglie`
-   pretende `tier >= 1`: uno zero passava tutti i controlli, entrava nel
-   riassunto, nasceva spuntato e moriva solo alla scrittura — cioè nel momento
-   peggiore, a metà di un'applicazione già cominciata. Si ferma prima. */
-const MINIMI: Record<string, number> = { tier: 1, sort_order: 0 };
-const OBBLIGATORI: Record<NomeTab, string[]> = {
-    piste: ["codice", "nome"],
-    soglie: ["pista", "tier", "soglia_valore"],
-    voci: ["pista", "nome", "tipo"],
-    regole: ["tipo", "condizione", "effetto"],
-};
-/* le NOT NULL con default: se arrivano a null vanno TOLTE, così il default
-   fa il suo lavoro invece di far fallire l'inserimento */
-const CON_DEFAULT: Record<NomeTab, string[]> = {
-    piste: ["gara"],
-    soglie: ["scope", "soglia_um"],
-    voci: ["scope"],
-    regole: ["scope"],
-};
-/* ⚠️ LE PAROLE AMMESSE, quelle del CHECK vero (lette da pg_constraint il
-   04/09). Il modello scrive quello che gli sembra sensato — «euro», «cluster»,
-   «cap» — e la riga passava tutti i controlli, entrava nel riassunto, veniva
-   spuntata, e falliva SOLO al momento della scrittura, in fondo all'elenco,
-   come errore rosso. Meglio scartarla subito dicendo perché. */
-const AMMESSI: Record<NomeTab, Record<string, string[]>> = {
-    piste: { gara: ["franchising", "multibrand", "multibrand_t2"] },
-    soglie: {
-        scope: ["pdv", "ragione_sociale"],
-        reward_tipo: ["bonus", "moltiplicatore", "pay", "sblocco"],
+/* ═══ MODELLO «gare» — WindTre ═══════════════════════════════════════════ */
+const GARE: Schema = {
+    tab: {
+        piste: "gare_azienda_piste",
+        soglie: "gare_azienda_soglie",
+        voci: "gare_azienda_voci",
+        regole: "gare_azienda_regole",
     },
-    voci: {
-        scope: ["pdv", "ragione_sociale"],
-        tipo: ["punti", "gettone", "bonus", "moltiplicatore", "pay_ricorrente"],
+    tabelle: ["piste", "soglie", "voci", "regole"],
+    rifPista: "codice",
+    ordinaPer: "sort_order",
+    brandDb: (b) => b,
+    conDivisioni: true,
+    campi: {
+        piste: ["gara", "codice", "nome", "descrizione", "sort_order"],
+        soglie: ["pista", "scope", "cluster", "store_name", "tier", "soglia_valore", "soglia_um",
+                 "reward_tipo", "reward_valore", "reward_um", "reward_descr", "note"],
+        voci: ["pista", "nome", "tipo", "valore", "um", "condizione", "scope", "tier", "note"],
+        regole: ["pista", "tipo", "condizione", "effetto", "valore", "um", "bersaglio", "scope", "note"],
     },
-    regole: {
-        scope: ["pdv", "ragione_sociale"],
-        tipo: ["malus", "gate", "storno"],
+    /* I CAMPI CHE VALGONO SOLDI. Una descrizione riscritta meglio e un target
+       che passa da 39 a 42 punti non sono la stessa cosa: il primo è cosmesi,
+       il secondo è lo stipendio di chi lavora in quel negozio. Da qui la card
+       spunta di default solo il primo gruppo, e l'altro resta chiuso. */
+    chiave: {
+        piste: [],
+        soglie: ["soglia_valore", "reward_valore", "soglia_um", "reward_um", "reward_tipo", "tier"],
+        voci: ["valore", "tipo", "um"],
+        regole: ["valore", "effetto", "um"],
     },
+    numerici: {
+        piste: ["sort_order"],
+        soglie: ["tier", "soglia_valore", "reward_valore"],
+        voci: ["valore", "tier"],
+        regole: ["valore"],
+    },
+    liste: { piste: [], soglie: [], voci: [], regole: [] },
+    booleani: { piste: [], soglie: [], voci: [], regole: [] },
+    obbligatori: {
+        piste: ["codice", "nome"],
+        soglie: ["pista", "tier", "soglia_valore"],
+        voci: ["pista", "nome", "tipo"],
+        regole: ["tipo", "condizione", "effetto"],
+    },
+    conDefault: {
+        piste: ["gara"],
+        soglie: ["scope", "soglia_um"],
+        voci: ["scope"],
+        regole: ["scope"],
+    },
+    ammessi: {
+        piste: { gara: ["franchising", "multibrand", "multibrand_t2"] },
+        soglie: { scope: ["pdv", "ragione_sociale"], reward_tipo: ["bonus", "moltiplicatore", "pay", "sblocco"] },
+        voci: { scope: ["pdv", "ragione_sociale"], tipo: ["punti", "gettone", "bonus", "moltiplicatore", "pay_ricorrente"] },
+        regole: { scope: ["pdv", "ragione_sociale"], tipo: ["malus", "gate", "storno"] },
+    },
+    senzaPista: ["regole"],
+    principale: {
+        piste: [],
+        soglie: [{ campo: "soglia_valore", um: "soglia_um" }, { campo: "reward_valore", um: "reward_um", come: "premio" }],
+        voci: [{ campo: "valore", um: "um" }],
+        regole: [{ campo: "valore", um: "um" }],
+    },
+    /* ⚠️ LE VOCI NON SONO UN ELENCO, SONO UNA MATRICE: la stessa voce esiste
+       una volta per SOGLIA («GA base» vale 0,5 in 1ª, 1,0 in 2ª, 1,5 in 3ª —
+       venti gruppi così a settembre). Con la chiave «pista + nome» le celle
+       dalla seconda in poi sarebbero state scartate come «già presente»: la
+       voce nuova sarebbe nata solo con la 1ª soglia, e dalla 2ª in poi avrebbe
+       pagato ZERO senza che nessuno lo vedesse. Il `tier` fa parte
+       dell'identità, e con lui la condizione e lo scope. */
+    identita: (tab, r) => {
+        if (tab === "piste") return nrm(r.codice);
+        if (tab === "soglie") return [nrm(r.pista), nrm(r.scope), nrm(r.cluster), nrm(r.store_name), nrm(r.tier)].join("|");
+        if (tab === "voci") return [nrm(r.pista), nrm(r.nome), nrm(r.tier), nrm(r.scope), nrm(r.condizione)].join("|");
+        return [nrm(r.pista), nrm(r.tipo), nrm(r.condizione), nrm(r.bersaglio), nrm(r.effetto), nrm(r.scope)].join("|");
+    },
+    etichetta: (tab, r) => {
+        if (tab === "piste") return String(r.nome || r.codice || "pista");
+        const t = vuotoPre(r.tier) ? "" : `soglia ${r.tier}`;
+        if (tab === "soglie") {
+            const dove = String(r.store_name || r.cluster || (r.scope === "ragione_sociale" ? "Ragione Sociale" : "rete"));
+            return [dove, t].filter(Boolean).join(" — ") || "soglia";
+        }
+        if (tab === "voci") return [String(r.nome || "voce"), t].filter(Boolean).join(" — ");
+        return [String(r.tipo || "regola"), String(r.bersaglio || r.condizione || "")].filter(Boolean).join(" — ").slice(0, 80);
+    },
+    descrizione: `- **piste**: le gare del mese. Campi: gara (franchising | multibrand | multibrand_t2), codice, nome, descrizione, sort_order.
+- **soglie**: gli scalini di ogni pista. Campi: pista (il CODICE della pista), scope (pdv | ragione_sociale), cluster, store_name, tier (1,2,3...), soglia_valore, soglia_um (punti | pezzi | eur), reward_tipo (bonus | moltiplicatore | pay | sblocco), reward_valore, reward_um, reward_descr, note.
+- **voci**: quanto vale ogni cosa dentro una pista. Campi: pista, nome, tipo (punti | gettone | bonus | moltiplicatore | pay_ricorrente), valore, um, condizione, scope, tier, note. ⚠️ La stessa voce esiste UNA VOLTA PER SOGLIA: il tier va sempre scritto.
+- **regole**: i vincoli. Campi: pista, tipo (malus | gate | storno), condizione, effetto, valore, um, bersaglio, scope, note.`,
 };
-/* la sola colonna che può restare senza pista: una regola vale anche per
-   tutta la gara (lo schema la tiene nullable, la chiave esterna non scatta) */
-const SENZA_PISTA: NomeTab[] = ["regole"];
+
+/* ═══ MODELLO «pay» — Vodafone, Fastweb, Sky, S4 ═════════════════════════ */
+const PAY: Schema = {
+    tab: { piste: "pay_piste", soglie: "pay_soglie", righe: "pay_righe" },
+    tabelle: ["piste", "soglie", "righe"],
+    rifPista: "chiave",
+    ordinaPer: "ordine",
+    /* ⚠️ IL BRAND CAMBIA NOME FRA LA PAGINA E IL DATABASE. La pagina Gare usa
+       codici corti (vs, sky, s4) ma su pay_* le righe stanno scritte per
+       esteso (vodafone, sky, s4). Cercare «vs» in pay_piste non dà errore: dà
+       ZERO righe — ed è esattamente così che il 05/09 la card ha concluso che
+       Vodafone non era mai stato impostato, mentre aveva 8 piste su agosto. */
+    brandDb: (b) => ({ vs: "vodafone", w3: "windtre" } as Record<string, string>)[String(b)] || String(b),
+    conDivisioni: false,
+    colonnaLato: "lato",
+    campi: {
+        piste: ["chiave", "nome", "um", "ordine", "perc_ragazzi", "soglie_pct", "soglie_max", "soglie_di"],
+        soglie: ["pista", "tier", "soglia_da", "soglia_a", "bonus"],
+        righe: ["pista", "nome", "tipo_cliente", "categoria", "prodotto", "offerta", "opzione",
+                "punti", "pay_base", "pay_tiers", "gettone", "attivo", "note", "ordine",
+                "brand_vendita", "moltiplicatore", "provenienza", "componente", "ricorrente"],
+    },
+    chiave: {
+        piste: ["perc_ragazzi", "soglie_pct"],
+        soglie: ["soglia_da", "soglia_a", "bonus", "tier"],
+        righe: ["punti", "pay_base", "pay_tiers", "gettone", "moltiplicatore", "ricorrente"],
+    },
+    numerici: {
+        piste: ["ordine", "perc_ragazzi", "soglie_pct", "soglie_max"],
+        soglie: ["tier", "soglia_da", "soglia_a", "bonus"],
+        righe: ["punti", "pay_base", "ordine", "ricorrente"],
+    },
+    /* ⚠️ IL COMMISSIONING QUI È UNA FILA DI NUMERI, non una riga per soglia:
+       `pay_tiers` è un numeric[] con un importo per scalino. Va validato
+       elemento per elemento e confrontato in fila: un array più corto vuol
+       dire che le soglie dopo pagano NIENTE. */
+    liste: { piste: [], soglie: [], righe: ["pay_tiers"] },
+    booleani: { piste: [], soglie: [], righe: ["gettone", "attivo", "moltiplicatore"] },
+    obbligatori: {
+        piste: ["chiave", "nome"],
+        soglie: ["pista", "tier", "soglia_da"],
+        righe: ["nome"],
+    },
+    conDefault: {
+        piste: ["um", "ordine"],
+        soglie: [],
+        righe: ["punti", "pay_tiers", "gettone", "attivo", "ordine"],
+    },
+    ammessi: {
+        piste: { um: ["punti", "pezzi", "gettoni"] },
+        soglie: {},
+        righe: {},
+    },
+    // su pay_righe la pista è nullable: una riga può valere per tutto il brand
+    senzaPista: ["righe"],
+    principale: {
+        piste: [{ campo: "perc_ragazzi", come: "% ragazzi" }],
+        soglie: [{ campo: "soglia_da", come: "da" }, { campo: "bonus", come: "bonus" }],
+        righe: [{ campo: "pay_tiers", come: "pay per soglia" }, { campo: "punti" }, { campo: "pay_base", come: "base" }],
+    },
+    /* l'identità ricalca i vincoli UNIQUE veri del database:
+       piste (brand,month,chiave,lato) · soglie (brand,month,pista,tier,lato).
+       Su `righe` un unique non c'è: si costruisce con quello che distingue
+       davvero una riga di listino da un'altra. */
+    identita: (tab, r) => {
+        if (tab === "piste") return nrm(r.chiave);
+        if (tab === "soglie") return [nrm(r.pista), nrm(r.tier)].join("|");
+        return [nrm(r.pista), nrm(r.nome), nrm(r.categoria), nrm(r.prodotto), nrm(r.offerta),
+                nrm(r.opzione), nrm(r.componente), nrm(r.tipo_cliente)].join("|");
+    },
+    etichetta: (tab, r) => {
+        if (tab === "piste") return String(r.nome || r.chiave || "pista");
+        if (tab === "soglie") return vuotoPre(r.tier) ? "soglia" : `soglia ${r.tier}`;
+        const extra = [r.offerta, r.opzione, r.componente].filter(Boolean).map(String).join(" · ");
+        return [String(r.nome || "riga"), extra].filter(Boolean).join(" — ").slice(0, 90);
+    },
+    descrizione: `- **piste**: le gare del mese. Campi: chiave (il codice breve, es. "mobile"), nome, um (punti | pezzi | gettoni), ordine, perc_ragazzi (la percentuale del compenso che va ai ragazzi), soglie_pct, soglie_max, soglie_di.
+- **soglie**: gli scalini di ogni pista. Campi: pista (la CHIAVE della pista), tier (1,2,3...), soglia_da (il valore da cui scatta), soglia_a (fino a quanto, può restare vuoto sull'ultimo), bonus.
+- **righe**: il listino del commissioning. Campi: pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, punti (quanto vale per la soglia), pay_base, pay_tiers (⚠️ un ELENCO di importi, uno per soglia, es. [45,48,51,55]), gettone (vero/falso), attivo, note, ordine, brand_vendita, moltiplicatore, provenienza, componente, ricorrente.`,
+};
+
+export const SCHEMI: Record<NomeModello, Schema> = { gare: GARE, pay: PAY };
+export const schema = (mod: NomeModello = "gare") => SCHEMI[mod];
+/** quale modello usa un operatore: solo WindTre ha il motore dedicato */
+export const modelloDiBrand = (brand: string): NomeModello => (String(brand) === "w3" ? "gare" : "pay");
+
+// ── compatibilità: il modello WindTre resta raggiungibile com'era
+export const TAB = GARE.tab;
+export type NomeTab = string;
+export const TABELLE: NomeTab[] = GARE.tabelle;
+export const CAMPI = GARE.campi;
+export const CAMPI_CHIAVE = GARE.chiave;
+
+const INTERI = new Set(["tier", "sort_order", "ordine", "soglie_max"]);
+/* ⚠️ ANCHE I CHECK NUMERICI SONO REGOLE, non dettagli. Le soglie pretendono
+   `tier >= 1` — su tutti e due i modelli: uno zero passava ogni controllo,
+   entrava nel riassunto, nasceva spuntato e moriva solo alla scrittura, cioè
+   nel momento peggiore, a metà di un'applicazione già cominciata. */
+const MINIMI: Record<string, number> = { tier: 1, sort_order: 0, ordine: 0 };
 
 export type Riga = Record<string, unknown>;
 export type Foto = Record<NomeTab, Riga[]>;
@@ -119,8 +267,7 @@ export type Foto = Record<NomeTab, Riga[]>;
    righe da spuntare che non cambiano niente ma che tolgono ogni fiducia
    all'elenco. Si confronta da numero quando entrambi lo sono, da testo
    normalizzato — minuscole, senza accenti, senza doppi spazi — altrimenti. */
-const senzaAccenti = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-export const norm = (v: unknown) => senzaAccenti(v).toLowerCase().replace(/\s+/g, " ").trim();
+export const norm = nrm;
 /* ⚠️ SEVERO DI PROPOSITO. `Number()` accetta molto più di un numero: " " vale
    ZERO, "1e3" vale mille, "0x20" vale trentadue, e "1.000" scritto
    all'italiana vale UNO — e in una tabella di compensi ognuno di questi è un
@@ -147,7 +294,7 @@ export function stessoValore(a: unknown, b: unknown, numerico = false): boolean 
     return norm(a) === norm(b);
 }
 
-const vuoto = (v: unknown) => v === null || v === undefined || v === "";
+const vuoto = vuotoPre;
 
 /** il valore per una colonna numerica: numero vero, null se la casella va
  *  svuotata, `undefined` se quello che è arrivato non è un numero (e allora la
@@ -168,35 +315,45 @@ export function valoreNumerico(campo: string, v: unknown): number | null | undef
 }
 
 /** l'identità di una riga secondo il gestionale: serve a capire se una
- *  "aggiunta" è in realtà una riga che c'è già, scritta un po' diversa.
- *
- *  ⚠️ LE VOCI NON SONO UN ELENCO, SONO UNA MATRICE: la stessa voce esiste una
- *  volta per SOGLIA («GA base» vale 0,5 in 1ª, 1,0 in 2ª, 1,5 in 3ª — venti
- *  gruppi così nel mese di settembre). Con la chiave «pista + nome» le celle
- *  dalla seconda in poi sarebbero state scartate come «già presente» o
- *  «proposta due volte»: la voce nuova sarebbe nata solo con la 1ª soglia, e
- *  dalla 2ª in poi avrebbe pagato ZERO senza che nessuno lo vedesse. Il `tier`
- *  fa parte dell'identità, e con lui la condizione e lo scope. */
-export function chiaveRiga(tab: NomeTab, r: Riga): string {
-    if (tab === "piste") return norm(r.codice);
-    if (tab === "soglie") return [norm(r.pista), norm(r.scope), norm(r.cluster), norm(r.store_name), norm(r.tier)].join("|");
-    if (tab === "voci") return [norm(r.pista), norm(r.nome), norm(r.tier), norm(r.scope), norm(r.condizione)].join("|");
-    return [norm(r.pista), norm(r.tipo), norm(r.condizione), norm(r.bersaglio), norm(r.effetto), norm(r.scope)].join("|");
+ *  "aggiunta" è in realtà una riga che c'è già, scritta un po' diversa. La
+ *  regola vera sta nello schema del modello, col motivo per cui è fatta così. */
+export function chiaveRiga(tab: NomeTab, r: Riga, mod: NomeModello = "gare"): string {
+    return schema(mod).identita(tab, r);
 }
 
 /** come si chiama questa riga per una persona: «Mazzini — soglia 1» */
-export function etichetta(tab: NomeTab, r: Riga): string {
-    if (tab === "piste") return String(r.nome || r.codice || "pista");
-    const t = vuoto(r.tier) ? "" : `soglia ${r.tier}`;
-    if (tab === "soglie") {
-        const dove = String(r.store_name || r.cluster || (r.scope === "ragione_sociale" ? "Ragione Sociale" : "rete"));
-        return [dove, t].filter(Boolean).join(" — ") || "soglia";
+export function etichetta(tab: NomeTab, r: Riga, mod: NomeModello = "gare"): string {
+    return schema(mod).etichetta(tab, r);
+}
+
+/** una fila di importi, uno per soglia (`pay_tiers`). `undefined` se quello
+ *  che è arrivato non è un elenco di numeri veri: allora non si scrive. */
+export function listaNumerica(v: unknown): number[] | null | undefined {
+    if (vuoto(v)) return null;
+    if (!Array.isArray(v)) return undefined;
+    const out: number[] = [];
+    for (const x of v) {
+        const n = numero(x);
+        if (n === null) return undefined;
+        out.push(n);
     }
-    /* ⚠️ IL TIER VA SCRITTO. «GA base» esiste tre volte, una per soglia: senza
-       il tier il riassunto stampa tre righe identiche e non si capisce quale
-       cella cambia — cioè proprio quello che Luca deve poter verificare. */
-    if (tab === "voci") return [String(r.nome || "voce"), t].filter(Boolean).join(" — ");
-    return [String(r.tipo || "regola"), String(r.bersaglio || r.condizione || "")].filter(Boolean).join(" — ").slice(0, 80);
+    return out;
+}
+export function stessaLista(a: unknown, b: unknown): boolean {
+    const la = Array.isArray(a) ? a.map((x) => numero(x)) : null;
+    const lb = Array.isArray(b) ? b.map((x) => numero(x)) : null;
+    if (!la || !lb) return norm(a) === norm(b);
+    if (la.length !== lb.length) return false;
+    return la.every((x, i) => x !== null && lb[i] !== null && Math.abs(x - (lb[i] as number)) < 1e-9);
+}
+/** sì/no scritto in tutti i modi in cui un modello può scriverlo */
+export function booleano(v: unknown): boolean | null | undefined {
+    if (vuoto(v)) return null;
+    if (typeof v === "boolean") return v;
+    const t = norm(v);
+    if (["true", "si", "sì", "vero", "1", "x"].includes(t)) return true;
+    if (["false", "no", "falso", "0"].includes(t)) return false;
+    return undefined;
 }
 
 export const mostra = (v: unknown, um?: unknown) => {
@@ -207,20 +364,10 @@ export const mostra = (v: unknown, um?: unknown) => {
     return um ? `${corto} ${um}` : corto;
 };
 
-/* IL CAMPO PRINCIPALE DI OGNI TABELLA, e l'unità che gli sta accanto: sono
-   quelli che vanno letti come «39 → 42 punti» invece che «soglia_valore: 39 →
-   42». La riga deve leggersi senza sapere come si chiamano le colonne. */
-const PRINCIPALE: Record<NomeTab, { campo: string; um?: string; come?: string }[]> = {
-    piste: [],
-    soglie: [{ campo: "soglia_valore", um: "soglia_um" }, { campo: "reward_valore", um: "reward_um", come: "premio" }],
-    voci: [{ campo: "valore", um: "um" }],
-    regole: [{ campo: "valore", um: "um" }],
-};
-
 /** la riga così come la legge una persona */
-export function rigaLeggibile(tab: NomeTab, riga: Riga, campo: string, da: unknown, a: unknown): string {
-    const p = PRINCIPALE[tab].find((x) => x.campo === campo);
-    const testa = etichetta(tab, riga) + (p?.come ? ` — ${p.come}` : p ? "" : ` — ${campo}`);
+export function rigaLeggibile(tab: NomeTab, riga: Riga, campo: string, da: unknown, a: unknown, mod: NomeModello = "gare"): string {
+    const p = (schema(mod).principale[tab] || []).find((x) => x.campo === campo);
+    const testa = etichetta(tab, riga, mod) + (p?.come ? ` — ${p.come}` : p ? "" : ` — ${campo}`);
     // l'unità si scrive UNA volta sola, in fondo: «39 → 42 punti»
     const um = p?.um ? riga[p.um] : undefined;
     return `${testa}: ${mostra(da)} → ${mostra(a, um)}`;
@@ -266,23 +413,24 @@ export type Grezza = { tab: NomeTab; div: string; m: Riga };
    che c'è già né la copia di un'altra aggiunta, (4) la pista a cui si aggancia
    esiste. Ogni scarto viene contato: il totale si dice, così si vede quanto
    rumore è stato tolto. */
-export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string, string>, gaDi: Record<string, string>) {
+export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string, string>, gaDi: Record<string, string>, mod: NomeModello = "gare") {
+    const S = schema(mod);
     const perId = new Map<string, { tab: NomeTab; r: Riga }>();
-    TABELLE.forEach((t) => (foto[t] || []).forEach((r) => perId.set(String(r.id), { tab: t, r })));
+    S.tabelle.forEach((t) => (foto[t] || []).forEach((r) => perId.set(String(r.id), { tab: t, r })));
     const chiaviBase = new Map<NomeTab, Set<string>>();
-    TABELLE.forEach((t) => chiaviBase.set(t, new Set((foto[t] || []).map((r) => chiaveRiga(t, r)))));
-    const pisteEsistenti = new Set((foto.piste || []).map((p) => norm(p.codice)));
+    S.tabelle.forEach((t) => chiaviBase.set(t, new Set((foto[t] || []).map((r) => chiaveRiga(t, r, mod)))));
+    const pisteEsistenti = new Set((foto.piste || []).map((p) => norm(p[S.rifPista])));
 
     const scarti: Record<string, number> = {};
     const scarta = (perche: string) => { scarti[perche] = (scarti[perche] || 0) + 1; };
     const vistiAdd = new Map<NomeTab, Set<string>>();
-    TABELLE.forEach((t) => vistiAdd.set(t, new Set()));
+    S.tabelle.forEach((t) => vistiAdd.set(t, new Set()));
     // le piste che la proposta stessa crea: le loro righe figlie sono lecite
     const pisteNuove = new Set<string>();
     grezze.forEach(({ tab, m }) => {
         if (tab === "piste" && (m.op === "new" || m.operazione === "aggiungi")) {
             const d = (m.dati || {}) as Riga;
-            if (d.codice) pisteNuove.add(norm(d.codice));
+            if (d[S.rifPista]) pisteNuove.add(norm(d[S.rifPista]));
         }
     });
 
@@ -306,30 +454,45 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
             const marchio = `${tab}|${m.id}|${campo}`;
             if (vistiMod.has(marchio)) { scarta("stesso campo proposto due volte"); continue; }
             vistiMod.add(marchio);
-            if (!CAMPI[tab].includes(campo)) { scarta(`campo non modificabile: ${campo || "(vuoto)"}`); continue; }
+            if (!(S.campi[tab] || []).includes(campo)) { scarta(`campo non modificabile: ${campo || "(vuoto)"}`); continue; }
             const da = rif.r[campo];
             /* SU UNA COLONNA NUMERICA SI SCRIVE UN NUMERO, non il testo che il
                modello ha battuto. «1.000» all'italiana diventerebbe UNO nel
                database, e nessuno se ne accorgerebbe fino al cedolino. */
             let a = m.a;
-            if (NUMERICI[tab].includes(campo)) {
+            const eLista = (S.liste[tab] || []).includes(campo);
+            const eBool = (S.booleani[tab] || []).includes(campo);
+            if (eLista) {
+                /* ⚠️ UNA FILA DI IMPORTI, UNO PER SOGLIA. Se ne arrivano meno
+                   di quante ne servono, le soglie in fondo pagano NIENTE — e
+                   non se ne accorge nessuno fino al cedolino. */
+                const l = listaNumerica(m.a);
+                if (l === undefined) { scarta(`${campo}: non è un elenco di importi leggibile`); continue; }
+                a = l;
+            } else if (eBool) {
+                const b = booleano(m.a);
+                if (b === undefined) { scarta(`${campo}: «${m.a}» non è un sì/no`); continue; }
+                a = b;
+            } else if ((S.numerici[tab] || []).includes(campo)) {
                 const n = valoreNumerico(campo, m.a);
                 if (n === undefined) { scarta(`${campo}: «${m.a}» non è un numero leggibile senza ambiguità`); continue; }
-                if (n === null && OBBLIGATORI[tab].includes(campo)) { scarta(`${campo} non può restare vuoto`); continue; }
+                if (n === null && (S.obbligatori[tab] || []).includes(campo)) { scarta(`${campo} non può restare vuoto`); continue; }
                 a = n;
             }
-            const ammessi = AMMESSI[tab][campo];
+            const ammessi = (S.ammessi[tab] || {})[campo];
             if (ammessi && !vuoto(a) && !ammessi.includes(String(a))) {
                 scarta(`${campo}: «${a}» non è un valore ammesso (${ammessi.join(", ")})`); continue;
             }
-            if (stessoValore(da, a, NUMERICI[tab].includes(campo))) { scarta("valore già uguale a quello del gestionale"); continue; }
-            const pista = String(rif.r.pista || rif.r.codice || "");
+            if (eLista ? stessaLista(da, a) : stessoValore(da, a, (S.numerici[tab] || []).includes(campo))) {
+                scarta("valore già uguale a quello del gestionale"); continue;
+            }
+            const pista = String(rif.r.pista || rif.r[S.rifPista] || "");
             buone.push({
                 tabella: tab, operazione: "aggiorna", id: String(m.id), campo, da, a, motivo: perche,
                 pista, gara: gaDi[pista] || div, gruppo: nomePista[pista] || pista,
-                dove: etichetta(tab, rif.r),
-                chiave: CAMPI_CHIAVE[tab].includes(campo),
-                riga: rigaLeggibile(tab, rif.r, campo, da, a),
+                dove: etichetta(tab, rif.r, mod),
+                chiave: (S.chiave[tab] || []).includes(campo),
+                riga: rigaLeggibile(tab, rif.r, campo, da, a, mod),
             });
         } else if (op === "del" || op === "rimuovi") {
             const rif = perId.get(String(m.id || ""));
@@ -337,7 +500,7 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
             const marchio = `${tab}|${m.id}`;
             if (vistiDel.has(marchio)) { scarta("stessa riga da rimuovere due volte"); continue; }
             vistiDel.add(marchio);
-            const pista = String(rif.r.pista || rif.r.codice || "");
+            const pista = String(rif.r.pista || rif.r[S.rifPista] || "");
             /* ⚠️ TOGLIERE UNA PISTA TOGLIE TUTTO QUELLO CHE CI STA SOTTO: le
                chiavi esterne di soglie, voci e regole sono ON DELETE CASCADE.
                Una casella sola cancella decine di righe, e il registro
@@ -348,8 +511,8 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
             buone.push({
                 tabella: tab, operazione: "rimuovi", id: String(m.id), motivo: perche,
                 pista, gara: gaDi[pista] || div, gruppo: nomePista[pista] || pista,
-                dove: etichetta(tab, rif.r), chiave: true, pericolosa,
-                riga: `${etichetta(tab, rif.r)}: da RIMUOVERE${pericolosa ? " — l'INTERA pista, con tutte le sue soglie, voci e regole" : ""}`,
+                dove: etichetta(tab, rif.r, mod), chiave: true, pericolosa,
+                riga: `${etichetta(tab, rif.r, mod)}: da RIMUOVERE${pericolosa ? " — l'INTERA pista, con tutte le sue soglie, voci e regole" : ""}`,
             });
         } else if (op === "new" || op === "aggiungi") {
             const arrivati = (m.dati || {}) as Riga;
@@ -359,17 +522,29 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
                che il database rifiuterebbe mentre il default farebbe da sé. */
             const dati: Riga = {};
             let scartaPer = "";
-            for (const c of CAMPI[tab]) {
+            for (const c of (S.campi[tab] || [])) {
                 const v = arrivati[c];
                 if (v === undefined) continue;
-                if (NUMERICI[tab].includes(c)) {
+                if ((S.liste[tab] || []).includes(c)) {
+                    const l = listaNumerica(v);
+                    if (l === undefined) { scartaPer = `${c}: non è un elenco di importi leggibile`; break; }
+                    if (l !== null) dati[c] = l;
+                    continue;
+                }
+                if ((S.booleani[tab] || []).includes(c)) {
+                    const b = booleano(v);
+                    if (b === undefined) { scartaPer = `${c}: «${v}» non è un sì/no`; break; }
+                    if (b !== null) dati[c] = b;
+                    continue;
+                }
+                if ((S.numerici[tab] || []).includes(c)) {
                     const n = valoreNumerico(c, v);
                     if (n === undefined) { scartaPer = `${c}: «${v}» non è un numero leggibile senza ambiguità`; break; }
                     if (n !== null) dati[c] = n;
                     continue;
                 }
-                if (vuoto(v) && CON_DEFAULT[tab].includes(c)) continue;   // ci pensa il database
-                const ammessi = AMMESSI[tab][c];
+                if (vuoto(v) && (S.conDefault[tab] || []).includes(c)) continue;   // ci pensa il database
+                const ammessi = (S.ammessi[tab] || {})[c];
                 if (ammessi && !vuoto(v) && !ammessi.includes(String(v))) {
                     scartaPer = `${c}: «${v}» non è un valore ammesso (${ammessi.join(", ")})`; break;
                 }
@@ -380,12 +555,12 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
                modello non scrive `gara`, il default del database è
                «principale»: la pista finirebbe in una divisione che nessuno
                guarda, e le sue soglie con lei. */
-            if (tab === "piste" && vuoto(dati.gara)) dati.gara = div;
-            const manca = OBBLIGATORI[tab].find((c) => vuoto(dati[c]));
+            if (S.conDivisioni && tab === "piste" && vuoto(dati.gara)) dati.gara = div;
+            const manca = (S.obbligatori[tab] || []).find((c) => vuoto(dati[c]));
             if (manca) { scarta(`aggiunta senza ${manca}: il database la rifiuterebbe`); continue; }
-            const pista = String(tab === "piste" ? dati.codice || "" : dati.pista || "");
-            // una REGOLA può valere per tutta la gara: lo schema le lascia la pista vuota
-            const senzaPista = !pista && SENZA_PISTA.includes(tab);
+            const pista = String(tab === "piste" ? dati[S.rifPista] || "" : dati.pista || "");
+            // qualche riga può valere per tutta la gara: lo schema le lascia la pista vuota
+            const senzaPista = !pista && S.senzaPista.includes(tab);
             if (tab !== "piste" && !senzaPista && !pisteEsistenti.has(norm(pista)) && !pisteNuove.has(norm(pista))) {
                 /* il 04/09: 69 aggiunte agganciate a piste che nel mese non
                    esistono (mb_assicurazioni, mb2_extra_piva…) — righe orfane
@@ -393,7 +568,7 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
                    tabelle a sporcare il conto */
                 scarta(`aggiunta su una pista che non esiste: ${pista || "(vuota)"}`); continue;
             }
-            const k = chiaveRiga(tab, dati);
+            const k = chiaveRiga(tab, dati, mod);
             if (chiaviBase.get(tab)!.has(k)) { scarta("aggiunta di una riga che c'è già"); continue; }
             if (vistiAdd.get(tab)!.has(k)) { scarta("aggiunta proposta due volte"); continue; }
             vistiAdd.get(tab)!.add(k);
@@ -403,11 +578,11 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
                a colpo d'occhio: stanno nel gruppo chiuso, si leggono e si
                spuntano a mano. */
             const chiaveNum = tab === "piste" ? true
-                : PRINCIPALE[tab].some((x) => dati[x.campo] !== null && dati[x.campo] !== undefined && dati[x.campo] !== "");
+                : (S.principale[tab] || []).some((x) => dati[x.campo] !== null && dati[x.campo] !== undefined && dati[x.campo] !== "");
             /* cosa si legge accanto a «da AGGIUNGERE»: il valore se c'è,
                altrimenti almeno il tipo e la condizione — una riga nuova senza
                niente accanto non si può né verificare né rifiutare */
-            const pezzi = PRINCIPALE[tab]
+            const pezzi = (S.principale[tab] || [])
                 .filter((x) => dati[x.campo] !== null && dati[x.campo] !== undefined && dati[x.campo] !== "")
                 .map((x) => `${x.come ? x.come + " " : ""}${mostra(dati[x.campo], x.um ? dati[x.um] : undefined)}`);
             if (!pezzi.length && dati.tipo) pezzi.push(String(dati.tipo));
@@ -418,8 +593,8 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
                 pista, gara: gaDi[pista] || div,
                 // una pista nuova non sta ancora nell'elenco dei nomi: si legge il suo
                 gruppo: nomePista[pista] || (tab === "piste" ? String(dati.nome || pista) : pista),
-                dove: etichetta(tab, dati), chiave: chiaveNum,
-                riga: `${etichetta(tab, dati)}: da AGGIUNGERE${valori ? ` — ${valori}` : ""}`,
+                dove: etichetta(tab, dati, mod), chiave: chiaveNum,
+                riga: `${etichetta(tab, dati, mod)}: da AGGIUNGERE${valori ? ` — ${valori}` : ""}`,
             });
         } else { scarta(`operazione sconosciuta: ${op}`); continue; }
     }
@@ -444,7 +619,8 @@ export function setaccia(grezze: Grezza[], foto: Foto, nomePista: Record<string,
    si scriverà. Il formato è fisso e lo sanno sia la card sia il PDF: riga di
    intestazione, poi un blocco per pista (titolo in maiuscolo) con le sue righe
    che cominciano per «·», in fondo l'elenco di ciò che non cambia. */
-export function riassuntoDa(buone: Riga[], foto: Foto, nomePista: Record<string, string>, intestazione: string): string {
+export function riassuntoDa(buone: Riga[], foto: Foto, nomePista: Record<string, string>, intestazione: string, mod: NomeModello = "gare"): string {
+    const S = schema(mod);
     const perPista = new Map<string, Riga[]>();
     buone.forEach((m) => {
         const k = String(m.pista || "");
@@ -452,7 +628,7 @@ export function riassuntoDa(buone: Riga[], foto: Foto, nomePista: Record<string,
         perPista.get(k)!.push(m);
     });
     const out: string[] = [intestazione, ""];
-    const ordine = (foto.piste || []).map((p) => String(p.codice));
+    const ordine = (foto.piste || []).map((p) => String(p[S.rifPista]));
     /* ⚠️ QUANDO SI LEGGONO TUTTE LE DIVISIONI i nomi delle piste si ripetono —
        «Fisso» esiste nel franchising e nel multibrand — e il riassunto usciva
        con due FISSO e tre LUCE & GAS, senza modo di capire quale fosse quale.
@@ -476,7 +652,7 @@ export function riassuntoDa(buone: Riga[], foto: Foto, nomePista: Record<string,
            nella lettera → da rimuovere, con 5 soglie». È il caso di Luca. */
         const viaTutta = mm.some((m) => m.tabella === "piste" && m.operazione === "rimuovi");
         if (viaTutta && mm.every((m) => m.operazione === "rimuovi")) {
-            const conteggio = TABELLE.filter((t) => t !== "piste")
+            const conteggio = S.tabelle.filter((t) => t !== "piste")
                 .map((t) => ({ t, n: mm.filter((m) => m.tabella === t).length }))
                 .filter((x) => x.n).map((x) => `${x.n} ${x.t}`).join(", ");
             out.push(`· pista non più presente nella lettera → da rimuovere${conteggio ? `, con ${conteggio}` : ""}`);
